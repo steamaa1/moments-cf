@@ -41,6 +41,11 @@ func (s SysConfigHandler) GetConfig(c echo.Context) error {
 		return FailRespWithMsg(c, Fail, "读取系统配置异常")
 	}
 	result.Version = s.base.cfg.Version
+
+	suffix := result.S3.ThumbnailSuffix
+	result.S3 = vo.S3VO{
+		ThumbnailSuffix: suffix,
+	}
 	return SuccessResp(c, result)
 }
 

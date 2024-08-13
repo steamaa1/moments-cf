@@ -68,6 +68,9 @@ export type SysConfigVO = {
     memoMaxHeight: number,
     commentOrder: 'desc' | 'asc',
     timeFormat: 'timeAgo' | 'time',
+    s3:{
+        thumbnailSuffix:string
+    }
 }
 
 

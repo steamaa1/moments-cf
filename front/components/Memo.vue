@@ -280,6 +280,7 @@ const content = computed(() => {
     try{
       return md.render(item.value.content)
     }catch (e) {
+      console.log('内容渲染错误,请重新编辑',e)
       return "内容渲染错误,请重新编辑"
     }
   }

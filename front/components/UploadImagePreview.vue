@@ -2,7 +2,7 @@
   <div ref="el" v-if="($route.path.startsWith('/new') || $route.path.startsWith('/edit')) && images.length>0"
        :style="gridStyle" class="grid gap-2">
     <div :key="img" v-for="img in images" class="relative">
-      <img :src="img" alt="" class="cursor-move rounded relative"
+      <img :src="getImageUrl(img)" alt="" class="cursor-move rounded relative"
            :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'">
       <div class="absolute right-0 top-0 px-1 bg-white m-2 rounded hover:text-red-500 cursor-pointer"
            @click="removeImage(img)">
@@ -22,7 +22,9 @@
 
 <script setup lang="ts">
 import {useSortable} from '@vueuse/integrations/useSortable'
+import type {SysConfigVO} from "~/types";
 
+const sysConfig = useState<SysConfigVO>('sysConfig')
 const route = useRoute()
 const el = ref(null)
 const props = defineProps<{ imgs: string }>()
@@ -36,6 +38,25 @@ watch(props, () => {
   }
 })
 
+const getImageUrl = (src: string) => {
+  if (src.startsWith("/")) {
+    return src
+  }
+  if (sysConfig.value.s3) {
+    if (sysConfig.value.s3.thumbnailSuffix) {
+      const suffix = sysConfig.value.s3.thumbnailSuffix
+      if (src.indexOf(suffix) > 0){
+        return src;
+      }
+      if (suffix.startsWith("?")) {
+        return `${src}${suffix}`
+      } else {
+        return `${src}?${suffix}`
+      }
+    }
+  }
+  return src
+}
 watch(images, () => {
   emit('dragImage', images.value)
 })
@@ -47,7 +68,7 @@ watch(images, () => {
 // })
 
 const removeImage = async (img: string) => {
-  await useMyFetch('/memo/removeImage',{
+  await useMyFetch('/memo/removeImage', {
     img
   })
   emit('removeImage', img)

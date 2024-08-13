@@ -2,7 +2,9 @@ import type {ResultVO, SysConfigVO} from "~/types";
 import {toast} from "vue-sonner";
 import {useGlobalState} from "~/store";
 import markdownit from "markdown-it";
-import Shiki from "@shikijs/markdown-it";
+import { fromHighlighter } from '@shikijs/markdown-it/core'
+import { createHighlighterCore } from 'shiki/core'
+
 
 const global = useGlobalState()
 
@@ -137,11 +139,30 @@ export const md = markdownit({
     breaks: true,
 })
 
-Shiki({
-    themes: {
-        light: 'aurora-x',
-        dark: 'aurora-x',
-    }
-}).then((r) => {
-    md.use(r)
+const highlighter = await createHighlighterCore({
+    themes: [
+        import('shiki/themes/github-dark.mjs')
+    ],
+    langs: [
+        import('shiki/langs/c.mjs'),
+        import('shiki/langs/css.mjs'),
+        import('shiki/langs/html.mjs'),
+        import('shiki/langs/javascript.mjs'),
+        import('shiki/langs/json.mjs'),
+        import('shiki/langs/python.mjs'),
+        import('shiki/langs/shellscript.mjs'),
+        import('shiki/langs/sql.mjs'),
+        import('shiki/langs/tsx.mjs'),
+        import('shiki/langs/xml.mjs'),
+        import('shiki/langs/yaml.mjs'),
+        import('shiki/langs/go.mjs'),
+    ],
+    loadWasm: import('shiki/wasm')
 })
+//@ts-ignore
+md.use(fromHighlighter(highlighter, {
+    themes: {
+        light: 'github-dark',
+        dark: 'github-dark',
+    }
+}))
