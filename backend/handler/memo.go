@@ -376,15 +376,7 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 	memo.ShowType = req.ShowType
 
 	m.base.log.Info().Msgf("memo is %+v", memo)
-
-	if req.ID > 0 {
-		if memo.Tags == nil || *memo.Tags == "" {
-			m.base.db.Select("tags").Updates(&memo)
-		}
-		m.base.db.Updates(&memo)
-	} else {
-		m.base.db.Save(&memo)
-	}
+	m.base.db.Save(&memo)
 
 	return SuccessResp(c, h{})
 }
