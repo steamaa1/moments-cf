@@ -7,7 +7,7 @@
     </div>
 
     <div class="flex justify-end text-xs text-gray-400">
-      <div v-if="version">版本号:v{{version }}</div>
+      <div v-if="version">版本号: {{ version }}</div>
     </div>
     <UFormGroup label="管理员账号" name="adminUserName" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.adminUserName"/>
