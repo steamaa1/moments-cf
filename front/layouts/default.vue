@@ -67,7 +67,11 @@ useHead({
       rel: 'shortcut icon',
       type: 'image/png',
       href: sysConfigVO.favicon || '/favicon.png',
-    }
+    },
+    {
+      rel: 'apple-touch-icon-precomposed',
+      href: sysConfigVO.favicon || '/favicon.png',
+    },
   ],
   style: [
     {
