@@ -11,13 +11,24 @@
     </div>
   </div>
 
-
-  <MyFancyBox v-else :style="gridStyle" v-if="images.length>0">
-    <img class="cursor-zoom-in rounded"
-         :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'"
-         :src="getImageUrl(img)" alt="" :key="z" v-for="(img,z) in images">
-  </MyFancyBox>
-
+  <template v-else-if="images.length>0" >
+    <MyFancyBox
+      v-for="(img, z) in images"
+      :style="gridStyle"
+      :options="{ src: `${getImageUrl(img)}`, thumb: `${getThumbImageUrl(img)}_thumb` }"
+      :key="z"
+    >
+      <a :href="`${getImageUrl(img)}`">
+        <img
+          class="cursor-zoom-in rounded"
+          :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'"
+          :src="`${getThumbImageUrl(img)}_thumb`"
+          alt=""
+          :onerror="`javascript:this.src='${getImageUrl(img)}';this.onerror=null`"
+        />
+      </a>
+    </MyFancyBox>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -58,6 +69,22 @@ const getImageUrl = (src: string) => {
     }
   }
   return src
+}
+const getThumbImageUrl = (src: string) => {
+  if (sysConfig.value.s3) {
+    if (sysConfig.value.s3.thumbnailSuffix) {
+      const suffix = sysConfig.value.s3.thumbnailSuffix
+      if (src.indexOf(suffix) > 0){
+        return src;
+      }
+      if (suffix.startsWith("?")) {
+        return `${src}${suffix}`
+      } else {
+        return `${src}?${suffix}`
+      }
+    }
+  }
+  return `${src}_thumb`
 }
 watch(images, () => {
   emit('dragImage', images.value)
