@@ -5,6 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/PuerkitoBio/goquery"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -18,15 +28,6 @@ import (
 	"github.com/samber/do/v2"
 	"golang.org/x/net/html"
 	"gorm.io/gorm"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 type MemoHandler struct {
@@ -66,6 +67,10 @@ func (m MemoHandler) RemoveImage(c echo.Context) error {
 	img := strings.ReplaceAll(req.Img, "/upload/", "")
 	if err := os.Remove(filepath.Join(m.base.cfg.UploadDir, img)); err != nil {
 		return FailRespWithMsg(c, ParamError, fmt.Sprintf("删除图片失败:%s", err))
+	}
+	thumbImg := strings.ReplaceAll(req.Img+"_thumb", "/upload/", "")
+	if err := os.Remove(filepath.Join(m.base.cfg.UploadDir, thumbImg)); err != nil {
+		FailRespWithMsg(c, ParamError, fmt.Sprintf("删除缩略图失败:%s", err))
 	}
 	return SuccessResp(c, h{})
 }
@@ -225,6 +230,8 @@ func (m MemoHandler) RemoveMemo(c echo.Context) error {
 			}
 			img := strings.ReplaceAll(img, "/upload/", "")
 			_ = os.Remove(filepath.Join(m.base.cfg.UploadDir, img))
+			thumbImg := strings.ReplaceAll(img+"_thumb", "/upload/", "")
+			_ = os.Remove(filepath.Join(m.base.cfg.UploadDir, thumbImg))
 		}
 	}
 	return SuccessResp(c, h{})
