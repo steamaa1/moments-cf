@@ -12,21 +12,20 @@
   </div>
 
   <template v-else-if="images.length>0" >
-    <MyFancyBox
-      v-for="(img, z) in images"
-      :style="gridStyle"
-      :options="{ src: `${getImageUrl(img)}`, thumb: `${getThumbImageUrl(img)}_thumb` }"
-      :key="z"
-    >
-      <a :href="`${getImageUrl(img)}`">
+    <MyFancyBox :style="gridStyle">
+      <div
+        v-for="(img, z) in images"
+        :key="z"
+        :href="`${getImageUrl(img)}`"
+        :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'"
+      >
         <img
           class="cursor-zoom-in rounded"
-          :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'"
-          :src="`${getThumbImageUrl(img)}_thumb`"
+          :src="`${getThumbImageUrl(img)}`"
           alt=""
           :onerror="`javascript:this.src='${getImageUrl(img)}';this.onerror=null`"
         />
-      </a>
+      </div>
     </MyFancyBox>
   </template>
 </template>
@@ -130,20 +129,28 @@ const gridStyle = computed(() => {
 
 <style scoped>
 .full-cover-image-mult {
-  object-fit: cover;
-  object-position: center;
   max-height: 300px;
   width: 100%;
   aspect-ratio: 1 / 1;
-  border: transparent 1px solid;
+
+  >img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    border: 1px solid transparent;
+  }
 }
 
 .full-cover-image-single {
-  object-fit: cover;
-  object-position: center;
   max-height: 300px;
   height: auto;
   width: auto;
-  border: transparent 1px solid;
+
+  >img {
+    object-fit: cover;
+    object-position: center;
+    border: 1px solid transparent;
+  }
 }
 </style>
