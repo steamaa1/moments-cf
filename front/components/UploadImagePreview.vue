@@ -11,13 +11,23 @@
     </div>
   </div>
 
-
-  <MyFancyBox v-else :style="gridStyle" v-if="images.length>0">
-    <img class="cursor-zoom-in rounded"
-         :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'"
-         :src="getImageUrl(img)" alt="" :key="z" v-for="(img,z) in images">
-  </MyFancyBox>
-
+  <template v-else-if="images.length>0" >
+    <MyFancyBox :style="gridStyle">
+      <div
+        v-for="(img, z) in images"
+        :key="z"
+        :href="`${getImageUrl(img)}`"
+        :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'"
+      >
+        <img
+          class="cursor-zoom-in rounded"
+          :src="`${getThumbImageUrl(img)}`"
+          alt=""
+          :onerror="`javascript:this.src='${getImageUrl(img)}';this.onerror=null`"
+        />
+      </div>
+    </MyFancyBox>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -58,6 +68,22 @@ const getImageUrl = (src: string) => {
     }
   }
   return src
+}
+const getThumbImageUrl = (src: string) => {
+  if (sysConfig.value.s3) {
+    if (sysConfig.value.s3.thumbnailSuffix) {
+      const suffix = sysConfig.value.s3.thumbnailSuffix
+      if (src.indexOf(suffix) > 0){
+        return src;
+      }
+      if (suffix.startsWith("?")) {
+        return `${src}${suffix}`
+      } else {
+        return `${src}?${suffix}`
+      }
+    }
+  }
+  return `${src}_thumb`
 }
 watch(images, () => {
   emit('dragImage', images.value)
@@ -103,20 +129,28 @@ const gridStyle = computed(() => {
 
 <style scoped>
 .full-cover-image-mult {
-  object-fit: cover;
-  object-position: center;
   max-height: 300px;
   width: 100%;
   aspect-ratio: 1 / 1;
-  border: transparent 1px solid;
+
+  >img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    border: 1px solid transparent;
+  }
 }
 
 .full-cover-image-single {
-  object-fit: cover;
-  object-position: center;
   max-height: 300px;
   height: auto;
   width: auto;
-  border: transparent 1px solid;
+
+  >img {
+    object-fit: cover;
+    object-position: center;
+    border: 1px solid transparent;
+  }
 }
 </style>

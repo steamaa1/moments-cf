@@ -5,6 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -15,12 +22,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/samber/do/v2"
 	"gorm.io/gorm"
-	"io"
-	"os"
-	"path"
-	"path/filepath"
-	"strings"
-	"time"
 )
 
 type FileHandler struct {
@@ -70,27 +71,36 @@ func (f FileHandler) Upload(c echo.Context) error {
 			f.base.log.Error().Msgf("打开上传图片异常:%s", err)
 			return FailRespWithMsg(c, Fail, "上传图片异常")
 		}
+		defer src.Close()
 		// Destination
-		filename := strings.ReplaceAll(uuid.NewString(), "-", "")
-		path := path.Join(f.base.cfg.UploadDir, filename)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		img_filename := strings.ReplaceAll(uuid.NewString(), "-", "")
+		img_filepath := path.Join(f.base.cfg.UploadDir, img_filename)
+
+		thumb_filename := img_filename + "_thumb"
+		thumb_filepath := path.Join(f.base.cfg.UploadDir, thumb_filename)
+
+		if err := os.MkdirAll(filepath.Dir(img_filepath), 0755); err != nil {
 			f.base.log.Error().Msgf("创建父级目录异常:%s", err)
 			return FailRespWithMsg(c, Fail, "创建父级目录异常")
 		}
-		dst, err := os.Create(path)
+		dst, err := os.Create(img_filepath)
 		if err != nil {
 			f.base.log.Error().Msgf("打开目标图片异常:%s", err)
 			return FailRespWithMsg(c, Fail, "上传图片异常")
 		}
+		defer dst.Close()
 		// Copy
 		if _, err = io.Copy(dst, src); err != nil {
 			f.base.log.Error().Msgf("复制图片异常:%s", err)
 			return FailRespWithMsg(c, Fail, "上传图片异常")
 		}
 
-		src.Close()
-		dst.Close()
-		result = append(result, "/upload/"+filename)
+		// compress image
+		if err := CompressImage(f, img_filepath, thumb_filepath, 30); err != nil {
+			f.base.log.Error().Msgf("压缩图片异常:%s", err)
+		}
+		
+		result = append(result, "/upload/"+img_filename)
 	}
 	return SuccessResp(c, result)
 }
