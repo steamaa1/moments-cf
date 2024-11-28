@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/disintegration/imaging"
 )
 
 // CompressImage 接收图片路径并进行压缩
@@ -72,9 +74,9 @@ func CompressImage(f FileHandler, filePath string, thumbFilepath string, quality
 			return err
 		}
 		defer file.Close()
-
+		dstImage := imaging.Resize(img, 600, 0, imaging.Lanczos)
 		// 使用JPEG格式压缩图片
-		err = jpeg.Encode(file, img, &jpeg.Options{Quality: quality})
+		err = jpeg.Encode(file, dstImage, &jpeg.Options{Quality: quality})
 		if err != nil {
 			return err
 		}
@@ -89,9 +91,10 @@ func CompressImage(f FileHandler, filePath string, thumbFilepath string, quality
 			return err
 		}
 		defer file.Close()
+		dstImage := imaging.Resize(img, 600, 0, imaging.Lanczos)
 
 		// 使用PNG格式压缩图片
-		err = png.Encode(file, img)
+		err = png.Encode(file, dstImage)
 		if err != nil {
 			return err
 		}
