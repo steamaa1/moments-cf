@@ -148,6 +148,9 @@ const gridStyle = computed(() => {
   width: auto;
 
   >img {
+    width: auto;
+    height: auto;
+    max-height: 300px;
     object-fit: cover;
     object-position: center;
     border: 1px solid transparent;

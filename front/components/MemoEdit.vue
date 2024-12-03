@@ -20,7 +20,15 @@
     </div>
 
     <div class="w-full" @contextmenu.prevent="onContextMenu">
-      <UTextarea ref="contentRef" v-model="state.content" :rows="8" autoresize padded autofocus/>
+      <div class="relative">
+        <UTextarea ref="contentRef" v-model="state.content" :rows="8" autoresize padded autofocus/>
+        <div class="animate-bounce absolute right-2 bottom-1 cursor-pointer text-xl select-none" @click="toggleEmoji">
+          😊
+        </div>
+      </div>
+
+      <Emoji v-if="emojiShow" @selected="emojiSelected" @close="emojiShow=false"/>
+
       <USelectMenu v-model="selectedLabel" :options="existTags" show-create-option-when="always"
                    multiple searchable creatable placeholder="选择标签" class="my-2" >
         <template #label>
@@ -97,6 +105,7 @@ import type {
 } from "~/types";
 import {toast} from "vue-sonner";
 import UploadImage from "~/components/UploadImage.vue";
+import Emoji from "~/components/Emoji.vue";
 
 const doubanType = ref<'book' | 'movie'>('book')
 const doubanData = ref<DoubanBook | DoubanMovie>({})
@@ -212,7 +221,14 @@ const loadTags = async () => {
   existTags.value = res.tags || []
 }
 
+const emojiShow = ref(false)
 
+const toggleEmoji = () => {
+  emojiShow.value = !emojiShow.value
+}
+const emojiSelected = (emoji: string) => {
+  state.content = state.content + emoji
+}
 
 const clickTag = (tag: string) => {
   isOpen.value = false;
