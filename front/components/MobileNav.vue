@@ -1,7 +1,7 @@
 <template>
   <UModal v-model="open" :ui="{container: 'sm:items-end'}">
     <div @click="navigate('/new')" v-if="global.userinfo.token " title="发表" class="flex flex-col items-center p-4 pt-8 text-gray-500 dark:text-white">
-      <UIcon name="i-mage-edit" class="text-[#9fc84a] w-7 h-7 cursor-pointer"/>
+      <UIcon name="i-carbon-camera" class="text-[#9fc84a] w-7 h-7 cursor-pointer"/>
       <span>发表</span>
     </div>
     <div class="flex items-center justify-between gap-4 p-8 pt-2 text-gray-500 dark:text-white">

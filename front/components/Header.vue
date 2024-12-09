@@ -47,7 +47,7 @@
 
 
       <NuxtLink to="/new" v-if="global.userinfo.token " title="发表">
-        <UIcon name="i-mage-edit" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
+        <UIcon name="i-carbon-camera" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
       </NuxtLink>
       <NuxtLink to="/user/calendar" v-if="$route.path !== '/user/calendar' && global.userinfo.token" title="日历检索">
         <UIcon name="i-jam-search-folder" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
