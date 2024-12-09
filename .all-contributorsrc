@@ -1,0 +1,100 @@
+{
+  "projectName": "moments",
+  "projectOwner": "kingwrcy",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 80,
+  "commit": true,
+  "commitConvention": "eslint",
+  "contributors": [
+    {
+      "login": "kingwrcy",
+      "name": "kingwrcy",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1247324?v=4",
+      "profile": "https://github.com/kingwrcy",
+      "contributions": []
+    },
+    {
+      "login": "RandallAnjie",
+      "name": "Randall",
+      "avatar_url": "https://avatars.githubusercontent.com/u/84122428?v=4",
+      "profile": "https://github.com/RandallAnjie",
+      "contributions": []
+    },
+    {
+      "login": "Jonnyan404",
+      "name": "jonny",
+      "avatar_url": "https://avatars.githubusercontent.com/u/20352705?v=4",
+      "profile": "https://github.com/Jonnyan404",
+      "contributions": []
+    },
+    {
+      "login": "akarikun",
+      "name": "akari",
+      "avatar_url": "https://avatars.githubusercontent.com/u/11921182?v=4",
+      "profile": "https://github.com/akarikun",
+      "contributions": []
+    },
+    {
+      "login": "douseful",
+      "name": "yee",
+      "avatar_url": "https://avatars.githubusercontent.com/u/52767905?v=4",
+      "profile": "https://github.com/douseful",
+      "contributions": []
+    },
+    {
+      "login": "Chef5",
+      "name": "Chef",
+      "avatar_url": "https://avatars.githubusercontent.com/u/38160059?v=4",
+      "profile": "https://www.jschef.com",
+      "contributions": []
+    },
+    {
+      "login": "dinphy",
+      "name": "小王先森",
+      "avatar_url": "https://avatars.githubusercontent.com/u/17978673?v=4",
+      "profile": "https://xwsir.cn",
+      "contributions": []
+    },
+    {
+      "login": "athurg",
+      "name": "Athurg Gooth",
+      "avatar_url": "https://avatars.githubusercontent.com/u/126313?v=4",
+      "profile": "https://www.gooth.org",
+      "contributions": []
+    },
+    {
+      "login": "xuewenG",
+      "name": "xuewenG",
+      "avatar_url": "https://avatars.githubusercontent.com/u/32838722?v=4",
+      "profile": "https://github.com/xuewenG",
+      "contributions": []
+    },
+    {
+      "login": "Secretlovez",
+      "name": "Secretlovez",
+      "avatar_url": "https://avatars.githubusercontent.com/u/40491055?v=4",
+      "profile": "https://github.com/Secretlovez",
+      "contributions": []
+    },
+    {
+      "login": "jkjoy",
+      "name": "浪子",
+      "avatar_url": "https://avatars.githubusercontent.com/u/23159890?v=4",
+      "profile": "https://github.com/jkjoy",
+      "contributions": []
+    },
+    {
+      "login": "lateautumn2",
+      "name": "lateautumn2",
+      "avatar_url": "https://avatars.githubusercontent.com/u/57248164?v=4",
+      "profile": "https://github.com/lateautumn2",
+      "contributions": []
+    }
+  ],
+  "contributorsPerLine": 7,
+  "linkToUsage": false
+}
