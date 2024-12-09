@@ -1,0 +1,24 @@
+{
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "main",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "eamodio.gitlens",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "Nuxtr.nuxt-vscode-extentions",
+        "golang.go",
+        "qwtel.sqlite-viewer"
+      ]
+    }
+  },
+  "postCreateCommand": "",
+  "remoteUser": "root",
+  "mounts": [
+    "source=/root/.ssh,target=/root/.ssh,type=bind,consistency=cached",
+    "source=/etc/localtime,target=/etc/localtime,type=bind,consistency=cached",
+    "source=/${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=cached"
+  ]
+}

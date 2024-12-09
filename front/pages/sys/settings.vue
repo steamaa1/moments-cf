@@ -1,8 +1,9 @@
 <template>
   <Header :user="currentUser"/>
   <div class="space-y-4  flex flex-col p-4 my-4 dark:bg-neutral-800">
-    <div class="flex justify-end text-xs text-gray-400">
-      <div v-if="version">版本号: {{ version }}</div>
+    <div class="flex flex-col items-end text-xs text-gray-400">
+      <div v-if="version" class="w-32">版本号: {{ version }}</div>
+      <div v-if="commitId" class="w-32">commitId: {{ commitId }}</div>
     </div>
     <UFormGroup label="管理员账号" name="adminUserName" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.adminUserName"/>
@@ -100,6 +101,7 @@ import {useUpload} from "~/utils";
 
 const currentUser = useState<UserVO>('userinfo')
 const version = ref('')
+const commitId = ref('')
 const state = reactive({
   enableGoogleRecaptcha: false,
   googleSiteKey:"",
@@ -134,6 +136,7 @@ const reload = async () => {
   if (res) {
     Object.assign(state, res)
     version.value = res.version
+    commitId.value = res.commitId
   }
 }
 

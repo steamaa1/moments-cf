@@ -1,0 +1,72 @@
+name: Create Or Update Release Draft
+on:
+  push:
+    branches:
+      - dev
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.2.0
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.5
+      - name: Release Draft
+        id: release_draft
+        uses: release-drafter/release-drafter@v6
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          commitish: ${{ github.sha }}
+      - name: Extract Version
+        env:
+          RELEASE_NAME: ${{ steps.release_draft.outputs.name }}
+          TAG_NAME: ${{ steps.release_draft.outputs.tag_name }}
+        run: |
+          echo RELEASE_NAME=$RELEASE_NAME >> $GITHUB_ENV
+          echo TAG_NAME=$TAG_NAME >> $GITHUB_ENV
+          echo VERSION=${TAG_NAME#v} >> $GITHUB_ENV
+          echo COMMIT_ID=${GITHUB_SHA:0:7} >> $GITHUB_ENV
+      - name: Clear Release Assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          gh release view ${{ env.TAG_NAME }} --json assets --jq '.assets[].name' | \
+          xargs -I {} gh release delete-asset ${{ env.TAG_NAME }} {}
+      - name: Install Front Dependencies
+        run: |
+          npm install -g pnpm
+          make frontend-install
+      - name: Build Front and Backend
+        run: |
+          make build VERSION=${{ env.VERSION }} COMMIT_ID=${{ env.COMMIT_ID }}
+      - name: Generate Zip
+        run: |
+          make zip VERSION=${{ env.VERSION }} COMMIT_ID=${{ env.COMMIT_ID }}
+      - name: Generate Checksums
+        run: |
+          make checksums VERSION=${{ env.VERSION }} COMMIT_ID=${{ env.COMMIT_ID }}
+      - name: Collect Assets
+        run: |
+          mkdir -p ./dist
+          mv ./backend/dist/moments-*.zip ./dist
+          mv ./backend/dist/moments-*-checksum.txt ./dist
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          draft: true
+          files: ./dist/*
+          fail_on_unmatched_files: true
+          name: ${{ env.RELEASE_NAME }}
+          tag_name: ${{ env.TAG_NAME }}

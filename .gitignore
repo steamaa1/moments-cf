@@ -1,9 +1,19 @@
-node_modules
-data.sqlite
-.env
-backend/.env
-backend/public
-front-end/.env
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.fleet
 .idea
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+.pnpm-store
+
+upload
+*.sqlite
 moments.exe
-backend/dist

@@ -8,23 +8,22 @@ COPY front/. .
 RUN pnpm run generate
 
 FROM golang:1.22.5-alpine AS backend
+ARG VERSION
+ARG COMMIT_ID
 WORKDIR /app
-ENV CGO_ENABLED=1
 RUN apk add --no-cache build-base tzdata
 COPY backend/go.mod .
 COPY backend/go.sum .
 RUN go mod download
 COPY backend/. .
 COPY --from=front /app/.output/public /app/public
-RUN go build -tags prod -ldflags="-s -w" -o /app/moments
+RUN go build -tags prod -ldflags="-s -w -X main.version=${VERSION} -X main.commitId=${COMMIT_ID}" -o /app/moments
 
 FROM alpine
 WORKDIR /app/data
 RUN apk update --no-cache && apk add --no-cache ca-certificates tzdata
-ARG VERSION
 ENV PORT=3000
 ENV TZ=Asia/Shanghai
-ENV VERSION=$VERSION
 COPY --from=backend /app/moments /app/moments
 RUN chmod +x /app/moments
 EXPOSE 3000
