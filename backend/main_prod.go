@@ -5,6 +5,8 @@ package main
 import (
 	"embed"
 	"fmt"
+	"net/http"
+
 	"github.com/ilyakaznacheev/cleanenv"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/kingwrcy/moments/db"
@@ -19,11 +21,10 @@ import (
 	"github.com/samber/do/v2"
 	_ "github.com/swaggo/echo-swagger"
 	"gorm.io/gorm"
-	"io/fs"
-	"net/http"
 )
 
-var gitCommitID string
+var version string
+var commitId string
 
 //go:embed public/*
 var staticFiles embed.FS
@@ -33,10 +34,9 @@ func newEchoEngine(_ do.Injector) (*echo.Echo, error) {
 	return e, nil
 }
 
-// @title		Moments API
+// @title	Moments API
 // @version	0.2.1
 func main() {
-
 	injector := do.New()
 	var cfg vo.AppConfig
 
@@ -46,15 +46,25 @@ func main() {
 		return
 	}
 
+	if version == "" {
+		version = "unknown"
+	}
+
+	if commitId == "" {
+		commitId = "unknown"
+	}
+
 	do.ProvideValue(injector, &cfg)
 	do.Provide(injector, log.NewLogger)
 
 	myLogger := do.MustInvoke[zerolog.Logger](injector)
-	if gitCommitID != "" {
-		myLogger.Info().Msgf("git commit id = %s", gitCommitID)
-	}
+
+	myLogger.Info().Msgf("version = %s", version)
+	myLogger.Info().Msgf("commitId = %s", commitId)
 
 	handleEmptyConfig(myLogger, &cfg)
+	cfg.Version = version
+	cfg.CommitId = commitId
 
 	do.Provide(injector, db.NewDB)
 	do.Provide(injector, newEchoEngine)
@@ -82,12 +92,4 @@ func main() {
 	if err != nil {
 		myLogger.Fatal().Msgf("服务启动失败,错误原因:%s", err)
 	}
-}
-
-func isEmbedFSEmpty(e embed.FS, path string) (bool, error) {
-	entries, err := fs.ReadDir(e, path)
-	if err != nil {
-		return false, err
-	}
-	return len(entries) == 0, nil
 }

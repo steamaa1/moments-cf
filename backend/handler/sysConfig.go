@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/labstack/echo/v4"
@@ -41,6 +42,7 @@ func (s SysConfigHandler) GetConfig(c echo.Context) error {
 		return FailRespWithMsg(c, Fail, "读取系统配置异常")
 	}
 	result.Version = s.base.cfg.Version
+	result.CommitId = s.base.cfg.CommitId
 
 	suffix := result.S3.ThumbnailSuffix
 	result.S3 = vo.S3VO{
@@ -78,6 +80,7 @@ func (s SysConfigHandler) GetFullConfig(c echo.Context) error {
 		return FailRespWithMsg(c, Fail, "读取系统配置异常")
 	}
 	result.Version = s.base.cfg.Version
+	result.CommitId = s.base.cfg.CommitId
 	return SuccessResp(c, result)
 }
 

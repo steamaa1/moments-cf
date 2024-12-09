@@ -28,6 +28,7 @@ type SysConfigVO struct {
 	TimeFormat             string `json:"timeFormat,omitempty"`       //时间格式
 	EnableRegister         bool   `json:"enableRegister"`             //是否开启注册用户
 	Version                string `json:"version,omitempty"`
+	CommitId               string `json:"commitId,omitempty"`
 	S3                     S3VO   `json:"s3"` //S3相关信息
 }
 
@@ -51,4 +52,5 @@ type FullSysConfigVO struct {
 	TimeFormat             string `json:"timeFormat,omitempty"`       //时间格式
 	EnableRegister         bool   `json:"enableRegister"`             //是否开启注册用户
 	Version                string `json:"version,omitempty"`
+	CommitId               string `json:"commitId,omitempty"`
 }
