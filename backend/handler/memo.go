@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/kingwrcy/moments/db"
+	fs_util "github.com/kingwrcy/moments/util"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
@@ -61,17 +62,28 @@ func (m MemoHandler) RemoveImage(c echo.Context) error {
 	if err != nil {
 		return FailResp(c, ParamError)
 	}
+
 	if !strings.HasPrefix(req.Img, "/upload/") {
 		return SuccessResp(c, h{})
 	}
+
 	img := strings.ReplaceAll(req.Img, "/upload/", "")
-	if err := os.Remove(filepath.Join(m.base.cfg.UploadDir, img)); err != nil {
-		return FailRespWithMsg(c, ParamError, fmt.Sprintf("删除图片失败:%s", err))
+
+	imageFilePath := filepath.Join(m.base.cfg.UploadDir, img)
+	if fs_util.Exists(imageFilePath) {
+		if err := os.Remove(imageFilePath); err != nil {
+			return FailRespWithMsg(c, ParamError, fmt.Sprintf("删除图片失败:%s", err))
+		}
 	}
-	thumbImg := strings.ReplaceAll(req.Img+"_thumb", "/upload/", "")
-	if err := os.Remove(filepath.Join(m.base.cfg.UploadDir, thumbImg)); err != nil {
-		FailRespWithMsg(c, ParamError, fmt.Sprintf("删除缩略图失败:%s", err))
+
+	thumbImageFilename := strings.ReplaceAll(req.Img+"_thumb", "/upload/", "")
+	thumbImageFilePath := filepath.Join(m.base.cfg.UploadDir, thumbImageFilename)
+	if fs_util.Exists(thumbImageFilePath) {
+		if err := os.Remove(thumbImageFilePath); err != nil {
+			m.base.log.Error().Msgf("删除缩略图失败, thumbImageFilePath=%s, err=%v", thumbImageFilePath, err)
+		}
 	}
+
 	return SuccessResp(c, h{})
 }
 
