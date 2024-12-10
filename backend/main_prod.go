@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/ilyakaznacheev/cleanenv"
 	_ "github.com/joho/godotenv/autoload"
@@ -81,15 +82,22 @@ func main() {
 		HTML5:      true,
 		Root:       "public", // because files are located in `web` directory in `webAssets` fs
 		Filesystem: http.FS(staticFiles),
+		Skipper: func(c echo.Context) bool {
+			if strings.HasPrefix(c.Request().URL.Path, "/swagger/") {
+				return true
+			}
+
+			return false
+		},
 	}))
 
-	e.FileFS("/*", "public/index.html", staticFiles)
-
 	migrateTo3(tx, myLogger)
+
 	e.HideBanner = true
-	myLogger.Info().Msgf("服务端启动成功,监听:%d端口...", cfg.Port)
 	err = e.Start(fmt.Sprintf(":%d", cfg.Port))
-	if err != nil {
+	if err == nil {
+		myLogger.Info().Msgf("服务端启动成功,监听:%d端口...", cfg.Port)
+	} else {
 		myLogger.Fatal().Msgf("服务启动失败,错误原因:%s", err)
 	}
 }

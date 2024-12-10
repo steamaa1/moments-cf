@@ -72,10 +72,12 @@ func main() {
 	setupRouter(injector)
 
 	migrateTo3(tx, myLogger)
+
 	e.HideBanner = true
-	myLogger.Info().Msgf("服务端启动成功,监听:%d端口...", cfg.Port)
 	err = e.Start(fmt.Sprintf(":%d", cfg.Port))
-	if err != nil {
+	if err == nil {
+		myLogger.Info().Msgf("服务端启动成功,监听:%d端口...", cfg.Port)
+	} else {
 		myLogger.Fatal().Msgf("服务启动失败,错误原因:%s", err)
 	}
 }
