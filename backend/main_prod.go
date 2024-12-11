@@ -79,15 +79,13 @@ func main() {
 	setupRouter(injector)
 
 	e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
+		Root:       "public",
 		HTML5:      true,
-		Root:       "public", // because files are located in `web` directory in `webAssets` fs
+		IgnoreBase: false,
+		Browse:     false,
 		Filesystem: http.FS(staticFiles),
 		Skipper: func(c echo.Context) bool {
-			if strings.HasPrefix(c.Request().URL.Path, "/swagger/") {
-				return true
-			}
-
-			return false
+			return strings.HasPrefix(c.Request().URL.Path, "/swagger/")
 		},
 	}))
 
