@@ -32,18 +32,6 @@ func NewFileHandler(injector do.Injector) *FileHandler {
 	return &FileHandler{do.MustInvoke[BaseHandler](injector)}
 }
 
-func (f FileHandler) Get(c echo.Context) error {
-	filename := c.Param("filename")
-	if filename == "" {
-		return c.HTML(404, "not found")
-	}
-	fp := path.Join(f.base.cfg.UploadDir, filename)
-	if _, err := os.Stat(fp); errors.Is(err, os.ErrNotExist) {
-		return c.HTML(404, "not found")
-	}
-	return c.File(path.Join(f.base.cfg.UploadDir, filename))
-}
-
 // Upload godoc
 //
 //	@Tags		File
@@ -99,7 +87,7 @@ func (f FileHandler) Upload(c echo.Context) error {
 		if err := CompressImage(f, img_filepath, thumb_filepath, 30); err != nil {
 			f.base.log.Error().Msgf("压缩图片异常:%s", err)
 		}
-		
+
 		result = append(result, "/upload/"+img_filename)
 	}
 	return SuccessResp(c, result)
