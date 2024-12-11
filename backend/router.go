@@ -52,6 +52,10 @@ func setupRouter(injector do.Injector) {
 	tagGroup := apiGroup.Group("/tag")
 	tagGroup.POST("/list", tagHandler.List)
 
+	fileGroup := apiGroup.Group("/file")
+	fileGroup.POST("/upload", fileHandler.Upload)
+	fileGroup.POST("/s3PreSigned", fileHandler.S3PreSigned)
+
 	uploadGroup := e.Group("/upload")
 	uploadGroup.Use(middleware.StaticWithConfig(middleware.StaticConfig{
 		Root:       cfg.UploadDir,
@@ -59,9 +63,6 @@ func setupRouter(injector do.Injector) {
 		IgnoreBase: true,
 		Browse:     false,
 	}))
-
-	e.POST("/api/file/upload", fileHandler.Upload)
-	e.POST("/api/file/s3PreSigned", fileHandler.S3PreSigned)
 
 	if cfg.EnableSwagger {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
