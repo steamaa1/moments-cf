@@ -11,8 +11,8 @@ LINUX_AMD64_BINARY_NAME := $(BINARY_NAME)-linux-amd64-$(VERSION)
 LINUX_ARM64_BINARY_NAME := $(BINARY_NAME)-linux-arm64-$(VERSION)
 DARWIN_AMD64_BINARY_NAME := $(BINARY_NAME)-darwin-amd64-$(VERSION)
 DARWIN_ARM64_BINARY_NAME := $(BINARY_NAME)-darwin-arm64-$(VERSION)
-WINDOWS_AMD64_BINARY_NAME := $(BINARY_NAME)-windows-amd64.exe-$(VERSION)
-WINDOWS_ARM64_BINARY_NAME := $(BINARY_NAME)-windows-arm64.exe-$(VERSION)
+WINDOWS_AMD64_BINARY_NAME := $(BINARY_NAME)-windows-amd64-$(VERSION).exe
+WINDOWS_ARM64_BINARY_NAME := $(BINARY_NAME)-windows-arm64-$(VERSION).exe
 
 BUILD_CMD_DEV := go build -ldflags="-X main.version=$(VERSION) -X main.commitId=$(COMMIT_ID)"
 BUILD_CMD_PROD := go build -tags prod -ldflags="-s -w -X main.version=$(VERSION) -X main.commitId=$(COMMIT_ID)"
