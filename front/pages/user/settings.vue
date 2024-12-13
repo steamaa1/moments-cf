@@ -73,8 +73,8 @@ const uploadAvatarUrl = async (files: FileList) => {
     }
   }
   const result = await useUpload(files)
-  toast.success("上传成功")
-  if (result) {
+  if (result.length) {
+    toast.success("上传成功")
     state.avatarUrl = result[0]
   }
 }
@@ -87,8 +87,8 @@ const uploadCoverUrl = async (files: FileList) => {
     }
   }
   const result = await useUpload(files)
-  toast.success("上传成功")
-  if (result) {
+  if (result.length) {
+    toast.success("上传成功")
     state.coverUrl = result[0]
   }
 }

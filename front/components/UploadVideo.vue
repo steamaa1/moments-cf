@@ -108,9 +108,9 @@ const handleUploadVideo = async (files: FileList) => {
     filename.value = name
     total.value = totalSize
     current.value = index
-  }) as string[]
-  toast.success("上传成功")
-  if (result) {
+  })
+  if (result.length) {
+    toast.success("上传成功")
     onlineUrl.value = result[0]
   }
 }

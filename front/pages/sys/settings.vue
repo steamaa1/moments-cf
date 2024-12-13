@@ -154,8 +154,8 @@ const uploadFavicon = async (files: FileList) => {
     }
   }
   const result = await useUpload(files)
-  toast.success("上传成功")
-  if (result) {
+  if (result.length) {
+    toast.success("上传成功")
     state.favicon = result[0]
   }
 }
