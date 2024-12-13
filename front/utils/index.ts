@@ -1,170 +1,226 @@
-import type {ResultVO, SysConfigVO} from "~/types";
-import {toast} from "vue-sonner";
-import {useGlobalState} from "~/store";
-import markdownit from "markdown-it";
-import { fromHighlighter } from '@shikijs/markdown-it/core'
-import { createHighlighterCore } from 'shiki/core'
-
+import type { ResultVO, SysConfigVO } from "~/types"
+import { toast } from "vue-sonner"
+import { useGlobalState } from "~/store"
+import markdownit from "markdown-it"
+import { fromHighlighter } from "@shikijs/markdown-it/core"
+import { createHighlighterCore } from "shiki/core"
 
 const global = useGlobalState()
 
-export async function useMyFetch<T>(url: string, data?: any) {
-    const userinfo = global.value.userinfo
-    const headers: Record<string, any> = {}
-    if (userinfo.token) {
-        headers["x-api-token"] = userinfo.token
-    }
-    try {
-        const res = await $fetch<ResultVO<T>>(`/api${url}`, {
-            method: "post",
-            body: data ? JSON.stringify(data) : null,
-            headers: headers
-        })
-        if (res.code !== 0) {
-            if (res.code === 3 || res.code === 4) {
-                global.value.userinfo = {}
-                window.location.href = '/'
-                throw new Error(res.message)
-            }
-            toast.error(res.message || "请求失败")
-            throw new Error(res.message)
-        }
-        return res.data
-    } finally {
+export const useMyFetch = async <T>(url: string, data?: any) => {
+  const headers: Record<string, string> = {}
 
+  const userinfo = global.value.userinfo
+  if (userinfo.token) {
+    headers["x-api-token"] = userinfo.token
+  }
+
+  const res = await $fetch<ResultVO<T>>(`/api${url}`, {
+    method: "post",
+    body: data ? JSON.stringify(data) : null,
+    headers: headers,
+  })
+
+  if (!res || res.code !== 0) {
+    if (!res) {
+      throw new Error("请求失败")
     }
+
+    if (res.code === 3 || res.code === 4) {
+      global.value.userinfo = {}
+      window.location.href = "/"
+      throw new Error(res.message || "请求失败")
+    }
+
+    toast.error(res.message || "请求失败")
+    throw new Error(res.message)
+  }
+
+  return res.data
 }
 
-async function upload2S3(files: FileList, onProgress: Function | undefined) {
-    const result = []
-    for (let i = 0; i < files.length; i++) {
-        const {preSignedUrl, imageUrl} = await useMyFetch<{
-            preSignedUrl: string,
-            imageUrl: string
-        }>('/file/s3PreSigned', {
-            contentType: files[0].type
-        })
-        await upload2S3WithProgress(preSignedUrl, files[i], (name: string, progress: number) => {
-            onProgress && onProgress(files.length, i + 1, name, progress)
-        })
-        result.push(imageUrl)
-    }
-    return result
-}
+type OnProgressCallback = (progress: number) => void
 
-const upload2S3WithProgress = async (preSignedUrl: string, file: File, onProgress: Function) => {
-    new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.upload.addEventListener('progress', e => onProgress(file.name, e.loaded / e.total));
-        xhr.addEventListener('load', () => {
-            if (xhr.responseType === 'json') {
-                return resolve(JSON.parse(xhr.responseText))
-            }
-            return resolve(null);
-        });
-        xhr.addEventListener('error', () => reject(new Error('File upload failed')));
-        xhr.addEventListener('abort', () => reject(new Error('File upload aborted')));
-        xhr.open('PUT', preSignedUrl, true);
-        //@ts-ignore
-        xhr.setRequestHeader('Content-Type', null);
-        xhr.send(file);
+type OnTotalProgressCallback = (
+  totalCount: number,
+  currentCount: number,
+  name: string,
+  progress: number,
+) => void
+
+const upload2S3WithProgress = async (
+  preSignedUrl: string,
+  file: File,
+  onProgress: OnProgressCallback,
+): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+
+    xhr.addEventListener("load", () => {
+      resolve()
     })
+    xhr.addEventListener("error", () => reject(new Error("File upload failed")))
+    xhr.addEventListener("abort", () =>
+      reject(new Error("File upload aborted")),
+    )
+    xhr.upload.addEventListener("progress", e => onProgress(e.loaded / e.total))
+
+    xhr.open("PUT", preSignedUrl, true)
+    xhr.send(file)
+  })
+
+const upload2S3 = async (
+  files: FileList,
+  onProgress?: OnTotalProgressCallback,
+): Promise<string[]> => {
+  const result: string[] = []
+
+  for (let i = 0; i < files.length; i++) {
+    try {
+      const res = await useMyFetch<{
+        preSignedUrl: string
+        imageUrl: string
+      }>("/file/s3PreSigned", {
+        contentType: files[0].type,
+      })
+
+      if (!res || !res.preSignedUrl) {
+        toast.error("获取 S3 上传地址失败")
+        continue
+      }
+
+      const file = files[i]
+      await upload2S3WithProgress(res.preSignedUrl, file, progress => {
+        if (onProgress) {
+          onProgress(files.length, i + 1, file.name, progress)
+        }
+      })
+      result.push(res.imageUrl)
+    } catch (err) {
+      toast.error(`上传图片到 S3 失败, ${err}`)
+    }
+  }
+
+  return result
 }
 
+const uploadFile2ServerWithProgress = (
+  url: string,
+  file: File,
+  onProgress: OnProgressCallback,
+): Promise<string[]> =>
+  new Promise<string[]>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
 
-export async function useUpload(files: FileList | null, onProgress: Function | undefined = undefined) {
-    const sysConfig = useState<SysConfigVO>('sysConfig')
-    const result = []
-    if (!files || files.length === 0) {
-        toast.error("没有选择文件")
-        return
-    }
+    xhr.addEventListener("load", () => {
+      const res = JSON.parse(xhr.responseText)
+      if (!res || res.code !== 0) {
+        return reject(new Error(`${res?.message || "请求失败"}`))
+      }
+
+      resolve(res.data || [])
+    })
+    xhr.addEventListener("error", () => reject(new Error("File upload failed")))
+    xhr.addEventListener("abort", () =>
+      reject(new Error("File upload aborted")),
+    )
+    xhr.upload.addEventListener("progress", e => onProgress(e.loaded / e.total))
+
+    xhr.open("POST", url, true)
 
     const userinfo = global.value.userinfo
-    const headers: Record<string, any> = {}
     if (userinfo.token) {
-        headers["x-api-token"] = userinfo.token
+      xhr.setRequestHeader("x-api-token", userinfo.token)
     }
 
-    if (sysConfig.value.enableS3) {
-        return await upload2S3(files, onProgress)
+    const formData = new FormData()
+    formData.append("files", file)
+
+    xhr.send(formData)
+  })
+
+const uploadFile2Server = async (
+  files: FileList,
+  onProgress?: OnTotalProgressCallback,
+): Promise<string[]> => {
+  const result: string[] = []
+
+  for (let i = 0; i < files.length; i++) {
+    try {
+      const file = files[i]
+      const urlList = await uploadFile2ServerWithProgress(
+        "/api/file/upload",
+        file,
+        progress => {
+          if (onProgress) {
+            onProgress(files.length, i + 1, file.name, progress)
+          }
+        },
+      )
+
+      if (!urlList.length) {
+        toast.error(`上传图片到服务器失败`)
+        continue
+      }
+
+      result.push(...urlList)
+    } catch (e) {
+      toast.error(`上传图片到服务器失败, ${e}`)
     }
-    for (let i = 0; i < files.length; i++) {
-        try {
-            const res = await uploadFiles('/api/file/upload', files[i], (name: string, progress: number) => {
-                onProgress && onProgress(files.length, i + 1, name, progress)
-            }) as {
-                code: number,
-                data: string[],
-                message: string
-            }
-            if (res.code !== 0) {
-                toast.error(res.message || "请求失败")
-                throw new Error(res.message)
-            }
-            result.push(...res.data)
-        } catch (e) {
-            if (e instanceof Error) {
-                throw new Error(e.message)
-            }
-            throw new Error("接口异常")
-        }
-    }
-    return result
+  }
+
+  return result
 }
 
+export const useUpload = async (
+  files: FileList,
+  onProgress?: OnTotalProgressCallback,
+): Promise<string[]> => {
+  if (files.length === 0) {
+    toast.error("没有选择文件")
+    return []
+  }
 
-export const uploadFiles = (url: string, file: File, onProgress: Function) =>
-    new Promise((resolve, reject) => {
-        const userinfo = global.value.userinfo
-        const xhr = new XMLHttpRequest();
-        xhr.upload.addEventListener('progress', e => onProgress(file.name, e.loaded / e.total));
-        xhr.addEventListener('load', () => resolve(JSON.parse(xhr.responseText)));
-        xhr.addEventListener('error', () => reject(new Error('File upload failed')));
-        xhr.addEventListener('abort', () => reject(new Error('File upload aborted')));
-        xhr.open('POST', url, true);
-        if (userinfo.token) {
-            xhr.setRequestHeader('x-api-token', userinfo.token);
-        }
-        const formData = new FormData();
-        formData.append("files", file)
-        xhr.send(formData);
-    });
+  const sysConfig = useState<SysConfigVO>("sysConfig")
+  if (sysConfig.value.enableS3) {
+    return upload2S3(files, onProgress)
+  }
 
+  return uploadFile2Server(files, onProgress)
+}
 
 export const md = markdownit({
-    html: true,
-    linkify: true,
-    typographer: true,
-    breaks: true,
+  html: true,
+  linkify: true,
+  typographer: true,
+  breaks: true,
 })
 
 createHighlighterCore({
-    themes: [
-        import('shiki/themes/github-dark.mjs')
-    ],
-    langs: [
-        import('shiki/langs/c.mjs'),
-        import('shiki/langs/css.mjs'),
-        import('shiki/langs/html.mjs'),
-        import('shiki/langs/javascript.mjs'),
-        import('shiki/langs/json.mjs'),
-        import('shiki/langs/python.mjs'),
-        import('shiki/langs/shellscript.mjs'),
-        import('shiki/langs/sql.mjs'),
-        import('shiki/langs/tsx.mjs'),
-        import('shiki/langs/xml.mjs'),
-        import('shiki/langs/yaml.mjs'),
-        import('shiki/langs/go.mjs'),
-    ],
-    loadWasm: import('shiki/wasm')
-}).then((highlighter)=>{
+  themes: [import("shiki/themes/github-dark.mjs")],
+  langs: [
+    import("shiki/langs/c.mjs"),
+    import("shiki/langs/css.mjs"),
+    import("shiki/langs/html.mjs"),
+    import("shiki/langs/javascript.mjs"),
+    import("shiki/langs/json.mjs"),
+    import("shiki/langs/python.mjs"),
+    import("shiki/langs/shellscript.mjs"),
+    import("shiki/langs/sql.mjs"),
+    import("shiki/langs/tsx.mjs"),
+    import("shiki/langs/xml.mjs"),
+    import("shiki/langs/yaml.mjs"),
+    import("shiki/langs/go.mjs"),
+  ],
+  loadWasm: import("shiki/wasm"),
+}).then(highlighter => {
+  md.use(
     //@ts-ignore
-    md.use(fromHighlighter(highlighter, {
-        themes: {
-            light: 'github-dark',
-            dark: 'github-dark',
-        }
-    }))
+    fromHighlighter(highlighter, {
+      themes: {
+        light: "github-dark",
+        dark: "github-dark",
+      },
+    }),
+  )
 })
-

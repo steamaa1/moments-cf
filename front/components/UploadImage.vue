@@ -4,7 +4,7 @@
     <template #panel="{close}">
       <div class="p-4 flex flex-col gap-2">
         <div class="text-xs text-gray-400">本地上传</div>
-        <UInput type="file" size="sm" icon="i-heroicons-folder" @change="upload" multiple/>
+        <UInput type="file" size="sm" icon="i-heroicons-folder" accept="image/*" @change="upload" multiple/>
         <UTextarea :rows="5" placeholder="或者输入在线图片地址,逗号分隔,最多9张" v-model="imgs"/>
 
         <p v-if="filename" class="text-xs text-gray-400">正在上传({{ current }}/{{ total }})</p>
@@ -30,23 +30,21 @@ const filename = ref('')
 const total = ref(0)
 const current = ref(0)
 const upload = async (files: FileList) => {
-  for (let i = 0; i < files.length; i++) {
-    if (files[i].type.indexOf("image") < 0){
-      toast.error("只能上传图片");
-      return
-    }
+  const containsOtherFile = [...files].some(file => !file.type.startsWith('image/'))
+  if (containsOtherFile) {
+    toast.error("只能上传图片");
+    return
   }
+
   const result = await useUpload(files, (totalSize: number, index: number, name: string, p: number) => {
     progress.value = Math.round(p * 100)
     filename.value = name
     total.value = totalSize
     current.value = index
-  }) as string[]
-  toast.success("上传成功")
-  if (result) {
-    setTimeout(()=>{
-      imgs.value = (imgs.value ? imgs.value + ',' : '') + result.join(",")
-    },200)
+  })
+  if (result && result.length) {
+    toast.success("上传成功")
+    imgs.value = [imgs.value, ...result].filter(Boolean).join(',')
   }
 }
 
