@@ -63,7 +63,7 @@ func (m MemoHandler) RemoveImage(c echo.Context) error {
 		return FailResp(c, ParamError)
 	}
 
-	if !strings.HasPrefix(req.Img, "/upload/") {
+	if !strings.HasPrefix(req.Img, "/upload/") || strings.Contains(req.Img, "..") {
 		return SuccessResp(c, h{})
 	}
 
