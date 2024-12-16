@@ -6,18 +6,28 @@
 [![telegram-group](https://img.shields.io/badge/Telegram-group-blue)](https://t.me/simple_moments)
 [![discussion](https://img.shields.io/badge/moments-论坛-blue)](https://discussion.mblog.club)
 
-从 v0.2.1 开始，使用 Golang 重写了服务端, 目前已经基本实现了 0.2.0 版本的功能，同时软件包体积也更小了。
+从 v0.2.1 开始，使用 Golang 重写了服务端，目前已经基本实现了 v0.2.0 版本的功能，同时软件包体积也更小了。
 
 注意：如果你在找 v0.2.0 版本，请 [点击这里](https://github.com/kingwrcy/moments/blob/master/README.md)。
 
 # 功能列表
 
+## 用户
+
 - 默认用户名和密码是 admin/a123456，登录后可以在后台修改
-- 多用户模式，后台可以自由开启是否运行注册多用户
-- 标签的定义，以 # 号开头，空格 / 空行结尾的中间的部分会被认为是标签
-- 在 memo 发言的输入框里点击右键可以选择标签来插入
-- 支持完整的 Markdown，但是目前样式只适配了常用的几个标签，更多的待接下来完善
-- 代码块支持一键复制按钮
+- 多用户模式，可以在后台打开或关闭用户注册功能
+
+## Memo
+
+- 支持设置标签
+- 支持上传图片，可以上传到服务器，也可以在后台开启上传到 S3
+- 支持生成缩略图，但是目前只支持直接上传到服务器时生成缩略图，将在后续版本中支持上传到 S3 时生成缩略图
+- 支持 Markdown 语法，但是目前只适配了常用的几个标签，将在后续版本中支持更多的标签
+- 支持点赞
+- 支持评论，可以在后台打开或关闭评论功能
+
+## 其他
+
 - 支持回到顶部按钮，PC 端和手机端都有
 
 更多说明可以[点击这里查看](https://discussion.mblog.club/post/pto2hqoFzDKzZMpvoPZKYuP)。
@@ -38,9 +48,16 @@ Moments 支持以下环境变量，可按需修改进行配置：
 | ENABLE_SWAGGER    | 是否启用 swagger 文档 | false，可选 true，启用后可访问路径 /swagger/index.html |
 | ENABLE_SQL_OUTPUT | 是否启用 SQL 调试日志 | false                                                  |
 
+除了直接配置环境变量外，还可以可选地在工作目录下创建 `.env` 文件，Moments 在启动时也会读取该文件来决定最终生效的配置，例如：
+
+```
+JWT_KEY=
+LOG_LEVEL=info
+```
+
 ## 使用 Docker
 
-注意：需要将以下示例中的 $JWT_KEY 替换为你的真实 JWT_KEY，生成方式可[参考这里](#jwt_key-生成)。
+注意：需要将以下示例中的 `$JWT_KEY` 替换为你的真实 `JWT_KEY`，生成方式可[参考这里](#jwt_key-生成)。
 
 使用命令行启动容器：
 
@@ -53,6 +70,12 @@ docker run -d \
   --name moments \
   kingwrcy/moments:latest
 ```
+
+注意：
+
+- 容器默认的工作目录是 `/app/data`，所以示例中将 `/app/data` 目录挂载到主机的 `/var/moments` 目录，实现持久化数据的目的，可以按需修改
+- 示例中使用的是 `latest` 标签来拉取最新的发布版；也可以通过 `dev` 标签来拉取最新的开发版，通常开发版会包含最新的功能和问题修复，但是相对于发布版的稳定较差
+- 无论使用 `latest` 版本还是 `dev` 版本，我们都 _强烈建议将容器的数据持久化，并（定期或在升级前）备份到安全的介质中_
 
 也可以使用 Docker Compose:
 
@@ -68,12 +91,21 @@ services:
     ports:
       - 3000:3000
     volumes:
-      - /var/moments:/app/data
+      - /var/moments:/app/data # 持久化数据到主机的 /var/moments 目录，可以按需修改
 ```
 
-## 使用二进制文件
+## 使用可执行文件
 
-待补充
+首先在 [Release](https://github.com/kingwrcy/moments/releases) 列表根据自己的平台下载最新版本的可执行文件。
+
+例如以下是用于 `windows-amd64` 的文件：
+
+| 文件名                                       | 说明                                           |
+| -------------------------------------------- | ---------------------------------------------- |
+| moments-windows-amd64-x.x.x.exe.zip          | 包含可执行文件的压缩包，解压后可得到可执行文件 |
+| moments-windows-amd64-x.x.x.exe-checksum.txt | 包含对应可执行文件的 `MD5` 校验码              |
+
+下载并解压完成后，可以可选地检查可执行文件的校验码是否匹配，然后通过环境变量或 `.env` 文件进行配置，最后直接打开可执行文件即可。
 
 ## JWT_KEY 生成
 
@@ -95,7 +127,87 @@ echo $RANDOM | sha256sum
 
 ### 在线生成
 
-打开 [https://tool.lu/uuid](https://tool.lu/uuid) 生成不带 `-` 的 UUID 作为 JWT_KEY。
+打开 [https://tool.lu/uuid](https://tool.lu/uuid) 生成不带 `-` 的 `UUID` 作为 `JWT_KEY`。
+
+# 开发
+
+## 环境
+
+配置以下开发环境：
+
+- Go 1.22.5（或更高）
+- NodeJS 18（或更高）
+- PNPM 包管理工具
+
+对于 `VSCode`，我们推荐安装以下插件：
+
+- eamodio.gitlens
+- esbenp.prettier-vscode
+- dbaeumer.vscode-eslint
+- Nuxtr.nuxt-vscode-extentions
+- golang.go
+- qwtel.sqlite-viewer
+
+另外，也可以直接通过 `VSCode` 的 [devcontainer](https://code.visualstudio.com/docs/devcontainers/containers) 来启动配置好的开发环境。
+
+## 启动
+
+对于安装了 `make` 命令的用户，可以使用以下命令启动项目：
+
+后端：
+
+```bash
+# 进入项目根目录
+cd moments
+
+# 编译并启动后端，注意此时的工作目录是项目根目录 moments
+make backend-dev
+```
+
+单独创建一个终端，启动前端：
+
+```bash
+# 进入项目根目录
+cd moments
+
+# 安装前端依赖
+make frontend-install
+
+# 启动前端
+make frontend-dev
+```
+
+如果没有 `make` 命令，也可以使用以下命令启动项目：
+
+后端：
+
+```bash
+# 进入后端目录
+cd moments/backend
+
+# 编译后端
+go build -ldflags="-X main.version=local -X main.commitId=local" -o ./dist/moments
+
+# 启动后端，注意此时的工作目录是后端目录 moments/backend
+./dist/moments
+```
+
+单独创建一个终端，启动前端：
+
+```bash
+# 进入前端目录
+cd moments/front
+
+# 安装前端依赖
+pnpm install
+
+# 启动前端
+pnpm run dev
+```
+
+## 访问
+
+启动项目后可以通过 `http://localhost:3000` 来访问前端，并且开发环境的接口请求会通过前端代理转发到后端来避免跨域问题。
 
 # 其他版本
 
