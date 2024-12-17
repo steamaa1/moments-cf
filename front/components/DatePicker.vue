@@ -27,10 +27,13 @@ const attrs = {
   'is-dark': { selector: 'html', darkClass: 'dark' },
   'first-day-of-week': 2,
 }
+
+const columns = document.body.clientWidth < 520 ? 1 : 2
+
 </script>
 
 <template>
-  <VCalendarDatePicker v-if="date && (typeof date === 'object')" v-model.range="date" :columns="2" v-bind="{ ...attrs, ...$attrs }" />
+  <VCalendarDatePicker v-if="date && (typeof date === 'object')" v-model.range="date" :columns="columns" v-bind="{ ...attrs, ...$attrs }" />
   <VCalendarDatePicker v-else v-model="date" v-bind="{ ...attrs, ...$attrs }" />
 </template>
 
