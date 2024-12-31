@@ -30,17 +30,17 @@
                 </svg>
               </template>
             </UInput>
-            <div class="text-xs text-gray-400">视频直链地址</div>
-            <UInput type="text" size="sm" v-model="onlineUrl">
-              <template #leading>
-                <UIcon name="i-carbon-video-player" class="w-6 h-6"/>
-              </template>
-            </UInput>
           </template>
           
           <template #uploadVideo="{ item }">
             <div class="text-xs text-gray-400">上传视频</div>
             <UInput type="file" size="sm" icon="i-heroicons-folder" @change="handleUploadVideo"/>
+            <div class="text-xs text-gray-400">视频地址</div>
+            <UInput type="text" size="sm" v-model="onlineUrl">
+              <template #leading>
+                <UIcon name="i-carbon-video-player" class="w-6 h-6"/>
+              </template>
+            </UInput>
 
             <p v-if="filename" class="text-xs text-gray-400">正在上传({{ current }}/{{ total }})</p>
             <p v-if="filename" class="text-xs text-gray-400">{{ filename }}</p>
