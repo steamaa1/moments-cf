@@ -72,6 +72,12 @@ useHead({
       rel: 'apple-touch-icon-precomposed',
       href: sysConfigVO.favicon || '/favicon.png',
     },
+    {
+      rel: 'alternate',
+      type: 'application/rss+xml',
+      title: '我的 RSS 订阅',
+      href: sysConfigVO.rss || '',
+    },
   ],
   style: [
     {

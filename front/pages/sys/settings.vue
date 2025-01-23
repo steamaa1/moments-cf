@@ -36,6 +36,9 @@
     <UFormGroup label="自定义JS" name="js" :ui="{label:{base:'font-bold'}}">
       <UTextarea v-model="state.js" :rows="5"/>
     </UFormGroup>
+    <UFormGroup label="自定义RSS" name="rss" :ui="{label:{base:'font-bold'}}">
+      <UTextarea v-model="state.rss" :rows="1"/>
+    </UFormGroup>
     <UFormGroup label="评论最大字数" name="maxCommentLength" :ui="{label:{base:'font-bold'}}">
       <UInput v-model.number="state.maxCommentLength"/>
     </UFormGroup>
@@ -119,6 +122,7 @@ const state = reactive({
   beiAnNo: "",
   css: "",
   js: "",
+  rss: "",
   enableS3: false,
   s3: {
     domain: "",
