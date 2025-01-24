@@ -58,6 +58,7 @@ export type SysConfigVO = {
     beiAnNo: string,
     css: string,
     js: string,
+    rss: string,
     enableAutoLoadNextPage: boolean
     enableS3: boolean
     enableRegister: boolean

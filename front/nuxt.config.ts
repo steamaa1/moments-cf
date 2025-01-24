@@ -50,6 +50,10 @@ export default defineNuxtConfig({
                     target: "http://localhost:37892",
                     changeOrigin: true,
                 },
+                "/rss": {
+                    target: "http://localhost:37892",
+                    changeOrigin: true,
+                },
                 "/swagger": {
                     target: "http://localhost:37892",
                     changeOrigin: true,
