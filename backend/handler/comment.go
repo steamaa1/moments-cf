@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/labstack/echo/v4"
@@ -145,6 +146,10 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 			comment.Username = currentUser.Nickname
 			comment.Author = fmt.Sprintf("%d", currentUser.Id)
 		}
+	}
+
+	if comment.Username == "" {
+		comment.Username = fmt.Sprintf("匿名用户_%s", uuid.New().String()[:4])
 	}
 
 	comment.Content = req.Content
