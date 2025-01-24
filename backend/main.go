@@ -1,9 +1,10 @@
-//go:build !prod
-
 package main
 
 import (
+	"embed"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/ilyakaznacheev/cleanenv"
 	_ "github.com/joho/godotenv/autoload"
@@ -14,6 +15,7 @@ import (
 	myMiddleware "github.com/kingwrcy/moments/middleware"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
 	_ "github.com/swaggo/echo-swagger"
@@ -22,6 +24,8 @@ import (
 
 var version string
 var commitId string
+
+var staticFiles *embed.FS
 
 func newEchoEngine(_ do.Injector) (*echo.Echo, error) {
 	e := echo.New()
@@ -70,6 +74,19 @@ func main() {
 	e.Use(myMiddleware.Auth(injector))
 
 	setupRouter(injector)
+
+	if staticFiles != nil {
+		e.Use(middleware.StaticWithConfig(middleware.StaticConfig{
+			Root:       "public",
+			HTML5:      true,
+			IgnoreBase: false,
+			Browse:     false,
+			Filesystem: http.FS(staticFiles),
+			Skipper: func(c echo.Context) bool {
+				return strings.HasPrefix(c.Request().URL.Path, "/swagger/")
+			},
+		}))
+	}
 
 	migrateTo3(tx, myLogger)
 

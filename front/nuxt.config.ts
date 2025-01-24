@@ -2,14 +2,19 @@
 export default defineNuxtConfig({
     compatibilityDate: '2024-04-03',
     devtools: {enabled: false},
-    modules: ["@nuxt/ui", '@vueuse/nuxt', 'dayjs-nuxt'],
+    modules: ["@nuxt/ui", '@nuxt/icon', '@vueuse/nuxt', 'dayjs-nuxt'],
     ssr: false,
     dayjs: {
         locales: ['zh'],
         defaultLocale: 'zh'
     },
-    ui: {
-        icons: ['carbon']
+    icon: {
+        clientBundle: {
+            scan: {
+                globInclude: ['**/*.{vue,jsx,tsx}', 'node_modules/@nuxt/ui/**/*.js'],
+                globExclude: ['.*', 'coverage', 'test', 'tests', 'dist', 'build'],
+            },
+        },
     },
     tailwindcss: {
         safelist: [
@@ -44,7 +49,6 @@ export default defineNuxtConfig({
                 "/api": {
                     target: "http://localhost:37892",
                     changeOrigin: true,
-                    // rewrite: (path) => path.replace(/^\/api/, ""),
                 },
                 "/upload": {
                     target: "http://localhost:37892",
