@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/kingwrcy/moments/db"
@@ -94,7 +95,7 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 		feed.Items = append(feed.Items, &feeds.Item{
 			Title:       fmt.Sprintf("Memo #%d", memo.Id),
 			Link:        &feeds.Link{Href: fmt.Sprintf("%s/memo/%d", host, memo.Id)},
-			Description: parseMarkdownToHtml(memo.Content),
+			Description: parseMarkdownToHtml(getContentWithExt(memo)),
 			Author:      &feeds.Author{Name: memo.User.Nickname},
 			Created:     *memo.CreatedAt,
 			Updated:     *memo.UpdatedAt,
@@ -123,4 +124,97 @@ func parseMarkdownToHtml(md string) string {
 	cleanHTML := bluemonday.UGCPolicy().SanitizeBytes(html)
 
 	return string(cleanHTML)
+}
+
+func getContentWithExt(memo db.Memo) string {
+	content := memo.Content
+
+	// 处理链接
+	if memo.ExternalUrl != "" {
+		content += fmt.Sprintf("\n\n[%s](%s)", memo.ExternalTitle, memo.ExternalUrl)
+	}
+
+	// 处理图片
+	if memo.Imgs != "" {
+		imgs := strings.Split(memo.Imgs, ",")
+		for _, img := range imgs {
+			content += fmt.Sprintf("\n\n![%s](%s)", img, img)
+		}
+	}
+
+	var ext vo.MemoExt
+	err := json.Unmarshal([]byte(memo.Ext), &ext)
+	if err != nil {
+		ext = vo.MemoExt{
+			Music:       vo.Music{},
+			Video:       vo.Video{},
+			DoubanBook:  vo.DoubanBook{},
+			DoubanMovie: vo.DoubanMovie{},
+		}
+	}
+
+	// 处理音乐
+	if ext.Music.Server != "" {
+		var title, url string
+		switch ext.Music.Server {
+		// 网易云音乐
+		case "netease":
+			title = "网易云音乐"
+			switch ext.Music.Type {
+			case "search":
+				ext.Music.ID = "/m/?s=" + ext.Music.ID
+			default:
+				ext.Music.ID = "?id=" + ext.Music.ID
+			}
+			url = fmt.Sprintf("https://music.163.com/#/%s%s",
+				ext.Music.Type, ext.Music.ID)
+		// QQ音乐
+		case "tencent":
+			title = "QQ音乐"
+			switch ext.Music.Type {
+			case "song":
+				url = fmt.Sprintf("https://y.qq.com/n/ryqq/songDetail/%s", ext.Music.ID)
+			case "playlist":
+				url = fmt.Sprintf("https://y.qq.com/n/ryqq/playlist/%s", ext.Music.ID)
+			case "album":
+				url = fmt.Sprintf("https://y.qq.com/n/ryqq/albumDetail/%s", ext.Music.ID)
+			case "search":
+				url = fmt.Sprintf("https://y.qq.com/n/ryqq/search?w=%s&t=song", ext.Music.ID)
+			case "artist":
+				url = fmt.Sprintf("https://y.qq.com/n/ryqq/singer/%s", ext.Music.ID)
+			default:
+			}
+		// 酷狗音乐
+		case "kugou":
+			title = "酷狗音乐"
+			switch ext.Music.Type {
+			case "song":
+				url = fmt.Sprintf("https://www.kugou.com/mixsong/%s.html", ext.Music.ID)
+			case "playlist":
+				url = fmt.Sprintf("https://www.kugou.com/songlist/%s/", ext.Music.ID)
+			case "album":
+				url = fmt.Sprintf("https://www.kugou.com/album/info/%s/", ext.Music.ID)
+			case "search":
+				url = fmt.Sprintf("https://www.kugou.com/yy/html/search.html#searchType=song&searchKeyWord=%s", ext.Music.ID)
+			case "artist":
+				url = fmt.Sprintf("https://www.kugou.com/singer/info/%s/", ext.Music.ID)
+			default:
+			}
+		// 虾米音乐 已停止服务
+		case "xiami":
+		// 百度音乐 不可用
+		case "baidu":
+		default:
+		}
+
+		if url != "" {
+			content += fmt.Sprintf("\n\n[%s](%s)", title, url)
+		}
+	}
+
+	// TODO: 处理视频
+
+	// TODO: 处理豆瓣
+
+	return content
 }
