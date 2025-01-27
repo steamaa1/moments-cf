@@ -32,7 +32,11 @@ func NewRssHandler(injector do.Injector) *RssHandler {
 }
 
 func (r RssHandler) GetRss(c echo.Context) error {
-	rss, err := r.generateRss(c.Request().Host)
+	frontendHost := c.QueryParam("frontend_host")
+	if frontendHost == "" {
+		frontendHost = c.Request().Host // 如果未传递，则使用后端默认的 Host
+	}
+	rss, err := r.generateRss(frontendHost)
 	if err != nil {
 		return FailRespWithMsg(c, Fail, "RSS生成失败")
 	}
@@ -95,7 +99,7 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 		feed.Items = append(feed.Items, &feeds.Item{
 			Title:       fmt.Sprintf("Memo #%d", memo.Id),
 			Link:        &feeds.Link{Href: fmt.Sprintf("%s/memo/%d", host, memo.Id)},
-			Description: parseMarkdownToHtml(getContentWithExt(memo)),
+			Description: parseMarkdownToHtml(getContentWithExt(memo, host)),
 			Author:      &feeds.Author{Name: memo.User.Nickname},
 			Created:     *memo.CreatedAt,
 			Updated:     *memo.UpdatedAt,
@@ -126,7 +130,7 @@ func parseMarkdownToHtml(md string) string {
 	return string(cleanHTML)
 }
 
-func getContentWithExt(memo db.Memo) string {
+func getContentWithExt(memo db.Memo, host string) string {
 	content := memo.Content
 
 	// 处理链接
@@ -138,6 +142,9 @@ func getContentWithExt(memo db.Memo) string {
 	if memo.Imgs != "" {
 		imgs := strings.Split(memo.Imgs, ",")
 		for _, img := range imgs {
+			if img[:7] == "/upload" {
+				img = host + img
+			}
 			content += fmt.Sprintf("\n\n![%s](%s)", img, img)
 		}
 	}
@@ -224,6 +231,9 @@ func getContentWithExt(memo db.Memo) string {
 			title = "Youtube视频"
 		}
 		url = ext.Video.Value
+		if ext.Video.Type == "online" && url[:7] == "/upload" {
+			url = host + url
+		}
 		content += fmt.Sprintf("\n\n[%s](%s)", title, url)
 	}
 
