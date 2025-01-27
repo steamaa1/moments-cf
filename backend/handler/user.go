@@ -2,13 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/labstack/echo/v4"
 	"github.com/samber/do/v2"
 	"golang.org/x/crypto/bcrypt"
-	"time"
 )
 
 type UserHandler struct {
@@ -140,7 +141,8 @@ func (u UserHandler) Reg(c echo.Context) error {
 func (u UserHandler) ProfileForUser(c echo.Context) error {
 	username := c.Param("username")
 	var user db.User
-	u.base.db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl").Find(&user, "username = ?", username)
+	u.base.db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl",
+		"enableEmail", "smtpHost", "smtpPort", "smtpUsername", "smtpPassword").Find(&user, "username = ?", username)
 	return SuccessResp(c, user)
 }
 
@@ -158,7 +160,8 @@ func (u UserHandler) Profile(c echo.Context) error {
 	context := c.(CustomContext)
 	currentUser := context.CurrentUser()
 	if currentUser == nil {
-		u.base.db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl").First(&currentUser)
+		u.base.db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl",
+			"enableEmail", "smtpHost", "smtpPort", "smtpUsername", "smtpPassword").First(&currentUser)
 	}
 
 	return SuccessResp(c, currentUser)
@@ -200,6 +203,11 @@ func (u UserHandler) SaveProfile(c echo.Context) error {
 	user.AvatarUrl = req.AvatarUrl
 	user.Slogan = req.Slogan
 	user.CoverUrl = req.CoverUrl
+	user.EnableEmail = req.EnableEmail
+	user.SmtpHost = req.SmtpHost
+	user.SmtpPort = req.SmtpPort
+	user.SmtpUsername = req.SmtpUsername
+	user.SmtpPassword = req.SmtpPassword
 
 	if err := u.base.db.Save(&user).Error; err != nil {
 		return FailResp(c, Fail)

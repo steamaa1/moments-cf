@@ -46,7 +46,8 @@ func Auth(injector do.Injector) echo.MiddlewareFunc {
 				//zlog.Info().Msgf("user id :%v", claims["userId"])
 
 				var user model.User
-				db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl").First(&user, claims["userId"])
+				db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl",
+					"enableEmail", "smtpHost", "smtpPort", "smtpUsername", "smtpPassword").First(&user, claims["userId"])
 				cc.SetUser(&user)
 				return next(cc)
 			} else {

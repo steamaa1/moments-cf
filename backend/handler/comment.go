@@ -12,6 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kingwrcy/moments/db"
+
+	"github.com/kingwrcy/moments/pkg/mail"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
@@ -197,7 +199,38 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 	comment.MemoId = req.MemoID
 
 	if err = c.base.db.Save(&comment).Error; err == nil {
+		go func() {
+			if err = c.commentEmailNotification(comment); err != nil {
+				c.base.log.Error().Msgf("邮件通知失败,原因:%s", err)
+			}
+		}()
 		return SuccessResp(ctx, h{})
 	}
 	return FailRespWithMsg(ctx, Fail, "发表评论失败")
+}
+
+func (c CommentHandler) commentEmailNotification(comment db.Comment) error {
+	var (
+		memo db.Memo
+		user db.User
+	)
+	c.base.db.First(&memo, comment.MemoId)
+	c.base.db.First(&user, memo.UserId)
+
+	// 未开启邮件通知
+	if !user.EnableEmail {
+		return nil
+	}
+
+	// 获取smtp客户端
+	client, err := mail.GetSMTPClient(user.SmtpHost, user.SmtpPort, user.SmtpUsername, user.SmtpPassword)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	c.base.log.Info().Msgf("成功连接到SMTP服务器")
+
+	// TODO 发送邮件
+
+	return nil
 }

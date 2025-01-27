@@ -49,6 +49,11 @@ export type UserVO = {
     avatarUrl: string
     slogan: string
     coverUrl: string
+    enableEmail: boolean
+    smtpHost: string
+    smtpPort: string
+    smtpUsername: string
+    smtpPassword: string
 }
 export type SysConfigVO = {
     version: string,
