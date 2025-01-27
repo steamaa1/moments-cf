@@ -37,7 +37,7 @@
       <UTextarea v-model="state.js" :rows="5"/>
     </UFormGroup>
     <UFormGroup label="自定义RSS" name="rss" :ui="{label:{base:'font-bold'}}">
-      <UTextarea v-model="state.rss" :rows="1"/>
+      <UTextarea v-model="state.rss" :rows="1"  placeholder="留空使用默认配置"/>
     </UFormGroup>
     <UFormGroup label="评论最大字数" name="maxCommentLength" :ui="{label:{base:'font-bold'}}">
       <UInput v-model.number="state.maxCommentLength"/>
