@@ -84,7 +84,7 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 	now := time.Now()
 	feed := &feeds.Feed{
 		Title:       sysConfigVO.Title,
-		Link:        &feeds.Link{Href: fmt.Sprintf("%s/rss/default_rss.xml", host)},
+		Link:        &feeds.Link{Href: fmt.Sprintf("%s/rss", host)},
 		Description: user.Slogan,
 		Author:      &feeds.Author{Name: user.Nickname},
 		Created:     now,
@@ -212,9 +212,28 @@ func getContentWithExt(memo db.Memo) string {
 		}
 	}
 
-	// TODO: 处理视频
+	// 处理视频
+	if ext.Video.Type != "" {
+		var title, url string
+		switch ext.Video.Type {
+		case "online":
+			title = "在线视频"
+		case "bilibili":
+			title = "Bilibili视频"
+		case "youtube":
+			title = "Youtube视频"
+		}
+		url = ext.Video.Value
+		content += fmt.Sprintf("\n\n[%s](%s)", title, url)
+	}
 
-	// TODO: 处理豆瓣
+	// 处理豆瓣
+	if ext.DoubanBook.Url != "" {
+		content += fmt.Sprintf("\n\n[%s](%s)", ext.DoubanBook.Title, ext.DoubanBook.Url)
+	}
+	if ext.DoubanMovie.Url != "" {
+		content += fmt.Sprintf("\n\n[%s](%s)", ext.DoubanMovie.Title, ext.DoubanMovie.Url)
+	}
 
 	return content
 }
