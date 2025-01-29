@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -200,8 +201,14 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 
 	if err = c.base.db.Save(&comment).Error; err == nil {
 		go func() {
-			if err = c.commentEmailNotification(comment); err != nil {
+			frontendHost := ctx.QueryParam("frontend_host")
+			if frontendHost == "" {
+				frontendHost = ctx.Request().Host // 如果未传递，则使用后端默认的 Host
+			}
+			if err = c.commentEmailNotification(comment, frontendHost); err != nil {
 				c.base.log.Error().Msgf("邮件通知失败,原因:%s", err)
+			} else {
+				c.base.log.Info().Msgf("成功发送邮件")
 			}
 		}()
 		return SuccessResp(ctx, h{})
@@ -209,13 +216,17 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 	return FailRespWithMsg(ctx, Fail, "发表评论失败")
 }
 
-func (c CommentHandler) commentEmailNotification(comment db.Comment) error {
+func (c CommentHandler) commentEmailNotification(comment db.Comment, host string) error {
 	var (
-		memo db.Memo
-		user db.User
+		memo        db.Memo
+		user        db.User
+		sysConfig   db.SysConfig
+		sysConfigVO vo.FullSysConfigVO
 	)
 	c.base.db.First(&memo, comment.MemoId)
 	c.base.db.First(&user, memo.UserId)
+	c.base.db.First(&sysConfig)
+	_ = json.Unmarshal([]byte(sysConfig.Content), &sysConfigVO)
 
 	// 未开启邮件通知
 	if !user.EnableEmail {
@@ -230,7 +241,39 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment) error {
 	defer client.Close()
 	c.base.log.Info().Msgf("成功连接到SMTP服务器")
 
-	// TODO 发送邮件
+	// 通过模板生成邮件内容
+	data := mail.CommentNotificationEmailData{
+		Title:     sysConfigVO.Title,
+		Host:      host,
+		Poster:    user.Nickname,
+		Commenter: comment.Username,
+		CommentAt: comment.CreatedAt,
+		Content:   comment.Content,
+		MemoId:    comment.MemoId,
+	}
+	emailbody, err := mail.GenerateCommentNotificationEmail(data)
+	if err != nil {
+		return err
+	}
+
+	// 附加头部字段
+	from := user.SmtpUsername
+	to := []string{user.SmtpUsername}
+	subject := sysConfigVO.Title
+	email := fmt.Sprintf(
+		"From: %s\r\n"+
+			"To: %s\r\n"+
+			"Subject: %s\r\n"+
+			"MIME-Version: 1.0\r\n"+
+			"Content-Type: text/html; charset=utf-8\r\n"+
+			"\r\n"+
+			"%s",
+		from, to, subject, emailbody)
+
+	// 发送邮件
+	if err := client.SendMail(from, to, strings.NewReader(email)); err != nil {
+		return err
+	}
 
 	return nil
 }
