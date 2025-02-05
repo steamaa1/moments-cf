@@ -31,3 +31,7 @@ func VerifyEmail(email string) error {
 	return nil
 
 }
+
+func GetDomain(email string) string {
+	return verifier.ParseAddress(email).Domain
+}

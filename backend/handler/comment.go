@@ -242,13 +242,12 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 	} else { // 直接评论
 		targetEmail = user.Email
 	}
-	if mail.VerifyEmail(targetEmail) != nil {
-		return nil
+	if err := mail.VerifyEmail(targetEmail); err != nil {
+		return err
 	}
 
 	// 获取smtp客户端
 	client, err := mail.GetSMTPClient(sysConfigVO.SmtpHost, sysConfigVO.SmtpPort, sysConfigVO.SmtpUsername, sysConfigVO.SmtpPassword)
-
 	if err != nil {
 		return err
 	}
@@ -280,15 +279,18 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 	from := sysConfigVO.SmtpUsername
 	to := []string{targetEmail}
 	subject := sysConfigVO.Title
+	domain := mail.GetDomain(sysConfigVO.SmtpUsername)
 	email := fmt.Sprintf(
 		"From: %s\r\n"+
 			"To: %s\r\n"+
 			"Subject: %s\r\n"+
+			"Date: "+time.Now().Format(time.RFC1123Z)+"\r\n"+
+			"Message-ID: <"+time.Now().Format("20060102150405")+"@%s>\r\n"+
 			"MIME-Version: 1.0\r\n"+
 			"Content-Type: text/html; charset=utf-8\r\n"+
 			"\r\n"+
 			"%s",
-		from, to, subject, emailbody)
+		from, to, subject, domain, emailbody)
 
 	// 发送邮件
 	if err := client.SendMail(from, to, strings.NewReader(email)); err != nil {
