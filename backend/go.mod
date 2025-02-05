@@ -22,7 +22,7 @@ require (
 	github.com/swaggo/swag v1.16.3
 	github.com/tidwall/gjson v1.17.2
 	golang.org/x/crypto v0.31.0
-	golang.org/x/net v0.27.0
+	golang.org/x/net v0.29.0
 	gorm.io/gorm v1.25.11
 )
 
@@ -32,6 +32,7 @@ require (
 	github.com/aokoli/goutils v1.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
+	github.com/hbollon/go-edlib v1.6.0 // indirect
 	github.com/huandu/xstrings v1.2.0 // indirect
 	github.com/imdario/mergo v0.3.6 // indirect
 	github.com/jaytaylor/html2text v0.0.0-20180606194806-57d518f124b0 // indirect
@@ -45,6 +46,7 @@ require (
 )
 
 require (
+	github.com/AfterShip/email-verifier v1.4.1
 	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/andybalholm/cascadia v1.3.2 // indirect

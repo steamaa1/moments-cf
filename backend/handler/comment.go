@@ -233,20 +233,22 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 	// 未开启邮件通知
 	if !sysConfigVO.EnableEmail {
 		return nil
-	} else {
-		if comment.ReplyTo != "" { // 回复评论
-			if comment.ReplyEmail == "" {
-				return nil
-			}
-		} else { // 直接评论
-			if user.Email == "" {
-				return nil
-			}
-		}
+	}
+
+	// 验证邮箱是否可用
+	var targetEmail string
+	if comment.ReplyTo != "" { // 回复评论
+		targetEmail = comment.ReplyEmail
+	} else { // 直接评论
+		targetEmail = user.Email
+	}
+	if mail.VerifyEmail(targetEmail) != nil {
+		return nil
 	}
 
 	// 获取smtp客户端
 	client, err := mail.GetSMTPClient(sysConfigVO.SmtpHost, sysConfigVO.SmtpPort, sysConfigVO.SmtpUsername, sysConfigVO.SmtpPassword)
+
 	if err != nil {
 		return err
 	}
@@ -276,12 +278,7 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 
 	// 附加头部字段
 	from := sysConfigVO.SmtpUsername
-	var to []string
-	if comment.ReplyTo != "" { // 回复评论
-		to = []string{comment.ReplyEmail}
-	} else { // 直接评论
-		to = []string{user.Email}
-	}
+	to := []string{targetEmail}
 	subject := sysConfigVO.Title
 	email := fmt.Sprintf(
 		"From: %s\r\n"+
