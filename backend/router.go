@@ -16,6 +16,7 @@ func setupRouter(injector do.Injector) {
 	sycConfigHandler := handler.NewSysConfigHandler(injector)
 	fileHandler := handler.NewFileHandler(injector)
 	tagHandler := handler.NewTagHandler(injector)
+	rssHandler := handler.NewRssHandler(injector)
 	e := do.MustInvoke[*echo.Echo](injector)
 	cfg := do.MustInvoke[*vo.AppConfig](injector)
 
@@ -63,6 +64,9 @@ func setupRouter(injector do.Injector) {
 		IgnoreBase: true,
 		Browse:     false,
 	}))
+
+	rssGroup := e.Group("/rss")
+	rssGroup.GET("", rssHandler.GetRss)
 
 	if cfg.EnableSwagger {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
