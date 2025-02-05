@@ -12,6 +12,7 @@ type User struct {
 	AvatarUrl       string     `gorm:"column:avatarUrl" json:"avatarUrl,omitempty"`                                    //头像URL
 	Slogan          string     `gorm:"column:slogan" json:"slogan,omitempty"`                                          //标语
 	CoverUrl        string     `gorm:"column:coverUrl" json:"coverUrl,omitempty"`                                      //封面URL
+	Email           string     `gorm:"column:email" json:"email,omitempty"`                                            //邮箱
 	CreatedAt       *time.Time `gorm:"column:createdAt;default:CURRENT_TIMESTAMP;NOT NULL" json:"createdAt,omitempty"` //创建时间
 	UpdatedAt       *time.Time `gorm:"column:updatedAt;NOT NULL" json:"updatedAt,omitempty"`                           //更新时间
 	EnableS3        string     `gorm:"column:enableS3;default:false;NOT NULL" json:"enableS3,omitempty"`

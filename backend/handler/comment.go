@@ -146,8 +146,10 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 		currentUser := context.CurrentUser()
 		if currentUser == nil {
 			comment.Username = req.Username
+			comment.Email = req.Email
 		} else {
 			comment.Username = currentUser.Nickname
+			comment.Email = currentUser.Email
 			comment.Author = fmt.Sprintf("%d", currentUser.Id)
 		}
 	}
@@ -192,10 +194,10 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 	}
 
 	comment.Content = req.Content
-	comment.Email = req.Email
 	comment.CreatedAt = &now
 	comment.UpdatedAt = &now
 	comment.ReplyTo = req.ReplyTo
+	comment.ReplyEmail = req.ReplyEmail
 	comment.Website = req.Website
 	comment.MemoId = req.MemoID
 
@@ -231,6 +233,16 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 	// 未开启邮件通知
 	if !sysConfigVO.EnableEmail {
 		return nil
+	} else {
+		if comment.ReplyTo != "" { // 回复评论
+			if comment.ReplyEmail == "" {
+				return nil
+			}
+		} else { // 直接评论
+			if user.Email == "" {
+				return nil
+			}
+		}
 	}
 
 	// 获取smtp客户端
@@ -242,10 +254,16 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 	c.base.log.Info().Msgf("成功连接到SMTP服务器")
 
 	// 通过模板生成邮件内容
+	var poster string
+	if comment.ReplyTo != "" { // 回复评论
+		poster = comment.ReplyTo
+	} else { // 直接评论
+		poster = user.Nickname
+	}
 	data := mail.CommentNotificationEmailData{
 		Title:     sysConfigVO.Title,
 		Host:      host,
-		Poster:    user.Nickname,
+		Poster:    poster,
 		Commenter: comment.Username,
 		CommentAt: comment.CreatedAt,
 		Content:   comment.Content,
@@ -258,7 +276,12 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 
 	// 附加头部字段
 	from := sysConfigVO.SmtpUsername
-	to := []string{sysConfigVO.SmtpUsername}
+	var to []string
+	if comment.ReplyTo != "" { // 回复评论
+		to = []string{comment.ReplyEmail}
+	} else { // 直接评论
+		to = []string{user.Email}
+	}
 	subject := sysConfigVO.Title
 	email := fmt.Sprintf(
 		"From: %s\r\n"+

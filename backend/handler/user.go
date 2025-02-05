@@ -141,7 +141,7 @@ func (u UserHandler) Reg(c echo.Context) error {
 func (u UserHandler) ProfileForUser(c echo.Context) error {
 	username := c.Param("username")
 	var user db.User
-	u.base.db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl").Find(&user, "username = ?", username)
+	u.base.db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl", "email").Find(&user, "username = ?", username)
 	return SuccessResp(c, user)
 }
 
@@ -159,7 +159,7 @@ func (u UserHandler) Profile(c echo.Context) error {
 	context := c.(CustomContext)
 	currentUser := context.CurrentUser()
 	if currentUser == nil {
-		u.base.db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl").First(&currentUser)
+		u.base.db.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl", "email").First(&currentUser)
 	}
 
 	return SuccessResp(c, currentUser)
@@ -201,6 +201,7 @@ func (u UserHandler) SaveProfile(c echo.Context) error {
 	user.AvatarUrl = req.AvatarUrl
 	user.Slogan = req.Slogan
 	user.CoverUrl = req.CoverUrl
+	user.Email = req.Email
 
 	if err := u.base.db.Save(&user).Error; err != nil {
 		return FailResp(c, Fail)
