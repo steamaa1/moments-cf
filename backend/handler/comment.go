@@ -229,12 +229,12 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 	_ = json.Unmarshal([]byte(sysConfig.Content), &sysConfigVO)
 
 	// 未开启邮件通知
-	if !user.EnableEmail {
+	if !sysConfigVO.EnableEmail {
 		return nil
 	}
 
 	// 获取smtp客户端
-	client, err := mail.GetSMTPClient(user.SmtpHost, user.SmtpPort, user.SmtpUsername, user.SmtpPassword)
+	client, err := mail.GetSMTPClient(sysConfigVO.SmtpHost, sysConfigVO.SmtpPort, sysConfigVO.SmtpUsername, sysConfigVO.SmtpPassword)
 	if err != nil {
 		return err
 	}
@@ -257,8 +257,8 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 	}
 
 	// 附加头部字段
-	from := user.SmtpUsername
-	to := []string{user.SmtpUsername}
+	from := sysConfigVO.SmtpUsername
+	to := []string{sysConfigVO.SmtpUsername}
 	subject := sysConfigVO.Title
 	email := fmt.Sprintf(
 		"From: %s\r\n"+

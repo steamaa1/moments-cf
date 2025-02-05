@@ -27,11 +27,6 @@ type User struct {
 	BeianNo         string     `gorm:"column:beianNo" json:"beianNo,omitempty"`
 	Css             string     `gorm:"column:css" json:"css,omitempty"`
 	Js              string     `gorm:"column:js" json:"js,omitempty"`
-	EnableEmail     bool       `gorm:"column:enableEmail" json:"enableEmail,omitempty"`
-	SmtpHost        string     `gorm:"column:smtpHost" json:"smtpHost,omitempty"`
-	SmtpPort        string     `gorm:"column:smtpPort" json:"smtpPort,omitempty"`
-	SmtpUsername    string     `gorm:"column:smtpUsername" json:"smtpUsername,omitempty"`
-	SmtpPassword    string     `gorm:"column:smtpPassword" json:"smtpPassword,omitempty"`
 	Memos           []Memo     `json:"memos,omitempty"`
 }
 
