@@ -66,8 +66,14 @@ func (r RssHandler) generateRss(host string) (string, error) {
 	// 查询动态
 	tx := r.base.db.Preload("User", func(x *gorm.DB) *gorm.DB {
 		return x.Select("username", "nickname", "id")
-	}).Where("pinned = 0")
-	tx.Order("createdAt desc").Limit(10).Find(&memos)
+	}).Where("showType = 1")
+	tx.Order("createdAt desc").Limit(15).Find(&memos)
+
+	for i := range memos {
+		if *memos[i].Pinned {
+			memos[i].Content = "**【置顶】**\n" + memos[i].Content
+		}
+	}
 
 	feed := generateFeed(memos, &sysConfigVO, &user, host)
 
