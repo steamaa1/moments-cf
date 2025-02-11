@@ -40,6 +40,9 @@ func (r RssHandler) GetRss(c echo.Context) error {
 	if err != nil {
 		return FailRespWithMsg(c, Fail, "RSS生成失败")
 	}
+
+	c.Response().Header().Set(echo.HeaderContentType, "application/rss+xml; charset=utf-8")
+
 	return c.String(http.StatusOK, rss)
 }
 
@@ -102,9 +105,11 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 
 	feed.Items = []*feeds.Item{}
 	for _, memo := range memos {
+		memoLink := fmt.Sprintf("%s/memo/%d", host, memo.Id)
 		feed.Items = append(feed.Items, &feeds.Item{
+			Id:          memoLink,
 			Title:       fmt.Sprintf("Memo #%d", memo.Id),
-			Link:        &feeds.Link{Href: fmt.Sprintf("%s/memo/%d", host, memo.Id)},
+			Link:        &feeds.Link{Href: memoLink},
 			Description: parseMarkdownToHtml(getContentWithExt(memo, host)),
 			Author:      &feeds.Author{Name: memo.User.Nickname},
 			Created:     *memo.CreatedAt,
