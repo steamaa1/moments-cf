@@ -242,9 +242,6 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 	} else { // 直接评论
 		targetEmail = user.Email
 	}
-	if err := mail.VerifyEmail(targetEmail); err != nil {
-		return err
-	}
 
 	// 获取smtp客户端
 	client, err := mail.GetSMTPClient(sysConfigVO.SmtpHost, sysConfigVO.SmtpPort, sysConfigVO.SmtpUsername, sysConfigVO.SmtpPassword)
@@ -275,11 +272,17 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 		return err
 	}
 
+	getDomain := func(email string) string {
+		index := strings.LastIndex(email, "@")
+		domain := strings.ToLower(email[index+1:])
+		return domain
+	}
+
 	// 附加头部字段
 	from := sysConfigVO.SmtpUsername
 	to := []string{targetEmail}
 	subject := sysConfigVO.Title
-	domain := mail.GetDomain(sysConfigVO.SmtpUsername)
+	domain := getDomain(sysConfigVO.SmtpUsername)
 	email := fmt.Sprintf(
 		"From: %s\r\n"+
 			"To: %s\r\n"+
