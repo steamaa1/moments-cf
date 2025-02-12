@@ -53,6 +53,11 @@ type FullSysConfigVO struct {
 	CommentOrder           string `json:"commentOrder,omitempty"`     //评论展示的顺序,asc:顺序,desc:逆序
 	TimeFormat             string `json:"timeFormat,omitempty"`       //时间格式
 	EnableRegister         bool   `json:"enableRegister"`             //是否开启注册用户
+	EnableEmail            bool   `json:"enableEmail,omitempty"`      //是否启用邮箱
+	SmtpHost               string `json:"smtpHost,omitempty"`         //smtp host
+	SmtpPort               string `json:"smtpPort,omitempty"`         //smtp port
+	SmtpUsername           string `json:"smtpUsername,omitempty"`     //smtp username
+	SmtpPassword           string `json:"smtpPassword,omitempty"`     //smtp password
 	Version                string `json:"version,omitempty"`
 	CommitId               string `json:"commitId,omitempty"`
 }

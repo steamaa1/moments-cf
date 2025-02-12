@@ -10,6 +10,7 @@
       <template v-if="!global.userinfo.token">
         <UInput placeholder="姓名" v-model="state.username"/>
         <UInput placeholder="网站" v-model="state.website"/>
+        <UInput placeholder="邮箱" v-model="state.email"/>
       </template>
       <UButton color="white" @click="comment">发布评论</UButton>
     </div>
@@ -28,6 +29,7 @@ const props = defineProps<{
   commentId: number
   memoId: number
   replyTo?: string
+  replyEmail?: string
 }>()
 const pid = computed(() => {
   return `${props.memoId}#${props.commentId}`
@@ -35,7 +37,8 @@ const pid = computed(() => {
 const global = useGlobalState()
 const localCommentUserinfo = useStorage('localCommentUserinfo', {
   username: "",
-  website: ""
+  website: "",
+  email: "",
 })
 const emojiShow = ref(false)
 const currentCommentBox = useState('currentCommentBox')
@@ -44,8 +47,10 @@ const state = reactive({
   content: "",
   memoId: props.memoId,
   replyTo: props.replyTo,
+  replyEmail: props.replyEmail,
   username: localCommentUserinfo.value.username,
   website: localCommentUserinfo.value.website,
+  email: localCommentUserinfo.value.email,
 })
 
 
@@ -66,18 +71,20 @@ const doComment = async (token?: string) => {
     localCommentUserinfo.value = {
       username: state.username,
       website: state.website,
+      email: state.email,
     }
   }
   if (state.content.length > sysConfig.value.maxCommentLength) {
     toast.error("评论字数超过限制长度:" + sysConfig.value.maxCommentLength)
     return
   }
-  await useMyFetch('/comment/add', {...state, token:token})
+  await useMyFetch(`/comment/add?frontend_host=${encodeURIComponent(window.location.origin)}`, {...state, token:token})
   toast.success("评论成功!")
   currentCommentBox.value = ''
   state.username = ''
   state.content = ''
   state.website = ''
+  state.email = ''
   memoChangedEvent.emit(props.memoId)
 }
 

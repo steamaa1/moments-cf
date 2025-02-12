@@ -18,4 +18,5 @@ type ProfileReq struct {
 	Slogan    string `json:"slogan,omitempty"`    //标语
 	CoverUrl  string `json:"coverUrl,omitempty"`  //封面URL
 	Password  string `json:"password,omitempty"`  //密码,不修改不要填写
+	Email     string `json:"email,omitempty"`     //邮箱
 }
