@@ -239,6 +239,7 @@ pnpm run dev
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/Secretlovez"><img src="https://avatars.githubusercontent.com/u/40491055?v=4?s=80" width="80px;" alt="Secretlovez"/><br /><sub><b>Secretlovez</b></sub></a><br /></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/jkjoy"><img src="https://avatars.githubusercontent.com/u/23159890?v=4?s=80" width="80px;" alt="浪子"/><br /><sub><b>浪子</b></sub></a><br /></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/lateautumn2"><img src="https://avatars.githubusercontent.com/u/57248164?v=4?s=80" width="80px;" alt="lateautumn2"/><br /><sub><b>lateautumn2</b></sub></a><br /></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Jinvic"><img src="https://avatars.githubusercontent.com/u/77521861?v=4?s=80" width="80px;" alt="Jinvic"/><br /><sub><b>Jinvic</b></sub></a><br /></td>
     </tr>
   </tbody>
 </table>

@@ -4,18 +4,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/kingwrcy/moments/db"
+
+	"github.com/kingwrcy/moments/pkg/mail"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
 	"gorm.io/gorm"
-	"io"
-	"net/http"
-	"net/url"
-	"strconv"
-	"time"
 )
 
 type CommentHandler struct {
@@ -142,26 +146,156 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 		currentUser := context.CurrentUser()
 		if currentUser == nil {
 			comment.Username = req.Username
+			comment.Email = req.Email
 		} else {
 			comment.Username = currentUser.Nickname
+			comment.Email = currentUser.Email
 			comment.Author = fmt.Sprintf("%d", currentUser.Id)
 		}
 	}
 
 	if comment.Username == "" {
-		comment.Username = fmt.Sprintf("匿名用户_%s", uuid.New().String()[:4])
+		// 尝试从 Cookie 中获取用户名
+		cookie, err := ctx.Cookie("anonymous_username")
+		var username string
+
+		if err != nil || cookie.Value == "" {
+			// 如果 Cookie 不存在，生成一个新的随机用户名
+			username = fmt.Sprintf("匿名用户_%s", uuid.New().String()[:4])
+			// 对用户名进行 URL 编码
+			encodedUsername := url.QueryEscape(username)
+			// 设置 Cookie，有效期 7 天
+			ctx.SetCookie(&http.Cookie{
+				Name:    "anonymous_username",
+				Value:   encodedUsername,
+				Path:    "/",
+				Expires: time.Now().Add(7 * 24 * time.Hour),
+			})
+		} else {
+			// 如果 Cookie 存在，使用之前的用户名
+			decodedUsername, err := url.QueryUnescape(cookie.Value)
+			if err != nil {
+				// 生成一个新的随机用户名
+				username = fmt.Sprintf("匿名用户_%s", uuid.New().String()[:4])
+				// 对用户名进行 URL 编码
+				encodedUsername := url.QueryEscape(username)
+				// 设置 Cookie，有效期 7 天
+				ctx.SetCookie(&http.Cookie{
+					Name:    "anonymous_username",
+					Value:   encodedUsername,
+					Path:    "/",
+					Expires: time.Now().Add(7 * 24 * time.Hour),
+				})
+			} else {
+				username = decodedUsername
+			}
+		}
+		comment.Username = username
 	}
 
 	comment.Content = req.Content
-	comment.Email = req.Email
 	comment.CreatedAt = &now
 	comment.UpdatedAt = &now
 	comment.ReplyTo = req.ReplyTo
+	comment.ReplyEmail = req.ReplyEmail
 	comment.Website = req.Website
 	comment.MemoId = req.MemoID
 
 	if err = c.base.db.Save(&comment).Error; err == nil {
+		go func() {
+			frontendHost := ctx.QueryParam("frontend_host")
+			if frontendHost == "" {
+				frontendHost = ctx.Request().Host // 如果未传递，则使用后端默认的 Host
+			}
+			if err = c.commentEmailNotification(comment, frontendHost); err != nil {
+				c.base.log.Error().Msgf("邮件通知失败,原因:%s", err)
+			} else {
+				c.base.log.Info().Msgf("成功发送邮件")
+			}
+		}()
 		return SuccessResp(ctx, h{})
 	}
 	return FailRespWithMsg(ctx, Fail, "发表评论失败")
+}
+
+func (c CommentHandler) commentEmailNotification(comment db.Comment, host string) error {
+	var (
+		memo        db.Memo
+		user        db.User
+		sysConfig   db.SysConfig
+		sysConfigVO vo.FullSysConfigVO
+	)
+	c.base.db.First(&memo, comment.MemoId)
+	c.base.db.First(&user, memo.UserId)
+	c.base.db.First(&sysConfig)
+	_ = json.Unmarshal([]byte(sysConfig.Content), &sysConfigVO)
+
+	// 未开启邮件通知
+	if !sysConfigVO.EnableEmail {
+		return nil
+	}
+
+	// 验证邮箱是否可用
+	var targetEmail string
+	if comment.ReplyTo != "" { // 回复评论
+		targetEmail = comment.ReplyEmail
+	} else { // 直接评论
+		targetEmail = user.Email
+	}
+	if err := mail.VerifyEmail(targetEmail); err != nil {
+		return err
+	}
+
+	// 获取smtp客户端
+	client, err := mail.GetSMTPClient(sysConfigVO.SmtpHost, sysConfigVO.SmtpPort, sysConfigVO.SmtpUsername, sysConfigVO.SmtpPassword)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	c.base.log.Info().Msgf("成功连接到SMTP服务器")
+
+	// 通过模板生成邮件内容
+	var poster string
+	if comment.ReplyTo != "" { // 回复评论
+		poster = comment.ReplyTo
+	} else { // 直接评论
+		poster = user.Nickname
+	}
+	data := mail.CommentNotificationEmailData{
+		Title:     sysConfigVO.Title,
+		Host:      host,
+		Poster:    poster,
+		Commenter: comment.Username,
+		CommentAt: comment.CreatedAt,
+		Content:   comment.Content,
+		MemoId:    comment.MemoId,
+	}
+	emailbody, err := mail.GenerateCommentNotificationEmail(data)
+	if err != nil {
+		return err
+	}
+
+	// 附加头部字段
+	from := sysConfigVO.SmtpUsername
+	to := []string{targetEmail}
+	subject := sysConfigVO.Title
+	domain := mail.GetDomain(sysConfigVO.SmtpUsername)
+	email := fmt.Sprintf(
+		"From: %s\r\n"+
+			"To: %s\r\n"+
+			"Subject: %s\r\n"+
+			"Date: "+time.Now().Format(time.RFC1123Z)+"\r\n"+
+			"Message-ID: <"+time.Now().Format("20060102150405")+"@%s>\r\n"+
+			"MIME-Version: 1.0\r\n"+
+			"Content-Type: text/html; charset=utf-8\r\n"+
+			"\r\n"+
+			"%s",
+		from, to, subject, domain, emailbody)
+
+	// 发送邮件
+	if err := client.SendMail(from, to, strings.NewReader(email)); err != nil {
+		return err
+	}
+
+	return nil
 }

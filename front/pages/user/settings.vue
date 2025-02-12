@@ -26,6 +26,9 @@
     <UFormGroup label="密码" name="slogan" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.password" type="password" placeholder="留空则不修改密码"/>
     </UFormGroup>
+    <UFormGroup label="邮箱" name="email" :ui="{label:{base:'font-bold'}}">
+      <UInput v-model="state.email" type="email" placeholder="若管理员启用了邮件通知，将在收到评论时发送邮件通知"/>
+    </UFormGroup>
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
 </template>
@@ -44,6 +47,7 @@ const state = reactive({
   slogan: "",
   avatarUrl: "",
   coverUrl: "",
+  email: "",
   css: "",
   js: "",
 })

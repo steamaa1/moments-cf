@@ -92,6 +92,21 @@
           <UInput v-model="state.s3.thumbnailSuffix"/>
         </UFormGroup>
       </template>
+      <UFormGroup label="是否启用邮件通知" name="enableEmail" :ui="{label:{base:'font-bold'}}">
+      <UToggle v-model="state.enableEmail"/>
+      </UFormGroup>
+      <UFormGroup label="smtp服务器" name="smtpHost" :ui="{label:{base:'font-bold'}}">
+        <UInput v-model="state.smtpHost" placeholder="smtp.qq.com"/>
+      </UFormGroup>
+      <UFormGroup label="smtp端口" name="smtpPort" :ui="{label:{base:'font-bold'}}">
+        <UInput v-model="state.smtpPort" placeholder="465"/>
+      </UFormGroup>
+      <UFormGroup label="smtp用户名" name="smtpUsername" :ui="{label:{base:'font-bold'}}">
+        <UInput v-model="state.smtpUsername" placeholder="******@qq.com"/>
+      </UFormGroup>
+      <UFormGroup label="smtp密码/授权码" name="smtpPassword" :ui="{label:{base:'font-bold'}}">
+        <UInput v-model="state.smtpPassword" type="password"/>
+      </UFormGroup>
 
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
@@ -132,7 +147,12 @@ const state = reactive({
     secretKey: "",
     endpoint: "",
     thumbnailSuffix: ""
-  }
+  },
+  enableEmail: false,
+  smtpHost: "",
+  smtpPort: "",
+  smtpUsername: "",
+  smtpPassword: "",
 })
 
 const reload = async () => {

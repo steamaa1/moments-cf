@@ -49,6 +49,7 @@ export type UserVO = {
     avatarUrl: string
     slogan: string
     coverUrl: string
+    email: string
 }
 export type SysConfigVO = {
     version: string,
@@ -72,6 +73,11 @@ export type SysConfigVO = {
     s3:{
         thumbnailSuffix:string
     }
+    enableEmail: boolean
+    smtpHost: string
+    smtpPort: string
+    smtpUsername: string
+    smtpPassword: string
 }
 
 
