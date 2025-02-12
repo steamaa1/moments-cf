@@ -22,9 +22,7 @@
     <div class="w-full" @contextmenu.prevent="onContextMenu">
       <div class="relative">
         <UTextarea ref="contentRef" v-model="state.content" :rows="8" autoresize padded autofocus/>
-        <div class="animate-bounce absolute right-2 bottom-1 cursor-pointer text-xl select-none" @click="toggleEmoji">
-          😊
-        </div>
+        <UIcon class="text-[#9fc84a] w-6 h-6 animate-bounce absolute right-2 bottom-1 cursor-pointer select-none" name="i-carbon-face-satisfied" @click="toggleEmoji"/>
       </div>
 
       <Emoji v-if="emojiShow" @selected="emojiSelected" @close="emojiShow=false"/>

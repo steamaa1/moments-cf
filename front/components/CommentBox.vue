@@ -1,18 +1,20 @@
 <template>
   <div class="px-4 py-2 flex flex-col gap-2 mt-2" v-if="currentCommentBox === pid">
     <div class="relative">
-      <UTextarea :rows="3" autofocus :placeholder="replyTo ? `回复给${replyTo}` : ''" v-model="state.content"/>
-      <div class="animate-bounce absolute right-2 bottom-1 cursor-pointer text-xl select-none" @click="toggleEmoji">😊
+      <UTextarea :rows="4" autofocus :placeholder="replyTo ? `回复给${replyTo}` : ''" v-model="state.content"/>
+      <div class="flex gap-2 absolute right-3 bottom-2">
+        <UIcon v-if="!global.userinfo.token" class="text-[#9fc84a] w-6 h-6 animate-bounce cursor-pointer" name="i-carbon-user-avatar" @click="toggleUser"/>
+        <UIcon class="text-[#9fc84a] w-6 h-6 cursor-pointer select-none" name="i-carbon-face-satisfied" @click="toggleEmoji"/>
+        <UButton class="cursor-pointer text-xs" color="white" @click="comment">发送</UButton>
       </div>
     </div>
     <Emoji v-if="emojiShow" @selected="emojiSelected"/>
-    <div class="flex gap-1">
+    <div v-if="userShow" class="flex gap-1">
       <template v-if="!global.userinfo.token">
         <UInput placeholder="姓名" v-model="state.username"/>
         <UInput placeholder="网站" v-model="state.website"/>
         <UInput placeholder="邮箱" v-model="state.email"/>
       </template>
-      <UButton color="white" @click="comment">发布评论</UButton>
     </div>
   </div>
 </template>
@@ -40,6 +42,7 @@ const localCommentUserinfo = useStorage('localCommentUserinfo', {
   website: "",
   email: "",
 })
+const userShow = ref(false)
 const emojiShow = ref(false)
 const currentCommentBox = useState('currentCommentBox')
 const sysConfig = useState<SysConfigVO>('sysConfig')
@@ -88,7 +91,9 @@ const doComment = async (token?: string) => {
   memoChangedEvent.emit(props.memoId)
 }
 
-
+const toggleUser = () => {
+  userShow.value = !userShow.value
+}
 const toggleEmoji = () => {
   emojiShow.value = !emojiShow.value
 }
