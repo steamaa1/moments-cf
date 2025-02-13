@@ -40,6 +40,9 @@ func (r RssHandler) GetRss(c echo.Context) error {
 	if err != nil {
 		return FailRespWithMsg(c, Fail, "RSS生成失败")
 	}
+
+	c.Response().Header().Set(echo.HeaderContentType, "application/rss+xml; charset=utf-8")
+
 	return c.String(http.StatusOK, rss)
 }
 
@@ -65,9 +68,15 @@ func (r RssHandler) generateRss(host string) (string, error) {
 
 	// 查询动态
 	tx := r.base.db.Preload("User", func(x *gorm.DB) *gorm.DB {
-		return x.Select("username", "nickname", "id")
-	}).Where("pinned = 0")
-	tx.Order("createdAt desc").Limit(10).Find(&memos)
+		return x.Select("username", "nickname", "id", "email")
+	}).Where("showType = 1")
+	tx.Order("createdAt desc").Limit(15).Find(&memos)
+
+	for i := range memos {
+		if *memos[i].Pinned {
+			memos[i].Content = "**【置顶】**\n" + memos[i].Content
+		}
+	}
 
 	feed := generateFeed(memos, &sysConfigVO, &user, host)
 
@@ -90,17 +99,19 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 		Title:       sysConfigVO.Title,
 		Link:        &feeds.Link{Href: fmt.Sprintf("%s/rss", host)},
 		Description: user.Slogan,
-		Author:      &feeds.Author{Name: user.Nickname},
+		Author:      &feeds.Author{Name: user.Nickname, Email: user.Email},
 		Created:     now,
 	}
 
 	feed.Items = []*feeds.Item{}
 	for _, memo := range memos {
+		memoLink := fmt.Sprintf("%s/memo/%d", host, memo.Id)
 		feed.Items = append(feed.Items, &feeds.Item{
+			Id:          memoLink,
 			Title:       fmt.Sprintf("Memo #%d", memo.Id),
-			Link:        &feeds.Link{Href: fmt.Sprintf("%s/memo/%d", host, memo.Id)},
+			Link:        &feeds.Link{Href: memoLink},
 			Description: parseMarkdownToHtml(getContentWithExt(memo, host)),
-			Author:      &feeds.Author{Name: memo.User.Nickname},
+			Author:      &feeds.Author{Name: memo.User.Nickname, Email: memo.User.Email},
 			Created:     *memo.CreatedAt,
 			Updated:     *memo.UpdatedAt,
 		})
