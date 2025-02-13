@@ -68,7 +68,7 @@ func (r RssHandler) generateRss(host string) (string, error) {
 
 	// 查询动态
 	tx := r.base.db.Preload("User", func(x *gorm.DB) *gorm.DB {
-		return x.Select("username", "nickname", "id")
+		return x.Select("username", "nickname", "id", "email")
 	}).Where("showType = 1")
 	tx.Order("createdAt desc").Limit(15).Find(&memos)
 
@@ -99,7 +99,7 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 		Title:       sysConfigVO.Title,
 		Link:        &feeds.Link{Href: fmt.Sprintf("%s/rss", host)},
 		Description: user.Slogan,
-		Author:      &feeds.Author{Name: user.Nickname},
+		Author:      &feeds.Author{Name: user.Nickname, Email: user.Email},
 		Created:     now,
 	}
 
@@ -111,7 +111,7 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 			Title:       fmt.Sprintf("Memo #%d", memo.Id),
 			Link:        &feeds.Link{Href: memoLink},
 			Description: parseMarkdownToHtml(getContentWithExt(memo, host)),
-			Author:      &feeds.Author{Name: memo.User.Nickname},
+			Author:      &feeds.Author{Name: memo.User.Nickname, Email: memo.User.Email},
 			Created:     *memo.CreatedAt,
 			Updated:     *memo.UpdatedAt,
 		})
