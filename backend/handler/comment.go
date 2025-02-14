@@ -209,8 +209,6 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 			}
 			if err = c.commentEmailNotification(comment, frontendHost); err != nil {
 				c.base.log.Error().Msgf("邮件通知失败,原因:%s", err)
-			} else {
-				c.base.log.Info().Msgf("成功发送邮件")
 			}
 		}()
 		return SuccessResp(ctx, h{})
@@ -235,12 +233,15 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 		return nil
 	}
 
-	// 验证邮箱是否可用
+	// 验证邮箱是否为空
 	var targetEmail string
 	if comment.ReplyTo != "" { // 回复评论
 		targetEmail = comment.ReplyEmail
 	} else { // 直接评论
 		targetEmail = user.Email
+	}
+	if targetEmail == "" {
+		return nil
 	}
 
 	// 获取smtp客户端
@@ -300,5 +301,6 @@ func (c CommentHandler) commentEmailNotification(comment db.Comment, host string
 		return err
 	}
 
+	c.base.log.Info().Msgf("成功发送邮件")
 	return nil
 }
