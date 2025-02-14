@@ -66,7 +66,7 @@ const reload = async () => {
 const save = async () => {
   await useMyFetch('/user/saveProfile', state)
   toast.success("保存成功")
-  await reload()
+  location.reload()
 }
 
 const uploadAvatarUrl = async (files: FileList) => {
