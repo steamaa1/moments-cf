@@ -48,19 +48,19 @@ export default defineNuxtConfig({
             proxy: {
                 "/api": {
                     target: "http://localhost:37892",
-                    changeOrigin: true,
+                    // changeOrigin: true,
                 },
                 "/upload": {
                     target: "http://localhost:37892",
-                    changeOrigin: true,
+                    // changeOrigin: true,
                 },
                 "/rss": {
                     target: "http://localhost:37892",
-                    changeOrigin: true,
+                    // changeOrigin: true,
                 },
                 "/swagger": {
                     target: "http://localhost:37892",
-                    changeOrigin: true,
+                    // changeOrigin: true,
                 },
             },
         },

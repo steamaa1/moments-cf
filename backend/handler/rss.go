@@ -32,10 +32,7 @@ func NewRssHandler(injector do.Injector) *RssHandler {
 }
 
 func (r RssHandler) GetRss(c echo.Context) error {
-	frontendHost := c.QueryParam("frontend_host")
-	if frontendHost == "" {
-		frontendHost = c.Request().Host // 如果未传递，则使用后端默认的 Host
-	}
+	frontendHost := c.Request().Host
 	rss, err := r.generateRss(frontendHost)
 	if err != nil {
 		return FailRespWithMsg(c, Fail, "RSS生成失败")
