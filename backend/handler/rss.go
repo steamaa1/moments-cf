@@ -150,9 +150,14 @@ func getContentWithExt(memo db.Memo, host string) string {
 	if memo.Imgs != "" {
 		imgs := strings.Split(memo.Imgs, ",")
 		for _, img := range imgs {
-			if img[:7] == "/upload" {
+			if img == "" {
+				continue
+			}
+
+			if strings.HasPrefix(img, "/upload/") {
 				img = host + img
 			}
+
 			content += fmt.Sprintf("\n\n![%s](%s)", img, img)
 		}
 	}

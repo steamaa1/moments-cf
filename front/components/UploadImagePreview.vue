@@ -2,7 +2,7 @@
   <div ref="el" v-if="($route.path.startsWith('/new') || $route.path.startsWith('/edit')) && images.length>0"
        :style="gridStyle" class="grid gap-2">
     <div :key="img" v-for="img in images" class="relative">
-      <img :src="getImageUrl(img)" alt="" class="cursor-move rounded relative"
+      <img :src="img" alt="" class="cursor-move rounded relative"
            :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'">
       <div class="absolute right-6 top-0 px-1 bg-white m-2 rounded hover:text-red-500 cursor-pointer"
            @click="removeImage(img)">
@@ -11,19 +11,19 @@
     </div>
   </div>
 
-  <template v-else-if="images.length>0" >
+  <template v-else-if="props.imgConfigs && props.imgConfigs.length">
     <MyFancyBox :style="gridStyle">
       <div
-        v-for="(img, z) in images"
+        v-for="(imgConfig, z) in props.imgConfigs"
         :key="z"
-        :href="`${getImageUrl(img)}`"
+        :href="imgConfig.url"
         :class="images.length === 1 ? 'full-cover-image-single' : 'full-cover-image-mult'"
       >
         <img
           class="cursor-zoom-in rounded"
-          :src="`${getThumbImageUrl(img)}`"
+          :src="imgConfig.thumbUrl"
           alt=""
-          :onerror="`javascript:this.src='${getImageUrl(img)}';this.onerror=null`"
+          :onerror="`javascript:this.src='${imgConfig.url}';this.onerror=null`"
         />
       </div>
     </MyFancyBox>
@@ -34,57 +34,24 @@
 import {useSortable} from '@vueuse/integrations/useSortable'
 import type {SysConfigVO} from "~/types";
 
+interface ImgConfig {
+  url: string
+  thumbUrl: string
+}
 
 const sysConfig = useState<SysConfigVO>('sysConfig')
 const route = useRoute()
 const el = ref(null)
-const props = defineProps<{ imgs: string }>()
+const props = defineProps<{ imgs: string, imgConfigs?: ImgConfig[] }>()
 const emit = defineEmits(['removeImage', 'dragImage'])
-const images = ref<string[]>((!props.imgs || props.imgs === ',') ? [] : props.imgs.split(","))
+const images = ref<string[]>(
+  (props.imgs || '').split(",").filter(Boolean)
+)
+
 watch(props, () => {
-  if (!props.imgs || props.imgs === ',') {
-    images.value = []
-  } else {
-    images.value = props.imgs.split(",")
-  }
+  images.value = (props.imgs || '').split(",").filter(Boolean)
 })
 
-const getImageUrl = (src: string) => {
-  console.log(sysConfig.value.s3.thumbnailSuffix,src)
-  if (src.startsWith("/")) {
-    return src
-  }
-  if (sysConfig.value.s3) {
-    if (sysConfig.value.s3.thumbnailSuffix) {
-      const suffix = sysConfig.value.s3.thumbnailSuffix
-      if (src.indexOf(suffix) > 0){
-        return src;
-      }
-      if (suffix.startsWith("?")) {
-        return `${src}${suffix}`
-      } else {
-        return `${src}?${suffix}`
-      }
-    }
-  }
-  return src
-}
-const getThumbImageUrl = (src: string) => {
-  if (sysConfig.value.s3) {
-    if (sysConfig.value.s3.thumbnailSuffix) {
-      const suffix = sysConfig.value.s3.thumbnailSuffix
-      if (src.indexOf(suffix) > 0){
-        return src;
-      }
-      if (suffix.startsWith("?")) {
-        return `${src}${suffix}`
-      } else {
-        return `${src}?${suffix}`
-      }
-    }
-  }
-  return `${src}_thumb`
-}
 watch(images, () => {
   emit('dragImage', images.value)
 })

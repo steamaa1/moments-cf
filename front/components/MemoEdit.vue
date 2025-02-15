@@ -167,7 +167,7 @@ const locationLabel = computed(() => {
 })
 
 const handleDragImage = (imgs: string[]) => {
-  state.imgs = imgs.join(",")
+  state.imgs = imgs.filter(Boolean).join(",")
 }
 
 const updateMusic = (music: MusicDTO) => {
@@ -186,13 +186,10 @@ const {y: windowY} = useWindowScroll()
 const isOpen = ref(false)
 const virtualElement = ref({getBoundingClientRect: () => ({})})
 const handleRemoveImage = (img: string) => {
-  const imgs = state.imgs.split(",")
-  const index = imgs.findIndex(r => r === img)
-  if (index < 0) {
-    return
-  }
-  imgs.splice(index, 1)
-  state.imgs = imgs.join(",")
+  state.imgs = state.imgs
+    .split(",")
+    .filter(item => item && item != img)
+    .join(",")
 }
 
 function onContextMenu() {
@@ -278,9 +275,9 @@ const saveMemo = async () => {
     externalFavicon: state.externalUrl ? state.externalFavicon : "",
     externalTitle: state.externalTitle,
     externalUrl: state.externalUrl,
-    imgs: state.imgs.split(','),
+    imgs: state.imgs.split(",").filter(Boolean),
     location: state.location,
-    tags: selectedLabel.value
+    tags: selectedLabel.value,
   })
   toast.success("保存成功!")
   await navigateTo('/')

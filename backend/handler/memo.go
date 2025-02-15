@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -91,6 +92,47 @@ type memoListResp struct {
 	List    []db.Memo `json:"list,omitempty"`    //memo列表
 	HasNext bool      `json:"hasNext,omitempty"` //是否有下一页
 	Total   int64     `json:"total,omitempty"`   //总数
+}
+
+/*
+这里通过 memo.Imgs 生成 ImgConfigs，ImgConfig 包含图片的原始 Url 和 ThumbUrl
+正常情况下这里应该是在上传图片的时候来保存 ImgConfig，而不是在获取 memo 时计算
+但是由于历史实现的 memo 模型结构不支持保存额外的图片信息，所以这里先临时实现一个版本，有精力再重构
+*/
+func (m MemoHandler) handleImgConfigs(sysConfigVO *vo.FullSysConfigVO, memo *db.Memo) {
+	var imgConfigs []*vo.ImgConfig
+
+	imgs := strings.Split(memo.Imgs, ",")
+	for _, img := range imgs {
+		if img == "" {
+			continue
+		}
+
+		imgConfig := &vo.ImgConfig{
+			Url:      &img,
+			ThumbUrl: &img,
+		}
+
+		if strings.HasPrefix(img, "/upload/") {
+			thumb_filename := img + "_thumb"
+			thumb_filepath := path.Join(m.base.cfg.UploadDir, path.Base(thumb_filename))
+			if fs_util.Exists(thumb_filepath) {
+				imgConfig.ThumbUrl = &thumb_filename
+			}
+		} else if sysConfigVO.S3.ThumbnailSuffix != "" && strings.HasPrefix(img, sysConfigVO.S3.Domain) {
+			thumbnailSuffix := sysConfigVO.S3.ThumbnailSuffix
+			if !strings.HasPrefix(thumbnailSuffix, "?") {
+				thumbnailSuffix = "?" + thumbnailSuffix
+			}
+
+			newThumbUrl := img + thumbnailSuffix
+			imgConfig.ThumbUrl = &newThumbUrl
+		}
+
+		imgConfigs = append(imgConfigs, imgConfig)
+	}
+
+	memo.ImgConfigs = &imgConfigs
 }
 
 // ListMemos godoc
@@ -196,6 +238,10 @@ func (m MemoHandler) ListMemos(c echo.Context) error {
 		list[i].Comments = comments
 	}
 
+	for i := range list {
+		m.handleImgConfigs(&sysConfigVO, &list[i])
+	}
+
 	return SuccessResp(c, memoListResp{
 		List:    list,
 		Total:   total,
@@ -237,15 +283,17 @@ func (m MemoHandler) RemoveMemo(c echo.Context) error {
 	if memo.Imgs != "" {
 		imgs := strings.Split(memo.Imgs, ",")
 		for _, img := range imgs {
-			if !strings.HasPrefix(img, "/upload/") {
-				return SuccessResp(c, h{})
+			if img == "" || !strings.HasPrefix(img, "/upload/") {
+				continue
 			}
+
 			img := strings.ReplaceAll(img, "/upload/", "")
 			_ = os.Remove(filepath.Join(m.base.cfg.UploadDir, img))
 			thumbImg := strings.ReplaceAll(img+"_thumb", "/upload/", "")
 			_ = os.Remove(filepath.Join(m.base.cfg.UploadDir, thumbImg))
 		}
 	}
+
 	return SuccessResp(c, h{})
 }
 
@@ -411,11 +459,15 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 //	@Router		/api/memo/get [post]
 func (m MemoHandler) GetMemo(c echo.Context) error {
 	var (
-		memo db.Memo
+		memo        db.Memo
+		sysConfig   db.SysConfig
+		sysConfigVO vo.FullSysConfigVO
 	)
 
 	ctx := c.(CustomContext)
 	currentUser := ctx.CurrentUser()
+
+	m.base.db.First(&sysConfig)
 
 	id, err := strconv.Atoi(c.QueryParam("id"))
 	if err != nil {
@@ -442,6 +494,8 @@ func (m MemoHandler) GetMemo(c echo.Context) error {
 	tx.Find(&comments)
 
 	memo.Comments = comments
+
+	m.handleImgConfigs(&sysConfigVO, &memo)
 
 	return SuccessResp(c, memo)
 }

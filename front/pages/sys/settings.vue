@@ -70,14 +70,17 @@
         <UToggle v-model="state.enableS3"/>
       </UFormGroup>
       <template v-if="state.enableS3">
-        <UFormGroup label="域名" name="domain" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.domain"/>
+        <UFormGroup label="Bucket 域名（资源访问地址）" name="domain" :ui="{label:{base:'font-bold'}}">
+          <UInput v-model="state.s3.domain" placeholder="https://moments-test-bucket.oss-cn-hangzhou.aliyuncs.com" />
         </UFormGroup>
-        <UFormGroup label="桶名" name="bucket" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.bucket"/>
+        <UFormGroup label="Endpoint 地址" name="endpoint" :ui="{label:{base:'font-bold'}}">
+          <UInput v-model="state.s3.endpoint" placeholder="https://oss-cn-hangzhou.aliyuncs.com" />
         </UFormGroup>
-        <UFormGroup label="地区" name="region" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.region"/>
+        <UFormGroup label="Bucket 名称" name="bucket" :ui="{label:{base:'font-bold'}}">
+          <UInput v-model="state.s3.bucket" placeholder="moments-test-bucket" />
+        </UFormGroup>
+        <UFormGroup label="Bucket 地区" name="region" :ui="{label:{base:'font-bold'}}">
+          <UInput v-model="state.s3.region" placeholder="oss-cn-hangzhou" />
         </UFormGroup>
         <UFormGroup label="AccessKey" name="accessKey" :ui="{label:{base:'font-bold'}}">
           <UInput v-model="state.s3.accessKey"/>
@@ -85,10 +88,7 @@
         <UFormGroup label="SecretKey" name="secretKey" :ui="{label:{base:'font-bold'}}">
           <UInput v-model="state.s3.secretKey"/>
         </UFormGroup>
-        <UFormGroup label="S3 API接口地址" name="endpoint" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.endpoint"/>
-        </UFormGroup>
-        <UFormGroup label="图片后缀" name="thumbnailSuffix" :ui="{label:{base:'font-bold'}}">
+        <UFormGroup label="图片后缀（在访问缩略图时会追加在图片地址后）" name="thumbnailSuffix" :ui="{label:{base:'font-bold'}}">
           <UInput v-model="state.s3.thumbnailSuffix"/>
         </UFormGroup>
       </template>

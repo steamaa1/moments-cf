@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -45,45 +44,47 @@ func (f FileHandler) Upload(c echo.Context) error {
 	var (
 		result []string
 	)
+
 	form, err := c.MultipartForm()
 	if err != nil {
 		f.base.log.Error().Msgf("读取上传图片异常:%s", err)
 		return FailRespWithMsg(c, Fail, "上传图片异常")
 	}
-	files := form.File["files"]
 
+	if err := os.MkdirAll(f.base.cfg.UploadDir, 0755); err != nil {
+		f.base.log.Error().Msgf("创建父级目录异常:%s", err)
+		return FailRespWithMsg(c, Fail, "创建父级目录异常")
+	}
+
+	files := form.File["files"]
 	for _, file := range files {
-		// Source
+		// 原始图片
 		src, err := file.Open()
 		if err != nil {
 			f.base.log.Error().Msgf("打开上传图片异常:%s", err)
 			return FailRespWithMsg(c, Fail, "上传图片异常")
 		}
 		defer src.Close()
-		// Destination
+
+		// 创建原始图片
 		img_filename := strings.ReplaceAll(uuid.NewString(), "-", "")
 		img_filepath := path.Join(f.base.cfg.UploadDir, img_filename)
-
-		thumb_filename := img_filename + "_thumb"
-		thumb_filepath := path.Join(f.base.cfg.UploadDir, thumb_filename)
-
-		if err := os.MkdirAll(filepath.Dir(img_filepath), 0755); err != nil {
-			f.base.log.Error().Msgf("创建父级目录异常:%s", err)
-			return FailRespWithMsg(c, Fail, "创建父级目录异常")
-		}
 		dst, err := os.Create(img_filepath)
 		if err != nil {
 			f.base.log.Error().Msgf("打开目标图片异常:%s", err)
 			return FailRespWithMsg(c, Fail, "上传图片异常")
 		}
 		defer dst.Close()
-		// Copy
+
+		// 保存图片
 		if _, err = io.Copy(dst, src); err != nil {
 			f.base.log.Error().Msgf("复制图片异常:%s", err)
 			return FailRespWithMsg(c, Fail, "上传图片异常")
 		}
 
-		// compress image
+		// 生成并保存缩略图
+		thumb_filename := img_filename + "_thumb"
+		thumb_filepath := path.Join(f.base.cfg.UploadDir, thumb_filename)
 		if err := CompressImage(f, img_filepath, thumb_filepath, 30); err != nil {
 			f.base.log.Error().Msgf("压缩图片异常:%s", err)
 		}
@@ -113,7 +114,6 @@ type s3PresignedResp struct {
 //	@Success	200			{object}	s3PresignedResp
 //	@Router		/api/file/s3PreSigned [post]
 func (f FileHandler) S3PreSigned(c echo.Context) error {
-
 	var (
 		req         PreSignedReq
 		sysConfig   db.SysConfig
@@ -126,15 +126,30 @@ func (f FileHandler) S3PreSigned(c echo.Context) error {
 	if err := f.base.db.First(&sysConfig).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return FailResp(c, Fail)
 	}
+
 	if err := json.Unmarshal([]byte(sysConfig.Content), &sysConfigVo); err != nil {
 		f.base.log.Error().Msgf("无法反序列化系统配置, %s", err)
 		return FailRespWithMsg(c, Fail, err.Error())
 	}
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(sysConfigVo.S3.Region),
-		config.WithEndpointResolver(aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-			return aws.Endpoint{URL: sysConfigVo.S3.Endpoint}, nil
-		})),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(sysConfigVo.S3.AccessKey, sysConfigVo.S3.SecretKey, "")))
+
+	cfg, err := config.LoadDefaultConfig(
+		context.TODO(),
+		config.WithRegion(sysConfigVo.S3.Region),
+		config.WithEndpointResolver(
+			aws.EndpointResolverFunc(
+				func(service, region string) (aws.Endpoint, error) {
+					return aws.Endpoint{URL: sysConfigVo.S3.Endpoint}, nil
+				},
+			),
+		),
+		config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				sysConfigVo.S3.AccessKey,
+				sysConfigVo.S3.SecretKey,
+				"",
+			),
+		),
+	)
 	if err != nil {
 		f.base.log.Error().Msgf("无法加载SDK配置, %s", err)
 		return FailRespWithMsg(c, Fail, err.Error())
@@ -143,22 +158,33 @@ func (f FileHandler) S3PreSigned(c echo.Context) error {
 	client := s3.NewFromConfig(cfg)
 	presignedClient := s3.NewPresignClient(client)
 
-	key := fmt.Sprintf("moments/%s/%s", time.Now().Format("2006/01/02"), strings.ReplaceAll(uuid.NewString(), "-", ""))
-	presignedResult, err := presignedClient.PresignPutObject(context.TODO(), &s3.PutObjectInput{
-		Bucket:      aws.String(sysConfigVo.S3.Bucket),
-		Key:         aws.String(key),
-		ContentType: aws.String(req.ContentType),
-	}, func(opts *s3.PresignOptions) {
-		opts.Expires = time.Minute * 5
-	})
+	key := fmt.Sprintf(
+		"moments/%s/%s",
+		time.Now().Format("2006/01/02"),
+		strings.ReplaceAll(uuid.NewString(), "-", ""),
+	)
+	presignedResult, err := presignedClient.PresignPutObject(
+		context.TODO(),
+		&s3.PutObjectInput{
+			Bucket:      aws.String(sysConfigVo.S3.Bucket),
+			Key:         aws.String(key),
+			ContentType: aws.String(req.ContentType),
+		},
+		func(opts *s3.PresignOptions) {
+			opts.Expires = time.Minute * 5
+		},
+	)
 
 	if err != nil {
 		f.base.log.Error().Msgf("无法获取预签名URL, %s", err)
 		return FailRespWithMsg(c, Fail, fmt.Sprintf("无法获取预签名URL, %s", err))
 	}
 
-	return SuccessResp(c, s3PresignedResp{
-		PreSignedUrl: presignedResult.URL,
-		ImageUrl:     fmt.Sprintf("%s/%s", sysConfigVo.S3.Domain, key),
-	})
+	return SuccessResp(
+		c,
+		s3PresignedResp{
+			PreSignedUrl: presignedResult.URL,
+			ImageUrl:     fmt.Sprintf("%s/%s", sysConfigVo.S3.Domain, key),
+		},
+	)
 }
