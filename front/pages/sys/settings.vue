@@ -95,6 +95,7 @@
       <UFormGroup label="是否启用邮件通知" name="enableEmail" :ui="{label:{base:'font-bold'}}">
       <UToggle v-model="state.enableEmail"/>
       </UFormGroup>
+      <template v-if="state.enableEmail">
       <UFormGroup label="smtp服务器" name="smtpHost" :ui="{label:{base:'font-bold'}}">
         <UInput v-model="state.smtpHost" placeholder="smtp.qq.com"/>
       </UFormGroup>
@@ -107,7 +108,8 @@
       <UFormGroup label="smtp密码/授权码" name="smtpPassword" :ui="{label:{base:'font-bold'}}">
         <UInput v-model="state.smtpPassword" type="password"/>
       </UFormGroup>
-
+      </template>
+    
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
 </template>
