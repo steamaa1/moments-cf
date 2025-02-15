@@ -48,7 +48,7 @@
         <div class="flex flex-col gap-2">
           <external-url-preview :favicon="item.externalFavicon" :title="item.externalTitle" :url="item.externalUrl"
                                 v-if="item.externalFavicon&&item.externalTitle&&item.externalUrl"/>
-          <upload-image-preview :imgs="item.imgs||''" :memo-id="item.id"/>
+          <upload-image-preview :imgs="item.imgs" :imgConfigs="item.imgConfigs" :memo-id="item.id"/>
 
           <music-preview v-if="extJSON.music && extJSON.music.id" v-bind="extJSON.music"/>
           <douban-book-preview v-if="extJSON.doubanBook && extJSON.doubanBook.title" :book="extJSON.doubanBook"/>

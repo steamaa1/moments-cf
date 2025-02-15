@@ -75,3 +75,8 @@ type DoubanBook struct {
 	PubDate  string `json:"pubDate,omitempty"`  //发布日期
 	Keywords string `json:"keywords,omitempty"` //关键字
 }
+
+type ImgConfig struct {
+	Url      *string `json:"url,omitempty"`
+	ThumbUrl *string `json:"thumbUrl,omitempty"`
+}
