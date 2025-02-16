@@ -1,10 +1,10 @@
 # 🌟 Moments - 极简朋友圈  
 
-[![🚀 Release](https://img.shields.io/badge/release-更新记录-blue)](https://github.com/kingwrcy/moments/releases)  
-[![📦 Docker Build](https://img.shields.io/github/actions/workflow/status/kingwrcy/moments/docker-image-release.yml)](https://github.com/kingwrcy/moments/actions/workflows/docker-image-release.yml)  
-[![🐳 Docker Pulls](https://img.shields.io/docker/pulls/kingwrcy/moments)](https://hub.docker.com/repository/docker/kingwrcy/moments)  
-[![💬 Telegram 群组](https://img.shields.io/badge/Telegram-group-blue)](https://t.me/simple_moments)  
-[![📝 Moments 论坛](https://img.shields.io/badge/moments-论坛-blue)](https://discussion.mblog.club)  
+[![release](https://img.shields.io/badge/release-更新记录-blue)](https://github.com/kingwrcy/moments/releases)
+[![docker-release-status](https://img.shields.io/github/actions/workflow/status/kingwrcy/moments/docker-image-release.yml)](https://github.com/kingwrcy/moments/actions/workflows/docker-image-release.yml)
+[![docker-pull](https://img.shields.io/docker/pulls/kingwrcy/moments)](https://hub.docker.com/repository/docker/kingwrcy/moments)
+[![telegram-group](https://img.shields.io/badge/Telegram-group-blue)](https://t.me/simple_moments)
+[![discussion](https://img.shields.io/badge/moments-论坛-blue)](https://discussion.mblog.club)
 
 💡 **从 v0.2.1 开始，Moments 采用 Golang 重写服务端，包体积更小，功能更强！**  
 🔍 **仍需 v0.2.0 版本？[点这里](https://github.com/kingwrcy/moments/blob/master/README.md)**  
