@@ -1,14 +1,12 @@
-version: '3'
 services:
   moments:
     image: kingwrcy/moments:latest
+    container_name: moments
+    restart: always
     environment:
-      JWT_KEY: "BbYS93dHHfIC1cQR8rI6"
+      PORT: 3000
+      JWT_KEY: $JWT_KEY
     ports:
-      - "3000:3000"
+      - 3000:3000
     volumes:
-      - moments-data:/app/data
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-volumes:
-  moments-data:
+      - /var/moments:/app/data # 持久化数据到主机的 /var/moments 目录，可以按需修改
