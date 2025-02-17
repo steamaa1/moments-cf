@@ -32,7 +32,7 @@ func NewRssHandler(injector do.Injector) *RssHandler {
 }
 
 func (r RssHandler) GetRss(c echo.Context) error {
-	frontendHost := c.Request().Host
+	frontendHost := fmt.Sprintf("%s://%s", c.Scheme(), c.Request().Host)
 	rss, err := r.generateRss(frontendHost)
 	if err != nil {
 		return FailRespWithMsg(c, Fail, "RSS生成失败")

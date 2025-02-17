@@ -203,7 +203,7 @@ func (c CommentHandler) AddComment(ctx echo.Context) error {
 
 	if err = c.base.db.Save(&comment).Error; err == nil {
 		go func() {
-			frontendHost := ctx.Request().Host
+			frontendHost := fmt.Sprintf("%s://%s", ctx.Scheme(), ctx.Request().Host)
 			if err = c.commentEmailNotification(comment, frontendHost); err != nil {
 				c.base.log.Error().Msgf("邮件通知失败,原因:%s", err)
 			}
