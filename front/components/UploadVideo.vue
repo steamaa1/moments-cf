@@ -72,6 +72,7 @@ const videoType = ref<VideoType>(props.type)
 const youtubeUrl = ref('')
 const bilibiliUrl = ref('')
 const onlineUrl = ref('')
+const bilibiliUrlRegs = [/src=['"]([^'"]+)['"]/, /[aA][vV](\d+)/, /([bB][vV][\w]+)/]
 const youtubeUrlRegs = [/v=([^&#]+)/, /youtu\.be\/(.*)\?/]
 const progress = ref(0)
 const filename = ref('')
@@ -115,10 +116,17 @@ const handleUploadVideo = async (files: FileList) => {
   }
 }
 const confirm = (close: Function) => {
-  const match = bilibiliUrl.value.match(/src=['"]([^'"]+)['"]/)
   if (bilibiliUrl.value.trim()) {
     videoType.value = 'bilibili'
-    if (match && match.length > 1) {
+    let success = false
+    for (let i = 0; i < bilibiliUrlRegs.length; i++) {
+      const match = bilibiliUrl.value.match(bilibiliUrlRegs[i])
+      if (match && match.length > 1) {
+        success = true
+        break
+      }
+    }
+    if (success) {
       emit('confirm', {
         type: videoType.value,
         value: bilibiliUrl.value

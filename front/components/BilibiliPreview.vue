@@ -8,11 +8,25 @@
 <script setup lang="ts">
 const props = defineProps<{ url: string }>()
 const bilibiliUrl = computed(() => {
-  const match = props.url.match(/src=['"]([^'"]+)['"]/)
-  if (match && match.length > 1) {
-    const url = match[1]
-    return url + '&autoplay=0&high_quality=1&as_wide=1'
+  // 处理 iframe 嵌入代码
+  const iframeMatch = props.url.match(/src=['"]([^'"]+)['"]/);
+  if (iframeMatch && iframeMatch.length > 1) {
+    const url = iframeMatch[1];
+    return url + "&autoplay=0&high_quality=1&as_wide=1";
   }
+
+  // 处理 AV 号
+  const avMatch = props.url.match(/[aA][vV](\d+)/);
+  if (avMatch && avMatch.length > 1) {
+    return `//player.bilibili.com/player.html?aid=${avMatch[1]}&autoplay=0&high_quality=1&as_wide=1`;
+  }
+
+  // 处理 BV 号
+  const bvMatch = props.url.match(/([bB][vV][\w]+)/);
+  if (bvMatch && bvMatch.length > 1) {
+    return `//player.bilibili.com/player.html?bvid=${bvMatch[1]}&autoplay=0&high_quality=1&as_wide=1`;
+  }
+
   return ""
 })
 </script>
