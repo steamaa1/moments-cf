@@ -639,12 +639,12 @@ func getFaviconAndTitle(websiteURL string) (string, string, error) {
 //    @Router     /api/memo/getDoubanMovieInfo [post]
 func (m MemoHandler) GetDoubanMovieInfo(c echo.Context) error {
 
-	var (
-		book        vo.DoubanMovie
-		sysConfigVo vo.FullSysConfigVO
-		sysConfig   db.SysConfig
-		userAgent   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-	)
+    var (
+        book        vo.DoubanMovie
+        sysConfigVo vo.FullSysConfigVO
+        sysConfig   db.SysConfig
+        userAgent   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    )
 
     if err := m.base.db.First(&sysConfig).Error; errors.Is(err, gorm.ErrRecordNotFound) {
         return FailRespWithMsg(c, Fail, "系统配置为空")
