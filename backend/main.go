@@ -89,7 +89,7 @@ func main() {
 	}
 
 	migrateTo3(tx, myLogger)
-	migrateBiliBiliUrl(tx, myLogger)
+	migrateIframeVideoUrl(tx, myLogger)
 
 	e.HideBanner = true
 	err = e.Start(fmt.Sprintf(":%d", cfg.Port))

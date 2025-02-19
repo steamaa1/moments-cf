@@ -53,12 +53,8 @@
           <music-preview v-if="extJSON.music && extJSON.music.id" v-bind="extJSON.music"/>
           <douban-book-preview v-if="extJSON.doubanBook && extJSON.doubanBook.title" :book="extJSON.doubanBook"/>
           <douban-movie-preview v-if="extJSON.doubanMovie && extJSON.doubanMovie.title" :movie="extJSON.doubanMovie"/>
-          <youtube-preview v-if="extJSON.video && extJSON.video.type === 'youtube' && extJSON.video.value"
-                           :url="extJSON.video.value"/>
-          <bilibili-preview v-if="extJSON.video && extJSON.video.type === 'bilibili' && extJSON.video.value"
-                            :url="extJSON.video.value"/>
-          <video-preview v-if="extJSON.video && extJSON.video.type === 'online' && extJSON.video.value"
-                         :url="extJSON.video.value"/>
+          <video-preview-iframe v-if="extJSON.video && ['bilibili', 'youtube'].includes(extJSON.video.type) && extJSON.video.value" :url="extJSON.video.value"/>
+          <video-preview v-if="extJSON.video && extJSON.video.type === 'online' && extJSON.video.value" :url="extJSON.video.value"/>
         </div>
 
         <div class="text-[#576b95] font-medium dark:text-white text-xs mt-2 mb-1 select-none flex items-center gap-0.5"

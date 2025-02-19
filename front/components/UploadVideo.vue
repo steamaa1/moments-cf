@@ -51,7 +51,7 @@
 
         <UButtonGroup>
           <UButton @click="confirm(close)">确定</UButton>
-          <UButton color="white" @click="reset(close)">清空</UButton>
+          <UButton color="white" @click="reset()">清空</UButton>
         </UButtonGroup>
       </div>
     </template>
@@ -59,25 +59,24 @@
 </template>
 
 <script setup lang="ts">
-import type {Video, VideoType} from "~/types";
-import {toast} from "vue-sonner";
-import {useUpload} from "~/utils";
+import type { Video, VideoType } from "~/types";
+import { toast } from "vue-sonner";
+import { useUpload } from "~/utils";
 
 const props = withDefaults(defineProps<Video>(), {
   type: "youtube",
   value: ""
 })
 const emit = defineEmits(['confirm'])
-const videoType = ref<VideoType>(props.type)
+
 const youtubeUrl = ref('')
 const bilibiliUrl = ref('')
 const onlineUrl = ref('')
-const bilibiliUrlRegs = [/src=['"]([^'"]+)['"]/, /[aA][vV](\d+)/, /([bB][vV][\w]+)/]
-const youtubeUrlRegs = [/v=([^&#]+)/, /youtu\.be\/(.*)\?/]
 const progress = ref(0)
 const filename = ref('')
 const total = ref(0)
 const current = ref(0)
+
 const items = [{
   slot: 'uploadVideo',
   label: '本地'
@@ -86,8 +85,36 @@ const items = [{
   label: '在线'
 }]
 
+const youtubeUrlTemplateList = [
+  {
+    reg: /src=['"](?:https?:)?(?:\/)*([^'"]+)['"]/,
+    template: 'https://@{placeholder}',
+  },
+  {
+    reg: /v=([^&#]+)/,
+    template: 'https://www.youtube.com/embed/@{placeholder}',
+  },
+  {
+    reg: /youtu\.be\/([^\/\?]+)/,
+    template: 'https://www.youtube.com/embed/@{placeholder}',
+  },
+]
+const bilibiliUrlTemplateList = [
+  {
+    reg: /src=['"](?:https?:)?(?:\/)*([^'"]+)['"]/,
+    template: 'https://@{placeholder}',
+  },
+  {
+    reg: /av(\d+)/i,
+    template: 'https://player.bilibili.com/player.html?aid=@{placeholder}',
+  },
+  {
+    reg: /(bv[\w]+)/i,
+    template: 'https://player.bilibili.com/player.html?bvid=@{placeholder}',
+  },
+]
+
 watch(props, () => {
-  videoType.value = props.type
   if (props.type === 'youtube') {
     youtubeUrl.value = props.value
   } else if (props.type === 'bilibili') {
@@ -99,7 +126,7 @@ watch(props, () => {
 
 const handleUploadVideo = async (files: FileList) => {
   for (let i = 0; i < files.length; i++) {
-    if (files[i].type.indexOf("video") < 0){
+    if (files[i].type.indexOf("video") < 0) {
       toast.error("只能上传视频文件");
       return
     }
@@ -115,87 +142,90 @@ const handleUploadVideo = async (files: FileList) => {
     onlineUrl.value = result[0]
   }
 }
+
+const emitUrl = (type: VideoType, value: string) => {
+  if (type !== 'youtube') {
+    youtubeUrl.value = ''
+  }
+
+  if (type !== 'bilibili') {
+    bilibiliUrl.value = ''
+  }
+
+  if (type !== 'online') {
+    onlineUrl.value = ''
+  }
+
+  emit('confirm', {
+    type,
+    value,
+  })
+}
+
 const confirm = (close: Function) => {
+  if (bilibiliUrl.value.trim() && youtubeUrl.value.trim()) {
+    toast.warning("请勿同时填写两个地址")
+    return
+  }
+
   if (bilibiliUrl.value.trim()) {
-    videoType.value = 'bilibili'
-    let success = false
-    let type = 0
-    let param = ""
-    for (let i = 0; i < bilibiliUrlRegs.length; i++) {
-      const match = bilibiliUrl.value.match(bilibiliUrlRegs[i])
-      if (match && match.length > 1) {
-        success = true
-        type = i
-        param = match[1]
-        break
-      }
-    }
-    if (success) {
-      let url
-      switch (type) {
-        case 0: // 处理 iframe 嵌入代码
-          url = param + "&autoplay=0&high_quality=1&as_wide=1"
-          break
-        case 1: // 处理 AV 号
-          url = `//player.bilibili.com/player.html?aid=${param}&autoplay=0&high_quality=1&as_wide=1`
-          break
-        case 2: // 处理 BV 号
-          url = `//player.bilibili.com/player.html?bvid=${param}&autoplay=0&high_quality=1&as_wide=1`
-          break
-        default:
-          url = ""
-      }
-      emit('confirm', {
-        type: videoType.value,
-        value: url
-      })
+    if (bilibiliUrl.value.startsWith('https://player.bilibili.com/player.html')) {
+      emitUrl('bilibili', bilibiliUrl.value)
       close()
-    } else {
-      toast.warning("无效的B站视频地址")
       return
     }
+
+    for (const bilibiliUrlTemplate of bilibiliUrlTemplateList) {
+      const { reg, template } = bilibiliUrlTemplate
+      const [_, matchedValue] = bilibiliUrl.value.match(reg) || []
+      if (matchedValue) {
+        const url = template.replace('@{placeholder}', matchedValue)
+        emitUrl('bilibili', url)
+        close()
+        return
+      }
+    }
+
+    toast.warning("无效的B站视频地址")
     return
   }
 
   if (youtubeUrl.value.trim()) {
-    videoType.value = 'youtube'
-    let success = false
-    for (let i = 0; i < youtubeUrlRegs.length; i++) {
-      const match = youtubeUrl.value.match(youtubeUrlRegs[i])
-      if (match && match.length > 1) {
-        success = true
-        break
+    if (youtubeUrl.value.startsWith('https://www.youtube.com/embed')) {
+      emitUrl('youtube', youtubeUrl.value)
+      close()
+      return
+    }
+
+    for (const youtubeUrlTemplate of youtubeUrlTemplateList) {
+      const { reg, template } = youtubeUrlTemplate
+      const [_, matchedValue] = youtubeUrl.value.match(reg) || []
+      if (matchedValue) {
+        const url = template.replace('@{placeholder}', matchedValue)
+        emitUrl('youtube', url)
+        close()
+        return
       }
     }
-    if (success) {
-      emit('confirm', {
-        type: videoType.value,
-        value: youtubeUrl.value
-      })
-      close()
-    } else {
-      toast.warning("无效的Youtube视频地址")
-    }
+
+    toast.warning("无效的Youtube视频地址")
     return
   }
+
   if (onlineUrl.value.trim()) {
-    videoType.value = 'online'
-    emit('confirm', {
-      type: videoType.value,
-      value: onlineUrl.value.trim()
-    })
+    emitUrl('online', onlineUrl.value.trim())
     close()
     return
   }
 }
 
-const reset = (close: Function) => {
-  videoType.value = 'youtube'
+const reset = () => {
   youtubeUrl.value = ''
   bilibiliUrl.value = ''
   onlineUrl.value = ''
+
   emit('confirm', {
-    type: videoType.value,
+    type: 'youtube',
     value: ""
   })
 }
@@ -203,6 +233,4 @@ const reset = (close: Function) => {
 
 </script>
 
-<style scoped>
-
-</style>
+<style scoped></style>
