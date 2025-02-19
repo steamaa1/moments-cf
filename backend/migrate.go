@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
+
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/handler"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 	"gorm.io/gorm"
-	"strings"
 )
 
 func migrateTo3(tx *gorm.DB, log zerolog.Logger) {
@@ -172,4 +174,88 @@ SET
 WHERE 
     ((createdAt NOT LIKE '%-%' AND length(createdAt) = 13) OR 
     (updatedAt NOT LIKE '%-%' AND length(updatedAt) = 13))`)
+}
+
+func migrateIframeVideoUrl(tx *gorm.DB, log zerolog.Logger) {
+	var memos []db.Memo
+	tx.Find(&memos)
+
+	bilibiliUrlReg := regexp.MustCompile(`src=['"](?:https?:)?(?:\/)*([^'"]+)['"]`)
+	youtubeUrlRegList := []*regexp.Regexp{
+		regexp.MustCompile(`v=([^&#]+)`),
+		regexp.MustCompile(`youtu\.be\/([^\/\?]+)`),
+	}
+
+	for _, memo := range memos {
+		var ext vo.MemoExt
+		err := json.Unmarshal([]byte(memo.Ext), &ext)
+		if err != nil {
+			log.Warn().Msgf("memo id: %d 的 ext 不是标准的 json 格式 => %s", memo.Id, memo.Ext)
+			continue
+		}
+
+		// 测试数据开始
+		// if ext.Video.Value != "" {
+		// 	ext.Video.Type = "bilibili"
+		// 	ext.Video.Value = `<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=123&bvid=FDA1FAD&cid=123&p=1" scrolling></iframe>`
+		// 	ext.Video.Value = `//player.bilibili.com/player.html?isOutside=true&aid=123&bvid=FDA1FAD&cid=123&p=1`
+		// 	ext.Video.Value = `https://player.bilibili.com/player.html?isOutside=true&aid=123&bvid=FDA1FAD&cid=123&p=1`
+		// }
+
+		// if ext.Video.Value != "" {
+		// 	ext.Video.Type = "youtube"
+		// 	ext.Video.Value = "https://www.youtube.com/watch?v=hacdT_G2Ara&q=123"
+		// 	ext.Video.Value = "https://youtu.be/hacdT_G2Ara?si=aa_a_a_aaa"
+		// 	ext.Video.Value = "https://youtu.be/hacdT_G2Ara"
+		// 	ext.Video.Value = "//www.youtube.com/embed/hacdT_G2Ara"
+		// 	ext.Video.Value = "https://www.youtube.com/embed/hacdT_G2Ara"
+		// }
+		// 测试数据结束
+
+		if ext.Video.Value == "" ||
+			strings.HasPrefix(ext.Video.Value, "https://player.bilibili.com/player.html") ||
+			strings.HasPrefix(ext.Video.Value, "https://www.youtube.com/embed") {
+			continue
+		}
+
+		log.Info().Msgf("开始迁移 memo id: %d 的 %s url: %s", memo.Id, ext.Video.Type, ext.Video.Value)
+
+		if strings.HasPrefix(ext.Video.Value, "//") {
+			ext.Video.Value = fmt.Sprintf("https:%s", ext.Video.Value)
+		} else if strings.HasPrefix(ext.Video.Value, "http://") {
+			ext.Video.Value = strings.Replace(ext.Video.Value, "http://", "https://", 1)
+		} else if ext.Video.Type == "bilibili" {
+			matchResult := bilibiliUrlReg.FindStringSubmatch(ext.Video.Value)
+			if matchResult == nil {
+				continue
+			}
+
+			ext.Video.Value = fmt.Sprintf(`https://%s`, matchResult[1])
+		} else if ext.Video.Type == "youtube" {
+			for _, youtubeUrlReg := range youtubeUrlRegList {
+				matchResult := youtubeUrlReg.FindStringSubmatch(ext.Video.Value)
+				if matchResult == nil {
+					continue
+				}
+
+				ext.Video.Value = fmt.Sprintf(
+					`https://www.youtube.com/embed/%s`,
+					matchResult[1],
+				)
+				break
+			}
+		} else {
+			log.Info().Msgf("视频地址无需迁移")
+			continue
+		}
+
+		log.Info().Msgf("迁移后的 url: %s", ext.Video.Value)
+		extContent, _ := json.Marshal(ext)
+		memo.Ext = string(extContent)
+		if err = tx.Save(&memo).Error; err == nil {
+			log.Info().Msgf("迁移 memo id: %d 成功", memo.Id)
+		} else {
+			log.Error().Msgf("迁移 memo id: %d 失败, 原因：%v", memo.Id, err)
+		}
+	}
 }

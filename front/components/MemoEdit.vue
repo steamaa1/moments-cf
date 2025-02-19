@@ -79,8 +79,7 @@
                      v-bind="state.music"/>
       <douban-book-preview :book="doubanData" v-if="doubanType === 'book' && doubanData&& doubanData.title"/>
       <douban-movie-preview :movie="doubanData" v-if="doubanType === 'movie' && doubanData&& doubanData.title"/>
-      <youtube-preview v-if="state.video.type === 'youtube' && state.video.value" :url="state.video.value"/>
-      <bilibili-preview v-if="state.video.type === 'bilibili' && state.video.value" :url="state.video.value"/>
+      <video-preview-iframe v-if="['bilibili', 'youtube'].includes(state.video.type) && state.video.value" :url="state.video.value"/>
       <video-preview v-if="state.video.type === 'online' && state.video.value" :url="state.video.value"/>
     </div>
   </div>
