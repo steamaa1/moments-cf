@@ -119,17 +119,35 @@ const confirm = (close: Function) => {
   if (bilibiliUrl.value.trim()) {
     videoType.value = 'bilibili'
     let success = false
+    let type = 0
+    let param = ""
     for (let i = 0; i < bilibiliUrlRegs.length; i++) {
       const match = bilibiliUrl.value.match(bilibiliUrlRegs[i])
       if (match && match.length > 1) {
         success = true
+        type = i
+        param = match[1]
         break
       }
     }
     if (success) {
+      let url
+      switch (type) {
+        case 0: // 处理 iframe 嵌入代码
+          url = param + "&autoplay=0&high_quality=1&as_wide=1"
+          break
+        case 1: // 处理 AV 号
+          url = `//player.bilibili.com/player.html?aid=${param}&autoplay=0&high_quality=1&as_wide=1`
+          break
+        case 2: // 处理 BV 号
+          url = `//player.bilibili.com/player.html?bvid=${param}&autoplay=0&high_quality=1&as_wide=1`
+          break
+        default:
+          url = ""
+      }
       emit('confirm', {
         type: videoType.value,
-        value: bilibiliUrl.value
+        value: url
       })
       close()
     } else {

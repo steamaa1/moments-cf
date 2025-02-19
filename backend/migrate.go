@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
+
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/handler"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/rs/zerolog"
 	"github.com/tidwall/gjson"
 	"gorm.io/gorm"
-	"strings"
 )
 
 func migrateTo3(tx *gorm.DB, log zerolog.Logger) {
@@ -172,4 +174,33 @@ SET
 WHERE 
     ((createdAt NOT LIKE '%-%' AND length(createdAt) = 13) OR 
     (updatedAt NOT LIKE '%-%' AND length(updatedAt) = 13))`)
+}
+
+func migrateBiliBiliUrl(tx *gorm.DB, log zerolog.Logger) {
+	var memos []db.Memo
+	tx.Find(&memos)
+	re := regexp.MustCompile(`src=['"]([^'"]+)['"]`)
+	for _, memo := range memos {
+		var ext vo.MemoExt
+		err := json.Unmarshal([]byte(memo.Ext), &ext)
+		if err != nil {
+			log.Warn().Msgf("memo id:%d ext属性不是标准的json格式 => %s,忽略..", memo.Id, memo.Ext)
+			continue
+		}
+
+		if ext.Video.Type == "bilibili" && re.MatchString(ext.Video.Value) {
+			log.Info().Msgf("开始迁移memo id:%d 的bilibili url", memo.Id)
+			log.Info().Msgf("原始url:%s", ext.Video.Value)
+			ext.Video.Value = re.FindStringSubmatch(ext.Video.Value)[1] + "&autoplay=0&high_quality=1&as_wide=1"
+			log.Info().Msgf("迁移后的url:%s", ext.Video.Value)
+
+			extContent, _ := json.Marshal(ext)
+			memo.Ext = string(extContent)
+			if err = tx.Save(&memo).Error; err != nil {
+				log.Error().Msgf("迁移memo id:%d 失败，原因：%v", memo.Id, err)
+			} else {
+				log.Info().Msgf("迁移memo id:%d 成功", memo.Id)
+			}
+		}
+	}
 }
