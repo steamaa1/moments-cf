@@ -42,8 +42,13 @@ func backupDatabase(log zerolog.Logger, cfg *vo.AppConfig) {
 		version = "unknown"
 	}
 
-	if version == cfg.Version {
-		log.Debug().Msgf("当前版本和上次启动时的版本一致, 所以无需备份数据库, version: %s", version)
+	commitId, ok = config["commitId"].(string)
+	if !ok {
+		commitId = "unknown"
+	}
+
+	if version == cfg.Version && commitId == cfg.CommitId {
+		log.Debug().Msgf("当前版本和上次启动时的版本一致, 所以无需备份数据库, version: %s, commitId: %s", version, commitId)
 		return
 	}
 
@@ -58,7 +63,7 @@ func backupDatabase(log zerolog.Logger, cfg *vo.AppConfig) {
 
 	now := time.Now()
 	datetime := now.Format("2006-01-02-15-04-05")
-	destinationFileName := fmt.Sprintf("backup-%s-%s.sqlite3", datetime, version)
+	destinationFileName := fmt.Sprintf("backup-%s-%s-%s.sqlite3", datetime, version, commitId)
 
 	destinationFile, err := os.Create(path.Join(path.Dir(cfg.DB), destinationFileName))
 	if err != nil {
@@ -76,6 +81,7 @@ func backupDatabase(log zerolog.Logger, cfg *vo.AppConfig) {
 	log.Info().Msgf("数据库备份完成")
 
 	config["version"] = cfg.Version
+	config["commitId"] = cfg.CommitId
 	content, err := json.Marshal(config)
 	if err != nil {
 		log.Error().Msgf("序列化新配置失败, err: %v", err)
