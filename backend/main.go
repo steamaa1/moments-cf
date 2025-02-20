@@ -64,6 +64,8 @@ func main() {
 	cfg.Version = version
 	cfg.CommitId = commitId
 
+	backupDatabase(myLogger, &cfg)
+
 	do.Provide(injector, db.NewDB)
 	do.Provide(injector, newEchoEngine)
 	do.Provide(injector, handler.NewBaseHandler)
