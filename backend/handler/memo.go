@@ -12,7 +12,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +28,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
-	"github.com/spf13/cast"
 	"golang.org/x/net/html"
 	"gorm.io/gorm"
 )
@@ -214,13 +212,8 @@ func (m MemoHandler) ListMemos(c echo.Context) error {
 	if req.UserId != nil {
 		tx = tx.Where("userId = ?", req.UserId)
 	}
-	tx.Order("createdAt desc").Limit(req.Size).Offset(offset).Find(&list)
+	tx.Order("pinned desc, createdAt desc").Limit(req.Size).Offset(offset).Find(&list)
 	tx.Count(&total)
-
-	// 排序，让Pinned=true的元素在最前
-	sort.SliceStable(list, func(i, j int) bool {
-		return cast.ToBool(list[i].Pinned) && !cast.ToBool(list[j].Pinned)
-	})
 
 	for i, memo := range list {
 		var comments []db.Comment
