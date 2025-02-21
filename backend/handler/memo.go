@@ -171,7 +171,7 @@ func (m MemoHandler) ListMemos(c echo.Context) error {
 	_ = json.Unmarshal([]byte(sysConfig.Content), &sysConfigVO)
 	offset := (req.Page - 1) * req.Size
 
-	tx := m.base.db.Preload("User", func(x *gorm.DB) *gorm.DB {
+	tx := m.base.db.Model(&db.Memo{}).Preload("User", func(x *gorm.DB) *gorm.DB {
 		return x.Select("username", "nickname", "slogan", "id", "avatarUrl", "coverUrl")
 	})
 
@@ -212,8 +212,8 @@ func (m MemoHandler) ListMemos(c echo.Context) error {
 	if req.UserId != nil {
 		tx = tx.Where("userId = ?", req.UserId)
 	}
-	tx.Order("pinned desc, createdAt desc").Limit(req.Size).Offset(offset).Find(&list)
-	tx.Count(&total)
+	tx.Session(&gorm.Session{}).Order("pinned desc, createdAt desc").Limit(req.Size).Offset(offset).Find(&list)
+	tx.Session(&gorm.Session{}).Count(&total)
 
 	for i, memo := range list {
 		var comments []db.Comment
