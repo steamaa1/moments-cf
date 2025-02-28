@@ -19,6 +19,7 @@ export type CommentVO = {
     updatedAt: string
     memoId: number
     author: number
+	website?: string | null
 }
 
 
