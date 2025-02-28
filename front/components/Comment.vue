@@ -4,7 +4,12 @@
       {{ props.comment.username }}
       <UBadge color="gray" variant="solid" size="xs">作者</UBadge>
     </span>
-    <span v-else class="text-[#576b95] text-nowrap">{{ props.comment.username }}</span>
+    <span v-else class="text-[#576b95] text-nowrap">
+      <a v-if="props.comment.website" :href="formatWebsite(props.comment.website)" target="_blank">
+        {{ props.comment.username }}
+      </a>
+      <span v-else>{{ props.comment.username }}</span>
+    </span>
    <template v-if="props.comment.replyTo">
      <span class="mx-1">回复</span>
      <span  class="text-[#576b95] text-nowrap">{{props.comment.replyTo}}</span>
@@ -48,6 +53,12 @@ const removeComment = async () => {
   await useMyFetch('/comment/remove?id=' + props.comment.id)
   toast.success("删除成功!")
   memoChangedEvent.emit(props.memoId)
+}
+const formatWebsite = (website: string) => {
+  if (/^https?:\/\//i.test(website)) {
+    return website;
+  }
+  return `http://${website}`
 }
 </script>
 

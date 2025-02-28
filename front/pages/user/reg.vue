@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import type {UserVO} from "~/types";
+import type {UserVO, SysConfigVO} from "~/types";
 import {toast} from "vue-sonner";
 
 const state = reactive({
@@ -36,6 +36,14 @@ const state = reactive({
 })
 const pending = ref(false)
 const currentUser = useState<UserVO>('userinfo')
+const sysConfig = useState<SysConfigVO>('sysConfig')
+
+onMounted(async () => {
+  if (!sysConfig.value?.enableRegister) {
+    await navigateTo('/')
+  }
+})
+
 const doReg = async () => {
   if (state.username.length < 3) {
     toast.warning("用户名最少3个字符")

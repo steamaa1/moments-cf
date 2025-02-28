@@ -14,6 +14,7 @@ export type CommentVO = {
     id: number
     content: string
     username: string
+    website?: string
     replyTo: string
     createdAt: string
     updatedAt: string
