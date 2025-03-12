@@ -90,6 +90,10 @@
                   <div>评论</div>
                 </div>
               </template>
+              <div class="flex flex-row gap-1 cursor-pointer items-center px-4" @click="navigateTo(`/memo/${item.id}`)">
+                <UIcon name="i-carbon-view"/>
+                <div>详情</div>
+              </div>
             </div>
           </div>
           <template>
