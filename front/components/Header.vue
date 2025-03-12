@@ -59,6 +59,7 @@
       <NuxtLink to="/user/settings" v-if="$route.path !== '/user/settings' && global.userinfo.token" title="用户中心">
         <UIcon name="i-carbon-user-avatar" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
       </NuxtLink>
+      <UIcon name="i-carbon-friendship" v-if="$route.path == '/' && props.user.friendLinks && global.userinfo.token" class="text-[#9fc84a] w-5 h-5 cursor-pointer" @click="showfriendLinks = true" title="友情链接"/>
       <NuxtLink to="/user/login" v-if="!global.userinfo.token" title="登录">
         <UIcon name="i-carbon-login" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
       </NuxtLink>
@@ -75,6 +76,25 @@
         <div class="slogon text-gray truncate w-full text-end text-xs mt-2">{{ props.user.slogan }}</div>
       </div>
     </div>
+
+    <template>
+      <UModal v-model="showfriendLinks" :ui="{container: 'sm:items-start'}">
+        <div class="absolute top-2 right-2 cursor-pointer" @click="showfriendLinks = false">
+          <UIcon name="i-carbon-close" class="text-[#9fc84a] w-5 h-5" />
+        </div>
+        <div class="flex flex-col gap-2 p-4 text-gray-500 dark:text-white">
+          <h3 class="flex items-center text font-bold mb-2">友情链接</h3>
+          <div class="grid grid-cols-3 gap-4 text-sm">
+            <div v-for="link in friendLinkList" :key="link.url" class="flex items-center">
+              <a :href="link.url" target="_blank" class="flex items-center gap-2">
+                <img :src="link.icon" alt="Friend Avatar" class="w-6 h-6 rounded-full">
+                <span>{{ link.name }}</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </UModal>
+    </template>
   </div>
 </template>
 <script setup lang="ts">
@@ -86,11 +106,27 @@ const global = useGlobalState()
 const props = defineProps<{ user: UserVO }>()
 const mode = useColorMode()
 const {y} = useWindowScroll()
+const showfriendLinks = ref(false)
 
 const logout = async () => {
   global.value.userinfo = {}
   await navigateTo('/')
 }
+
+const friendLinkList = computed(() => {
+  if (!props.user.friendLinks) {
+    return []
+  }
+  const lines = props.user.friendLinks.split('\n')
+  return lines.map(line => {
+    const [name, url, icon] = line.split('|')
+    return {
+      name,
+      url,
+      icon
+    }
+  })
+})
 
 const toggleMode = () => {
   if (mode.value === 'dark') {
