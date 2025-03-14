@@ -29,9 +29,6 @@
     <UFormGroup label="邮箱" name="email" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.email" type="email" placeholder="若管理员启用了邮件通知，将在收到评论时发送邮件通知"/>
     </UFormGroup>
-    <UFormGroup label="友情链接" name="friendLinks" :ui="{label:{base:'font-bold'}}">
-      <UTextarea v-model="state.friendLinks" :rows="5" placeholder="每行示例：名称 | 网址(须以 http(s):// 开头) | 图标链接"/>
-    </UFormGroup>
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
 </template>
@@ -53,7 +50,6 @@ const state = reactive({
   email: "",
   css: "",
   js: "",
-  friendLinks: "",
 })
 const logout = async () => {
   global.value.userinfo = {}

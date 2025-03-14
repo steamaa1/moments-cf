@@ -39,6 +39,9 @@
     <UFormGroup label="自定义RSS" name="rss" :ui="{label:{base:'font-bold'}}">
       <UTextarea v-model="state.rss" :rows="1"  placeholder="留空使用默认配置"/>
     </UFormGroup>
+    <UFormGroup label="友情链接" name="friendLinks" :ui="{label:{base:'font-bold'}}">
+      <UTextarea v-model="state.friendLinks" :rows="5" placeholder="每行示例：名称 | 网址(须以 http(s):// 开头) | 图标链接"/>
+    </UFormGroup>
     <UFormGroup label="评论最大字数" name="maxCommentLength" :ui="{label:{base:'font-bold'}}">
       <UInput v-model.number="state.maxCommentLength"/>
     </UFormGroup>
@@ -140,6 +143,7 @@ const state = reactive({
   css: "",
   js: "",
   rss: "",
+  friendLinks: "",
   enableS3: false,
   s3: {
     domain: "",

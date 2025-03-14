@@ -59,7 +59,7 @@
       <NuxtLink to="/user/settings" v-if="$route.path !== '/user/settings' && global.userinfo.token" title="用户中心">
         <UIcon name="i-carbon-user-avatar" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
       </NuxtLink>
-      <UIcon name="i-carbon-friendship" v-if="$route.path == '/' && props.user.friendLinks && global.userinfo.token" class="text-[#9fc84a] w-5 h-5 cursor-pointer" @click="showfriendLinks = true" title="友情链接"/>
+      <UIcon name="i-carbon-friendship" v-if="$route.path == '/' && sysConfig.friendLinks" class="text-[#9fc84a] w-5 h-5 cursor-pointer" @click="showfriendLinks = true" title="友情链接"/>
       <NuxtLink to="/user/login" v-if="!global.userinfo.token" title="登录">
         <UIcon name="i-carbon-login" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
       </NuxtLink>
@@ -98,11 +98,12 @@
   </div>
 </template>
 <script setup lang="ts">
-import type {UserVO} from "~/types";
+import type {SysConfigVO, UserVO} from "~/types";
 import {useGlobalState} from "~/store";
 import {useColorMode} from '@vueuse/core'
 
 const global = useGlobalState()
+const sysConfig = useState<SysConfigVO>('sysConfig')
 const props = defineProps<{ user: UserVO }>()
 const mode = useColorMode()
 const {y} = useWindowScroll()
@@ -114,10 +115,10 @@ const logout = async () => {
 }
 
 const friendLinkList = computed(() => {
-  if (!props.user.friendLinks) {
+  if (!sysConfig.value.friendLinks) {
     return []
   }
-  const lines = props.user.friendLinks.split('\n')
+  const lines = sysConfig.value.friendLinks.split('\n')
   return lines.map(line => {
     const [name, url, icon] = line.split('|')
     return {
