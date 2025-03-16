@@ -90,6 +90,16 @@ func main() {
 		}))
 	}
 
+	if cfg.Cors != "" {
+		allowOrigins := strings.Split(cfg.Cors, ",")
+		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+			AllowCredentials: true,
+			AllowOrigins:     allowOrigins,
+			AllowMethods:     []string{http.MethodGet, http.MethodPost},
+			AllowHeaders:     []string{echo.HeaderContentType, "X-API-TOKEN"},
+		}))
+	}
+
 	migrateTo3(tx, myLogger)
 	migrateIframeVideoUrl(tx, myLogger)
 
