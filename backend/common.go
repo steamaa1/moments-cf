@@ -1,12 +1,13 @@
 package main
 
 import (
-	"github.com/google/uuid"
-	"github.com/kingwrcy/moments/vo"
-	"github.com/rs/zerolog"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
+	"github.com/kingwrcy/moments/vo"
+	"github.com/rs/zerolog"
 )
 
 func handleEmptyConfig(log zerolog.Logger, cfg *vo.AppConfig) {
@@ -16,6 +17,7 @@ func handleEmptyConfig(log zerolog.Logger, cfg *vo.AppConfig) {
 		return
 	}
 	log.Debug().Str("数据库[DB]", cfg.DB).
+		Str("跨域[CORS]", cfg.Cors).
 		Int("端口[PORT]", cfg.Port).
 		Str("JWT密钥[JWT_KEY]", cfg.JwtKey).
 		Str("上传目录[UPLOAD_DIR]", cfg.UploadDir).

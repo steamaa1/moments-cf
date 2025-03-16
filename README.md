@@ -44,14 +44,15 @@
 
 Moments 支持以下 **环境变量** 进行配置：
 
-| 变量名           | 说明                  | 默认值                                             |
-| ---------------- | --------------------- | -------------------------------------------------- |
-| `PORT`           | 监听端口              | `3000`                                             |
-| `JWT_KEY`        | JWT 密钥              | **不填写则随机生成，重启后需重新登录**             |
-| `DB`             | SQLite 数据库存放目录 | `db.sqlite`（默认 `/app/data/db.sqlite`）          |
-| `UPLOAD_DIR`     | 上传文件本地目录      | `upload`（默认 `/app/data/upload`）                |
-| `LOG_LEVEL`      | 日志级别              | `info`（可选 `debug`）                             |
-| `ENABLE_SWAGGER` | 启用 Swagger 文档     | `false`（可选 `true`，访问 `/swagger/index.html`） |
+| 变量名         | 说明                   | 默认值                                                                         |
+| -------------- | ---------------------- | ------------------------------------------------------------------------------ |
+| CORS           | 允许的跨域 Origin 列表 | 空，多个 Origin 可以使用英文逗号分隔，如 `http://127.0.0.1,http://10.10.10.10` |
+| PORT           | 监听端口               | 3000                                                                           |
+| JWT_KEY        | JWT 密钥               | 空，不填写则随机生成，重启后需重新登录                                         |
+| DB             | SQLite 数据库存放目录  | /app/data/db.sqlite                                                            |
+| UPLOAD_DIR     | 上传文件本地目录       | /app/data/upload                                                               |
+| LOG_LEVEL      | 日志级别               | info，可选 debug                                                               |
+| ENABLE_SWAGGER | 启用 Swagger 文档      | false，可选 true，通过 `/swagger/index.html` 访问                              |
 
 ⚡ **支持 `.env` 文件加载环境变量**，示例：
 

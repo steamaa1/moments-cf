@@ -11,7 +11,6 @@ type S3VO struct {
 }
 
 type SysConfigVO struct {
-	AdminUserName          string `json:"adminUserName,omitempty"`    //管理员名称
 	EnableS3               bool   `json:"enableS3"`                   //是否启用S3
 	EnableAutoLoadNextPage bool   `json:"enableAutoLoadNextPage"`     //是否启用自动加载下一页
 	Favicon                string `json:"favicon,omitempty"`          //favicon
