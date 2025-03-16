@@ -90,8 +90,8 @@ func main() {
 		}))
 	}
 
-	if cfg.Cors != "" {
-		allowOrigins := strings.Split(cfg.Cors, ",")
+	if cfg.CorsOrigin != "" {
+		allowOrigins := strings.Split(cfg.CorsOrigin, ",")
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 			AllowCredentials: true,
 			AllowOrigins:     allowOrigins,
