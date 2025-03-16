@@ -17,7 +17,7 @@ func handleEmptyConfig(log zerolog.Logger, cfg *vo.AppConfig) {
 		return
 	}
 	log.Debug().Str("数据库[DB]", cfg.DB).
-		Str("跨域[CORS]", cfg.Cors).
+		Str("跨域[CORS_ORIGIN]", cfg.CorsOrigin).
 		Int("端口[PORT]", cfg.Port).
 		Str("JWT密钥[JWT_KEY]", cfg.JwtKey).
 		Str("上传目录[UPLOAD_DIR]", cfg.UploadDir).
