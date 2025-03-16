@@ -54,6 +54,7 @@ export type UserVO = {
 }
 export type SysConfigVO = {
     version: string,
+    commitId: string,
     adminUserName: string,
     title: string,
     favicon: string,

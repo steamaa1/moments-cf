@@ -165,6 +165,27 @@ const state = reactive({
   smtpPassword: "",
 })
 
+const findInvalidFriendLink = (): string | undefined => {
+  const invalidLink = state.friendLinks
+    .split('\n')
+    .filter(Boolean)
+    .find(line => {
+      const [name, url, icon] = line.split('|');
+      if (!name || !url || !icon || !url.startsWith('http')) {
+        return true
+      }
+    })
+
+  if (!invalidLink) {
+    state.friendLinks = state.friendLinks
+      .split('\n')
+      .filter(Boolean)
+      .join('\n')
+  }
+
+  return invalidLink
+}
+
 const reload = async () => {
   const res = await useMyFetch<SysConfigVO>('/sysConfig/getFull')
   if (res) {
@@ -175,6 +196,12 @@ const reload = async () => {
 }
 
 const save = async () => {
+  const invalidLink = findInvalidFriendLink()
+  if (invalidLink) {
+    toast.error(`友情链接格式不正确：${invalidLink}`)
+    return
+  }
+
   await useMyFetch('/sysConfig/save', state)
   toast.success("保存成功")
   location.reload()
