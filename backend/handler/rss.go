@@ -101,11 +101,29 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 	}
 
 	feed.Items = []*feeds.Item{}
+	// 定义标题截取的长度
+	const maxTitleLength = 20
 	for _, memo := range memos {
 		memoLink := fmt.Sprintf("%s/memo/%d", host, memo.Id)
+		title := ""
+        // 检查内容是否为空
+        if memo.Content != "" {
+            // 按换行符分割内容，取第一行
+            lines := strings.Split(memo.Content, "\n")
+            if len(lines) > 0 {
+                title = lines[0]
+                runeTitle := []rune(title)
+                if len(runeTitle) > maxTitleLength {
+                    title = string(runeTitle[:maxTitleLength]) + "..."
+                }
+            }
+        } else {
+            // 若内容为空，使用默认标题格式
+            title = fmt.Sprintf("Memo #%d", memo.Id)
+        }
 		feed.Items = append(feed.Items, &feeds.Item{
 			Id:          memoLink,
-			Title:       fmt.Sprintf("Memo #%d", memo.Id),
+			Title:       title,
 			Link:        &feeds.Link{Href: memoLink},
 			Description: parseMarkdownToHtml(getContentWithExt(memo, host)),
 			Author:      &feeds.Author{Name: memo.User.Nickname, Email: memo.User.Email},
