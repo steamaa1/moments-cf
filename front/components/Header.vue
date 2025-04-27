@@ -18,9 +18,9 @@
         <span v-else-if="$route.path === '/sys/settings'">系统设置</span>
         <span v-else-if="$route.path === '/user/settings'">用户中心</span>
         <span v-else-if="$route.path.indexOf('/tags/') >= 0">
-          {{ getTagFromRoute() || "话题专栏" }}
+          {{ route.params.tag || "话题专栏" }}
         </span>
-        <span v-else-if="$route.path === '/links'">友情链接</span>
+        <span v-else-if="$route.path === '/friend'">友情链接</span>
         <span v-else>
           <span v-if="!global.userinfo.token && $route.path === '/user/login'">
             登录
@@ -42,13 +42,13 @@
         <UIcon name="i-carbon-logout" class="w-5 h-5 cursor-pointer" />
       </NuxtLink>
       <span
-        v-if="$route.path == '/links' && global.userinfo.id === 1"
+        v-if="$route.path === '/friend' && global.userinfo.id === 1"
         class="flex"
       >
         <UIcon
           name="i-carbon-add"
           class="w-6 h-6 cursor-pointer"
-          @click="$emit('add-links')"
+          @click="$emit('add-friend')"
         />
       </span>
     </div>
@@ -116,7 +116,7 @@
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
       </NuxtLink>
-      <NuxtLink v-if="$route.path == '/'" to="/links" title="友情链接">
+      <NuxtLink v-if="$route.path === '/'" to="/friend" title="友情链接">
         <UIcon
           name="i-carbon-friendship"
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
@@ -195,20 +195,6 @@ const toggleMode = () => {
     mode.preference = "system";
     toast.success("显示模式将跟随系统设置");
   }
-};
-
-const getTagFromRoute = () => {
-  if (route.path.indexOf("/tags/") >= 0) {
-    const parts = route.path.split("/");
-    const tag = parts[parts.length - 1];
-    try {
-      return decodeURIComponent(tag);
-    } catch (error) {
-      console.error("标签名称解码出错:", error);
-      return tag;
-    }
-  }
-  return null;
 };
 </script>
 

@@ -142,12 +142,10 @@ export type Video = {
 
 export type VideoType = Video["type"]
 
-export type Link = {
+export type Friend = {
     id: number;
     name: string;
     icon: string;
     url: string;
     desc: string;
-    createdAt?: Date;
-    updatedAt?: Date;
 }

@@ -68,12 +68,11 @@ func setupRouter(injector do.Injector) {
 	rssGroup := e.Group("/rss")
 	rssGroup.GET("", rssHandler.GetRss)
 
-	linksHandler := handler.NewLinksHandler(injector)
-
-	linksGroup := apiGroup.Group("/links")
-	linksGroup.POST("/add", linksHandler.AddLinks)
-	linksGroup.POST("/list", linksHandler.GetLinksList)
-	linksGroup.POST("/delete", linksHandler.DeleteLinks)
+	friendHandler := handler.NewFriendHandler(injector)
+	friendGroup := apiGroup.Group("/friend")
+	friendGroup.POST("/list", friendHandler.GetFriendList)
+	friendGroup.POST("/add", friendHandler.AddFriend)
+	friendGroup.POST("/delete", friendHandler.DeleteFriend)
 
 	if cfg.EnableSwagger {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)

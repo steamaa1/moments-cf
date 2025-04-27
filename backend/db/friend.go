@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-type Link struct {
+type Friend struct {
 	Id        int32      `gorm:"column:id;primary_key;NOT NULL" json:"id,omitempty"`
 	Name      string     `gorm:"column:name" json:"name,omitempty"`
 	Icon      string     `gorm:"column:icon" json:"icon,omitempty"`
@@ -14,6 +14,6 @@ type Link struct {
 	UpdatedAt *time.Time `gorm:"column:updatedAt;NOT NULL" json:"updatedAt,omitempty"`
 }
 
-func (n *Link) TableName() string {
-	return "Link"
+func (n *Friend) TableName() string {
+	return "Friend"
 }

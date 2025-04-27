@@ -96,7 +96,7 @@
       <div
         v-if="$route.path == '/'"
         class="flex flex-col items-center"
-        @click="navigate('/links')"
+        @click="navigate('/friend')"
         title="友情链接"
       >
         <span

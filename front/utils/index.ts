@@ -32,7 +32,6 @@ export const useMyFetch = async <T>(url: string, data?: any) => {
       throw new Error(res.message || "请求失败")
     }
 
-    toast.error(res.message || "请求失败")
     throw new Error(res.message)
   }
 
