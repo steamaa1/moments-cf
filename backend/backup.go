@@ -87,5 +87,5 @@ func backupDatabase(log zerolog.Logger, cfg *vo.AppConfig) {
 		log.Error().Msgf("序列化新配置失败, err: %v", err)
 	}
 
-	db.Exec("UPDATE SysConfig SET content = ?", content)
+	db.Exec("UPDATE SysConfig SET content = ?", string(content))
 }
