@@ -18,6 +18,7 @@
         <span v-else-if="$route.path === '/sys/settings'">系统设置</span>
         <span v-else-if="$route.path === '/user/settings'">用户中心</span>
         <span v-else-if="$route.path.indexOf('/tags/') >= 0">话题专栏</span>
+        <span v-else-if="$route.path === '/links'">友情链接</span>
         <span v-else>
           <span v-if="!global.userinfo.token && $route.path === '/user/login'">
             登录
@@ -37,6 +38,16 @@
       >
         <UIcon name="i-carbon-logout" class="w-5 h-5 cursor-pointer" />
       </NuxtLink>
+      <span
+        v-if="$route.path == '/links' && global.userinfo.id === 1"
+        class="flex"
+      >
+        <UIcon
+          name="i-carbon-add"
+          class="w-6 h-6 cursor-pointer"
+          @click="$emit('add-links')"
+        />
+      </span>
     </div>
 
     <div
@@ -102,7 +113,12 @@
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
       </NuxtLink>
-
+      <NuxtLink v-if="$route.path == '/'" to="/links" title="友情链接">
+        <UIcon
+          name="i-carbon-friendship"
+          class="text-[#9fc84a] w-5 h-5 cursor-pointer"
+        />
+      </NuxtLink>
       <NuxtLink
         v-if="$route.path !== '/sys/settings' && global.userinfo.id === 1"
         to="/sys/settings"
@@ -123,13 +139,6 @@
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
       </NuxtLink>
-      <UIcon
-        v-if="$route.path == '/' && sysConfig.friendLinks"
-        name="i-carbon-friendship"
-        title="友情链接"
-        class="text-[#9fc84a] w-5 h-5 cursor-pointer"
-        @click="showfriendLinks = true"
-      />
       <NuxtLink v-if="!global.userinfo.token" to="/user/login" title="登录">
         <UIcon
           name="i-carbon-login"
@@ -139,13 +148,6 @@
     </div>
 
     <img class="header-img w-full" :src="props.user.coverUrl" alt="" />
-    <UIcon
-      v-if="$route.path == '/' && sysConfig.friendLinks"
-      name="i-carbon-friendship"
-      title="友情链接"
-      class="sm:hidden absolute right-3 top-3 text-[#9fc84a] dark:text-white w-5 h-5 cursor-pointer sm:w-[567px]"
-      @click="showfriendLinks = true"
-    />
     <div class="absolute right-2 bottom-[-40px]">
       <div class="userinfo flex flex-col">
         <div class="flex flex-row items-center gap-4 justify-end">
@@ -162,86 +164,24 @@
         </div>
       </div>
     </div>
-
-    <template>
-      <UModal
-        v-model="showfriendLinks"
-        :ui="{
-          container:
-            'sm:items-start fixed top-5 left-0 right-3 flex justify-center items-start',
-        }"
-      >
-        <div
-          class="absolute top-2 right-2 cursor-pointer"
-          @click="showfriendLinks = false"
-        >
-          <UIcon name="i-carbon-close" class="text-[#9fc84a] w-5 h-5" />
         </div>
-        <div class="flex flex-col gap-2 p-4 text-gray-500 dark:text-white">
-          <h3 class="flex items-center text font-bold mb-2">友情链接</h3>
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <div
-              v-for="link in friendLinkList"
-              :key="link.url"
-              class="flex items-center"
-            >
-              <a
-                :href="link.url"
-                target="_blank"
-                class="flex items-center gap-2"
-              >
-                <img
-                  :src="link.icon"
-                  alt="Friend Avatar"
-                  class="w-6 h-6 rounded-full"
-                />
-                <span>{{ link.name }}</span>
-              </a>
-            </div>
-          </div>
-          <div
-            class="flex justify-center item-center mt-2 text-sm text-gray-400"
-          >
-            共有 {{ friendLinkList.length }} 个朋友
-          </div>
-        </div>
-      </UModal>
     </template>
-  </div>
-</template>
 <script setup lang="ts">
 import { toast } from "vue-sonner";
-import type { SysConfigVO, UserVO } from "~/types";
+import type { UserVO } from "~/types";
 import { useGlobalState } from "~/store";
 
 const global = useGlobalState();
-const sysConfig = useState<SysConfigVO>("sysConfig");
+const route = useRoute();
 
 const props = defineProps<{ user: UserVO }>();
 const mode = useColorMode();
 const { y } = useWindowScroll();
 
-const showfriendLinks = ref(false);
-
 const logout = async () => {
   global.value.userinfo = {};
   await navigateTo("/");
 };
-
-const friendLinkList = computed(() => {
-  if (!sysConfig.value.friendLinks) {
-    return [];
-  }
-  const lines = sysConfig.value.friendLinks.split("\n");
-  return lines.map((line) => {
-    const [name, url, icon] = line.split("|");
-    return {
-      name,
-      url,
-      icon,
-    };
-  });
-});
 
 const toggleMode = () => {
   if (mode.preference === "system") {
