@@ -66,6 +66,8 @@ func main() {
 
 	backupDatabase(myLogger, &cfg)
 
+	migrateFriendLink(myLogger, &cfg)
+
 	do.Provide(injector, db.NewDB)
 	do.Provide(injector, newEchoEngine)
 	do.Provide(injector, handler.NewBaseHandler)
