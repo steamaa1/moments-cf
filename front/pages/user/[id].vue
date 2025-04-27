@@ -1,23 +1,14 @@
 <template>
   <Header v-if="memos.length > 0" v-bind:user="memos[0].user" />
 
-  <div class="flex flex-col">
-    <div v-for="(memo, index) in pinnedMemos" :key="index">
-      <userMemo v-bind:memo="memo" />
-    </div>
-    <div v-for="(memo, index) in nonPinnedMemoList" :key="index">
-      <div v-if="memo.displayYear" class="pl-4 py-4">
-        <span class="text-xl">{{ memo.displayYear }}</span>
-        <span class="text-sm">年</span>
-      </div>
-      <userMemo v-bind:memo="memo" />
-    </div>
+  <div class="flex flex-col divide-y divide-[#C0BEBF]/20">
+    <Memo v-bind:memo="memo" v-for="memo in memos" :key="memo.id" />
   </div>
   <div
-    ref="loadMoreEle"
-    class="text-xs text-center text-gray-500 py-2 cursor-pointer"
-    @click="loadMore"
     v-if="hasNext"
+    ref="loadMoreEle"
+    class="text-xs text-center text-gray-500 py-2"
+    @click="loadMore"
   >
     点击加载更多
   </div>
@@ -27,23 +18,17 @@
 </template>
 
 <script setup lang="ts">
-import type { MemoVO, SysConfigVO } from "~/types";
-import userMemo from "~/components/userMemo.vue";
+import type { MemoVO } from "~/types";
+import Memo from "~/components/Memo.vue";
 import { memoChangedEvent, memoReloadEvent } from "~/event";
 import { useElementVisibility } from "@vueuse/core";
-import { computed, onMounted, reactive, ref, watch } from "vue";
-import dayjs from "dayjs";
-
 const loadMoreEle = ref(null);
 const targetIsVisible = useElementVisibility(loadMoreEle);
-const sysConfig = useState<SysConfigVO>("sysConfig");
-
 watch(targetIsVisible, async (visible) => {
-  if (visible && sysConfig.value?.enableAutoLoadNextPage) {
+  if (visible) {
     await loadMore();
   }
 });
-
 const hasNext = ref(false);
 const route = useRoute();
 const userId = route.params.id as any as string;
@@ -53,7 +38,6 @@ const state = reactive({
 });
 
 const memos = ref<Array<MemoVO>>([]);
-
 onMounted(async () => {
   await reload();
 });
@@ -92,28 +76,6 @@ memoChangedEvent.on(async (id: number) => {
   if (index >= 0) {
     memos.value[index] = res;
   }
-});
-
-// 分离置顶和非置顶memo
-const pinnedMemos = computed(() => memos.value.filter((memo) => memo.pinned));
-const nonPinnedMemos = computed(() =>
-  memos.value.filter((memo) => !memo.pinned)
-);
-
-const nonPinnedMemoList = computed(() => {
-  if (!nonPinnedMemos.value.length) return [];
-  let lastYear: string | null = null;
-  return nonPinnedMemos.value.map((memo) => {
-    const currentYear = dayjs(memo.createdAt).locale("zh-cn").format("YYYY");
-    let returns = memo;
-    if (currentYear !== lastYear) {
-      lastYear = currentYear;
-      returns = { ...returns, displayYear: currentYear };
-    } else {
-      returns = { ...returns, displayYear: null };
-    }
-    return returns;
-  });
 });
 </script>
 
