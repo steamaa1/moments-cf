@@ -108,16 +108,30 @@ func generateFeed(memos []db.Memo, sysConfigVO *vo.FullSysConfigVO, user *db.Use
 		title := ""
 		// 检查内容是否为空
 		if memo.Content != "" {
-			// 将字符串转换为 rune 切片
-			runeContent := []rune(memo.Content)
-			if len(runeContent) > maxTitleLength {
-				title = string(runeContent[:maxTitleLength]) + "..."
-			} else {
-				title = string(runeContent)
+			// 按换行符分割内容，取第一行
+			lines := strings.Split(memo.Content, "\n")
+			if len(lines) > 0 {
+				title = lines[0]
+				runeTitle := []rune(title)
+				if len(runeTitle) > maxTitleLength {
+					title = string(runeTitle[:maxTitleLength]) + "..."
+				}
 			}
 		} else {
 			// 若内容为空，使用默认标题格式
 			title = fmt.Sprintf("Memo #%d", memo.Id)
+		}
+
+		if memo.Tags != nil && *memo.Tags != "" {
+			// 获取并格式化标签
+			tagStr := ""
+			tags := strings.Split(strings.TrimSuffix(*memo.Tags, ","), ",")
+			for _, tag := range tags {
+				tagStr = tagStr + fmt.Sprintf("[%s]", tag)
+			}
+
+			// 将标签添加到标题前面
+			title = tagStr + title
 		}
 
 		feed.Items = append(feed.Items, &feeds.Item{

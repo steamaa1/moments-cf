@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"errors"
+	"time"
+
 	"github.com/glebarez/sqlite"
 	"github.com/kingwrcy/moments/vo"
 	"github.com/rs/zerolog"
@@ -10,7 +12,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/utils"
-	"time"
 )
 
 type myLog struct {
@@ -78,7 +79,7 @@ func NewDB(injector do.Injector) (*gorm.DB, error) {
 	}
 
 	// 迁移 schema
-	err = db.AutoMigrate(&User{}, &Comment{}, &Memo{}, &SysConfig{})
+	err = db.AutoMigrate(&User{}, &Comment{}, &Memo{}, &SysConfig{}, &Friend{})
 	if err != nil {
 		return nil, err
 	}

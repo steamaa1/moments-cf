@@ -62,7 +62,6 @@ export type SysConfigVO = {
     css: string,
     js: string,
     rss: string,
-    friendLinks: string,
     enableAutoLoadNextPage: boolean
     enableS3: boolean
     enableRegister: boolean
@@ -141,3 +140,11 @@ export type Video = {
 }
 
 export type VideoType = Video["type"]
+
+export type Friend = {
+    id: number;
+    name: string;
+    icon: string;
+    url: string;
+    desc: string;
+}
