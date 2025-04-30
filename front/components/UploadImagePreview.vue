@@ -21,8 +21,8 @@
       <img :src="img" class="cursor-move rounded" />
       <div
         class="absolute top-0 right-0 px-1 bg-white dark:bg-gray-900 m-2 rounded hover:text-red-500 cursor-pointer"
-        @click="removeImage(img)"
       >
+        <!-- @click="removeImage(img)" -->
         <UIcon name="i-carbon-trash-can" />
       </div>
     </div>

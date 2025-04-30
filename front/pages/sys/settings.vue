@@ -5,6 +5,9 @@
       <div v-if="version" class="w-32">版本号: {{ version }}</div>
       <div v-if="commitId" class="w-32">commitId: {{ commitId }}</div>
     </div>
+    <div class="flex justify-center">
+      <UButton color="red" variant="soft" @click="showDeleteImageModal = true">清理未使用图片</UButton>
+    </div>
     <UFormGroup label="管理员账号" name="adminUserName" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.adminUserName"/>
     </UFormGroup>
@@ -112,6 +115,23 @@
     
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
+
+  <UModal v-model="showDeleteImageModal">
+    <UCard>
+      <template #header>
+        <div class="text-xl font-bold">确认清理</div>
+      </template>
+      <div class="p-4">
+        确定要清理未使用的图片吗？此操作不可恢复。
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <UButton color="gray" variant="soft" @click="showDeleteImageModal = false">取消</UButton>
+          <UButton color="red" variant="solid" @click="deleteUnusedImages">确认清理</UButton>
+        </div>
+      </template>
+    </UCard>
+  </UModal>
 </template>
 
 <script setup lang="ts">
@@ -157,6 +177,8 @@ const state = reactive({
   smtpPassword: "",
 })
 
+const showDeleteImageModal = ref(false)
+
 const reload = async () => {
   const res = await useMyFetch<SysConfigVO>('/sysConfig/getFull')
   if (res) {
@@ -183,6 +205,14 @@ const uploadFavicon = async (files: FileList) => {
   if (result.length) {
     toast.success("上传成功")
     state.favicon = result[0]
+  }
+}
+
+const deleteUnusedImages = async () => {
+  const res = await useMyFetch<{num: number}>('/file/deleteNoRelImage', undefined)
+  if (res) {
+    toast.success(`成功清理 ${res.num} 张未使用的图片`)
+    showDeleteImageModal.value = false
   }
 }
 
