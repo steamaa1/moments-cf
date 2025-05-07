@@ -134,7 +134,7 @@ func (f FileHandler) UploadImage(c echo.Context) error {
 		defer src.Close()
 
 		// 计算图片hash
-		hash, err := fs_util.CalHash(&src)
+		hash, err := fs_util.CalHash(src)
 		if err != nil {
 			f.base.log.Error().Msgf("计算图片hash异常:%s", err)
 			return FailRespWithMsg(c, Fail, "上传图片异常")

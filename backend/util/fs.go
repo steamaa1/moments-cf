@@ -4,7 +4,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"io"
-	"mime/multipart"
 	"os"
 )
 
@@ -17,9 +16,9 @@ func Exists(path string) bool {
 	return true
 }
 
-func CalHash(file *multipart.File) (string, error) {
+func CalHash(src io.Reader) (string, error) {
 	hash := md5.New()
-	if _, err := io.Copy(hash, *file); err != nil {
+	if _, err := io.Copy(hash, src); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
