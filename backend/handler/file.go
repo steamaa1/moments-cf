@@ -154,6 +154,14 @@ func (f FileHandler) UploadImage(c echo.Context) error {
 			}
 			defer dst.Close()
 
+			// 重置文件指针到开头
+			if seeker, ok := src.(io.Seeker); ok {
+				if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+					f.base.log.Error().Msgf("重置文件指针异常:%s", err)
+					return FailRespWithMsg(c, Fail, "上传图片异常")
+				}
+			}
+
 			// 保存图片
 			if _, err = io.Copy(dst, src); err != nil {
 				f.base.log.Error().Msgf("复制图片异常:%s", err)
