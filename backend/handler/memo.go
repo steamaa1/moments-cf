@@ -142,9 +142,12 @@ func (m MemoHandler) handleImgConfigs(sysConfigVO *vo.FullSysConfigVO, memo *db.
 对于本地图片，在上传时已经创建了图片信息
 */
 func (m MemoHandler) getImageIdsByPaths(tx *gorm.DB, paths []string) ([]int32, error) {
-	var (
-		localPaths []string
-	)
+	if len(paths) == 0 {
+		return []int32{}, nil
+	}
+
+	var localPaths []string
+
 	// 区分本地和远程图片
 	for _, path := range paths {
 		if strings.HasPrefix(path, "/upload/") {
@@ -153,7 +156,7 @@ func (m MemoHandler) getImageIdsByPaths(tx *gorm.DB, paths []string) ([]int32, e
 	}
 	// 获取本地图片的ID
 	var imageIds []int32
-	if err := tx.Where("path IN ?", localPaths).Select("id").Scan(&imageIds).Error; err != nil {
+	if err := tx.Raw("SELECT id FROM Image WHERE path IN (?)", localPaths).Scan(&imageIds).Error; err != nil {
 		return nil, err
 	}
 
@@ -166,7 +169,9 @@ func (m MemoHandler) getImageIdsByPaths(tx *gorm.DB, paths []string) ([]int32, e
 */
 func (m MemoHandler) updateImageRel(tx *gorm.DB, memoId int32, imageIds []int32) error {
 	// 删除旧的图片关系
-	tx.Delete(&db.ImageRel{}, "memoId = ?", memoId)
+	if err := tx.Delete(&db.ImageRel{}, "memoId = ?", memoId).Error; err != nil {
+		return err
+	}
 
 	// 创建新的图片关系
 	imageRels := slice.Map(imageIds, func(_ int, imageId int32) db.ImageRel {
@@ -466,7 +471,7 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 	memo.ShowType = req.ShowType
 
 	// 事务处理
-	m.base.db.Transaction(func(tx *gorm.DB) error {
+	err = m.base.db.Transaction(func(tx *gorm.DB) error {
 		// 获取图片ID
 		imageIds, err := m.getImageIdsByPaths(tx, req.Imgs)
 		if err != nil {
@@ -485,6 +490,9 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return FailRespWithMsg(c, Fail, err.Error())
+	}
 	return SuccessResp(c, h{})
 }
 
