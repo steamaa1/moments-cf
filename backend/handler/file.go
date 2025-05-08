@@ -180,9 +180,9 @@ func (f FileHandler) UploadImage(c echo.Context) error {
 				Hash: hash,
 				Path: "/upload/" + img_filename,
 			}
+			images = append(images, image)
 		}
 		result = append(result, image.Path)
-		images = append(images, image)
 	}
 
 	if err := f.base.db.CreateInBatches(images, 100).Error; err != nil {
