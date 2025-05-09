@@ -1,4 +1,4 @@
-FROM node:22.2.0-alpine AS front
+FROM node:20.19.1-bookworm AS front
 WORKDIR /app
 RUN npm install -g pnpm@10.10.0
 COPY front/package.json .
