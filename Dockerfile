@@ -1,6 +1,6 @@
 FROM node:22.2.0-alpine AS front
 WORKDIR /app
-RUN npm install -g pnpm
+RUN npm install -g pnpm@10.10.0
 COPY front/package.json .
 COPY front/pnpm-lock.yaml .
 COPY front/pnpm-workspace.yaml .

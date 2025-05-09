@@ -46,7 +46,7 @@ jobs:
           xargs -I {} gh release delete-asset ${{ env.TAG_NAME }} {}
       - name: Install Front Dependencies
         run: |
-          npm install -g pnpm
+          npm install -g pnpm@10.10.0
           make frontend-install
       - name: Build Front and Backend
         run: |
