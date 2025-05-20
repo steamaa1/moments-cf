@@ -480,7 +480,7 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 
 		// 创建memo
 		m.base.log.Info().Msgf("memo is %+v", memo)
-		if err := tx.Create(&memo).Error; err != nil {
+		if err := tx.Save(&memo).Error; err != nil {
 			return err
 		}
 
