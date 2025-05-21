@@ -1,12 +1,9 @@
 <template>
-  <Header :user="currentUser"/>
+  <Header :user="currentUser" @del-image="showDeleteImageModal = true" />
   <div class="space-y-4  flex flex-col p-4 my-4 dark:bg-neutral-800">
     <div class="flex flex-col items-end text-xs text-gray-400">
       <div v-if="version" class="w-32">版本号: {{ version }}</div>
       <div v-if="commitId" class="w-32">commitId: {{ commitId }}</div>
-    </div>
-    <div class="flex justify-center">
-      <UButton color="red" variant="soft" @click="showDeleteImageModal = true">清理未使用图片</UButton>
     </div>
     <UFormGroup label="管理员账号" name="adminUserName" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.adminUserName"/>
@@ -112,30 +109,32 @@
         <UInput v-model="state.smtpPassword" type="password"/>
       </UFormGroup>
       </template>
-    
+
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
 
-  <UModal v-model="showDeleteImageModal">
-    <UCard>
-      <template #header>
-        <div class="text-xl font-bold">确认清理</div>
-      </template>
-      <div class="p-4">
-        确定要清理未使用的图片吗？此操作不可恢复。
+  <UModal
+    v-model="showDeleteImageModal"
+    :ui="{
+      container:
+        'flex justify-center items-center backdrop-blur',
+    }"
+  >
+    <div class="p-4 bg-white dark:bg-neutral-800 rounded-lg shadow-md">
+      <p class="text-lg font-bold mb-2">谨慎操作</p>
+      <p class="text-gray-600 mb-4">确定要清理未使用的图片吗？此操作不可逆。</p>
+      <div class="flex justify-end gap-2 mt-4">
+        <UButton color="white" @click="showDeleteImageModal = false">取消</UButton>
+        <UButton @click="deleteUnusedImages">确认清理</UButton>
       </div>
-      <template #footer>
-        <div class="flex justify-end gap-2">
-          <UButton color="gray" variant="soft" @click="showDeleteImageModal = false">取消</UButton>
-          <UButton color="red" variant="solid" @click="deleteUnusedImages">确认清理</UButton>
         </div>
-      </template>
-    </UCard>
   </UModal>
+  <MobileNav @del-image="showDeleteImageModal = true" />
 </template>
 
 <script setup lang="ts">
 import type {SysConfigVO, UserVO} from "~/types";
+import MobileNav from '~/components/MobileNav.vue';
 import {toast} from "vue-sonner";
 import {useUpload} from "~/utils";
 
