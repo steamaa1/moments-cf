@@ -142,6 +142,16 @@
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
       </NuxtLink>
+      <div
+        v-if="$route.path === '/sys/settings' && global.userinfo.id === 1"
+        title="清理未使用图片"
+      >
+        <UIcon
+          name="i-carbon-no-image"
+          class="text-[#9fc84a] w-5 h-5 cursor-pointer"
+          @click="$emit('del-image')"
+        />
+      </div>
       <NuxtLink v-if="!global.userinfo.token" to="/user/login" title="登录">
         <UIcon
           name="i-carbon-login"
