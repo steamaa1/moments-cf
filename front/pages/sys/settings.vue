@@ -1,5 +1,5 @@
 <template>
-  <Header :user="currentUser" @del-image="showDeleteImageModal = true" />
+  <Header :user="currentUser"/>
   <div class="space-y-4  flex flex-col p-4 my-4 dark:bg-neutral-800">
     <div class="flex flex-col items-end text-xs text-gray-400">
       <div v-if="version" class="w-32">版本号: {{ version }}</div>
@@ -109,12 +109,12 @@
         <UInput v-model="state.smtpPassword" type="password"/>
       </UFormGroup>
       </template>
-
+    <UButton class="justify-center" color="red" @click="showCleanFileModal = true">清理已上传的文件</UButton>
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
 
   <UModal
-    v-model="showDeleteImageModal"
+    v-model="showCleanFileModal"
     :ui="{
       container:
         'flex justify-center items-center backdrop-blur',
@@ -122,10 +122,10 @@
   >
     <div class="p-4 bg-white dark:bg-neutral-800 rounded-lg shadow-md">
       <p class="text-lg font-bold mb-2">谨慎操作</p>
-      <p class="text-gray-600 mb-4">确定要清理未使用的图片吗？此操作不可逆。</p>
+      <p class="text-gray-600 mb-4">确认要清理未使用的文件（图片、视频）吗？清理后，文件将被移动到 {uploadDir}/removed 目录下，请在检查后手动删除文件以释放空间。</p>
       <div class="flex justify-end gap-2 mt-4">
-        <UButton color="white" @click="showDeleteImageModal = false">取消</UButton>
-        <UButton @click="deleteUnusedImages">确认清理</UButton>
+        <UButton color="white" @click="showCleanFileModal = false">取消</UButton>
+        <UButton @click="cleanFile">确认清理</UButton>
       </div>
         </div>
   </UModal>
@@ -174,7 +174,7 @@ const state = reactive({
   smtpPassword: "",
 })
 
-const showDeleteImageModal = useState<boolean>("showDeleteImage", () => false);
+const showCleanFileModal = ref<boolean>(false);
 
 const reload = async () => {
   const res = await useMyFetch<SysConfigVO>('/sysConfig/getFull')
@@ -205,11 +205,11 @@ const uploadFavicon = async (files: FileList) => {
   }
 }
 
-const deleteUnusedImages = async () => {
-  const res = await useMyFetch<{num: number}>('/file/deleteNoRelImage', undefined)
+const cleanFile = async () => {
+  const res = await useMyFetch<{num: number}>('/file/clean', undefined)
   if (res) {
-    toast.success(`成功清理 ${res.num} 张未使用的图片`)
-    showDeleteImageModal.value = false
+    toast.success(`成功清理 ${res.num} 个未使用的文件`)
+    showCleanFileModal.value = false
   }
 }
 

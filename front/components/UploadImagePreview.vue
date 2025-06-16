@@ -10,7 +10,7 @@
   >
     <div
       v-for="img in images"
-      :key="img"
+      :key="img.id"
       class="relative"
       :class="
         images.length === 1
@@ -18,10 +18,10 @@
           : 'full-cover-image-mult'
       "
     >
-      <img :src="img" class="cursor-move rounded" />
+      <img :src="img.img" class="cursor-move rounded" />
       <div
         class="absolute top-0 right-0 px-1 bg-white dark:bg-gray-900 m-2 rounded hover:text-red-500 cursor-pointer"
-        @click="removeImage(img)"
+        @click="removeImage(img.img)"
       >
         <UIcon name="i-carbon-trash-can" />
       </div>
@@ -64,21 +64,33 @@ const route = useRoute();
 const el = ref(null);
 const props = defineProps<{ imgs?: string; imgConfigs?: ImgConfig[] }>();
 const emit = defineEmits(["removeImage", "dragImage"]);
-const images = ref<string[]>((props.imgs || "").split(",").filter(Boolean));
 
-watch(props, () => {
-  images.value = (props.imgs || "").split(",").filter(Boolean);
+const images = ref<string[]>([]);
+const imageConfigs = ref<ImgConfig[]>([]);
+
+watchEffect(() => {
+  images.value = (props.imgs || "")
+    .split(",")
+    .filter(Boolean)
+    .map((img) => ({ id: Math.random(), img }));
 });
 
-watch(images, () => {
-  emit("dragImage", images.value);
+watchEffect(() => {
+  imageConfigs.value = (props.imgConfigs || []).map((imgConfig) => ({
+    ...imgConfig,
+    id: Math.random(),
+  }));
+});
+
+watchEffect(() => {
+  emit(
+    "dragImage",
+    images.value.map((img) => img.img)
+  );
 });
 
 const removeImage = async (img: string) => {
-  // await useMyFetch("/memo/removeImage", {
-  //   img,
-  // });
-  emit("removeImage", img);
+  emit("removeImage", img.img);
 };
 
 onMounted(() => {

@@ -4,12 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
-
-	fs_util "github.com/kingwrcy/moments/util"
 
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/handler"
@@ -264,84 +260,70 @@ func migrateIframeVideoUrl(tx *gorm.DB, log zerolog.Logger) {
 	}
 }
 
-// migrageImage 迁移图片数据
-func migrageImage(tx *gorm.DB, log zerolog.Logger, uploadDir string) {
-	var (
-		count int64     // 图片信息表记录数
-		memos []db.Memo // 需要处理的memo列表
-	)
-
-	// 检查图片信息表是否已有数据
-	err := tx.Table("Image").Count(&count).Error
+// migrageFile 迁移文件数据
+func migrageFile(tx *gorm.DB, log zerolog.Logger) {
+	// 检查文件信息表是否已有数据
+	var count int64
+	err := tx.Model(&db.File{}).Count(&count).Error
 	if err != nil {
-		log.Error().Msgf("查询图片信息表: %v", err)
+		log.Error().Msgf("查询文件信息表异常: %v", err)
 		return
 	}
+
+	// 如果文件信息表已存在数据, 则跳过迁移
 	if count != 0 {
-		// 如果图片信息表已存在数据, 则跳过迁移
 		return
 	}
 
-	// 查询所有包含图片的memo记录
-	if err := tx.Where("imgs is not null AND imgs != ''").Find(&memos).Error; err != nil {
-		log.Error().Msgf("查询memo表错误: %v", err)
+	// 查询所有包含图片和视频的 memo 记录
+	var memos []db.Memo
+	if err := tx.Model(&db.Memo{}).Where("(imgs is not null and imgs != '') or (json_extract(ext, '$.video.value') like '/upload/%')").Find(&memos).Error; err != nil {
+		log.Error().Msgf("查询 memo 表异常: %v", err)
 		return
 	}
+
 	if len(memos) == 0 {
-		log.Info().Msg("memo表中没有需要迁移的图片")
+		log.Debug().Msg("memo 表中没有需要迁移的文件")
 		return
 	}
 
-	// 遍历每个memo处理其中的图片
+	// 遍历每个 memo 处理其中的文件
 	for _, memo := range memos {
-		if memo.Imgs == "" {
+		var memoExt vo.MemoExt
+		err := json.Unmarshal([]byte(memo.Ext), &memoExt)
+		if err != nil {
+			log.Error().Msgf("memo id: %d 的 ext 不是标准的 json 格式 => %s", memo.Id, memo.Ext)
 			continue
 		}
 
-		// 将图片字符串分割为单个图片路径
-		imgs := strings.Split(memo.Imgs, ",")
-		for _, img := range imgs {
-			// 只处理上传到本地的图片
-			if strings.HasPrefix(img, "/upload/") {
-				path := img
-				// 构建完整的文件路径
-				filePath := filepath.Join(uploadDir, strings.ReplaceAll(img, "/upload/", ""))
+		filePaths := []string{}
+		filePaths = append(filePaths, memoExt.Video.Value)
+		filePaths = append(filePaths, strings.Split(memo.Imgs, ",")...)
 
-				// 打开图片文件
-				file, err := os.Open(filePath)
-				if err != nil {
-					log.Error().Msgf("打开图片 %s 错误: %v", img, err)
-					continue
-				}
-				defer file.Close()
-				// 计算图片的hash值
-				hash, err := fs_util.CalHash(file)
-				if err != nil {
-					log.Error().Msgf("计算图片 %s 的 hash 错误: %v", img, err)
-					continue
-				}
+		for _, filePath := range filePaths {
+			// 只处理上传到本地的文件
+			if !strings.HasPrefix(filePath, "/upload/") {
+				continue
+			}
 
-				// 创建图片记录
-				image := db.Image{
-					Path: path,
-					Hash: hash,
-				}
-				if err := tx.Create(&image).Error; err != nil {
-					log.Error().Msgf("创建图片 %s 信息错误: %v", img, err)
-					continue
-				}
+			// 创建文件记录
+			var image db.File
+			err := tx.Model(&db.File{}).FirstOrCreate(&image, db.File{Path: filePath}).Error
+			if err != nil {
+				log.Error().Msgf("创建文件 %s 信息错误: %v", filePath, err)
+				continue
+			}
 
-				// 记录图片与memo的关联关系
-				imageRel := db.ImageRel{
-					MemoId:  memo.Id,
-					ImageId: image.Id,
-				}
-				if err := tx.Create(&imageRel).Error; err != nil {
-					log.Error().Msgf("创建图片 %s 与 memo %d 的关系错误: %v", img, memo.Id, err)
-				}
+			// 记录文件与 memo 的关联关系
+			imageRel := db.FileRel{
+				MemoId: memo.Id,
+				FileId: image.Id,
+			}
+			if err := tx.Model(&db.FileRel{}).Create(&imageRel).Error; err != nil {
+				log.Error().Msgf("创建文件 %s 与 memo %d 的关系错误: %v", filePath, memo.Id, err)
 			}
 		}
 	}
 
-	log.Info().Msg("图片数据迁移完成")
+	log.Debug().Msg("文件数据迁移完成")
 }

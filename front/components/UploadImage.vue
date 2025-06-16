@@ -70,12 +70,6 @@ const addImg = () => {
     return
   }
 
-  const imgsArr = imgs.value.split(',').filter(Boolean)
-  if (imgsArr.includes(imgUrlToAdd.value)) {
-    toast.error("不能使用重复的图片地址");
-    return
-  }
-
   imgs.value += `,${imgUrlToAdd.value}`
   imgUrlToAdd.value = ''
 }

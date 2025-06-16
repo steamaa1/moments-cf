@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -44,50 +43,6 @@ func NewMemoHandler(injector do.Injector) *MemoHandler {
 		base: do.MustInvoke[BaseHandler](injector),
 		hc:   http.Client{},
 	}
-}
-
-// RemoveImage godoc
-//
-//	@Tags			Memo
-//	@Summary		删除memo的图片
-//	@Description	目前只会删除本地上传的,不会删除S3上的
-//	@Accept			json
-//	@Produce		json
-//	@Param			object		body	vo.RemoveImageReq	true	"删除memo的图片"
-//	@Param			x-api-token	header	string				true	"登录TOKEN"
-//	@Success		200
-//	@Router			/memo/removeImage [post]
-func (m MemoHandler) RemoveImage(c echo.Context) error {
-	var (
-		req vo.RemoveImageReq
-	)
-	err := c.Bind(&req)
-	if err != nil {
-		return FailResp(c, ParamError)
-	}
-
-	if !strings.HasPrefix(req.Img, "/upload/") || strings.Contains(req.Img, "..") {
-		return SuccessResp(c, h{})
-	}
-
-	img := strings.ReplaceAll(req.Img, "/upload/", "")
-
-	imageFilePath := filepath.Join(m.base.cfg.UploadDir, img)
-	if fs_util.Exists(imageFilePath) {
-		if err := os.Remove(imageFilePath); err != nil {
-			return FailRespWithMsg(c, ParamError, fmt.Sprintf("删除图片失败:%s", err))
-		}
-	}
-
-	thumbImageFilename := strings.ReplaceAll(req.Img+"_thumb", "/upload/", "")
-	thumbImageFilePath := filepath.Join(m.base.cfg.UploadDir, thumbImageFilename)
-	if fs_util.Exists(thumbImageFilePath) {
-		if err := os.Remove(thumbImageFilePath); err != nil {
-			m.base.log.Error().Msgf("删除缩略图失败, thumbImageFilePath=%s, err=%v", thumbImageFilePath, err)
-		}
-	}
-
-	return SuccessResp(c, h{})
 }
 
 type memoListResp struct {
@@ -138,51 +93,52 @@ func (m MemoHandler) handleImgConfigs(sysConfigVO *vo.FullSysConfigVO, memo *db.
 }
 
 /*
-根据图片路径获取图片ID
-对于本地图片，在上传时已经创建了图片信息
+根据文件路径获取文件 ID
 */
-func (m MemoHandler) getImageIdsByPaths(tx *gorm.DB, paths []string) ([]int32, error) {
-	if len(paths) == 0 {
+func (m MemoHandler) getFileIdsByPaths(tx *gorm.DB, filePaths []string) ([]int32, error) {
+	// 快速退出
+	if len(filePaths) == 0 {
 		return []int32{}, nil
 	}
 
-	var localPaths []string
+	// 过滤出本地文件
+	localFilePaths := slice.Filter(filePaths, func(_ int, path string) bool {
+		return strings.HasPrefix(path, "/upload/")
+	})
 
-	// 区分本地和远程图片
-	for _, path := range paths {
-		if strings.HasPrefix(path, "/upload/") {
-			localPaths = append(localPaths, path)
-		}
-	}
-	// 获取本地图片的ID
-	var imageIds []int32
-	if err := tx.Raw("SELECT id FROM Image WHERE path IN (?)", localPaths).Scan(&imageIds).Error; err != nil {
+	// 获取本地文件的 ID
+	var fileIds []int32
+	if err := tx.Model(&db.File{}).Where("path IN (?)", localFilePaths).Select("id").Find(&fileIds).Error; err != nil {
 		return nil, err
 	}
 
-	return imageIds, nil
+	return fileIds, nil
 }
 
 /*
-更新memo的图片关系
-先删除旧的图片关系，再创建新的图片关系
+更新 memo 的文件关系, 先删除旧的文件关系，再创建新的文件关系
 */
-func (m MemoHandler) updateImageRel(tx *gorm.DB, memoId int32, imageIds []int32) error {
-	// 删除旧的图片关系
-	if err := tx.Delete(&db.ImageRel{}, "memoId = ?", memoId).Error; err != nil {
+func (m MemoHandler) updateFileRel(tx *gorm.DB, memoId int32, fileIds []int32) error {
+	// 删除旧的文件关系
+	if err := tx.Delete(&db.FileRel{}, "memoId = ?", memoId).Error; err != nil {
 		return err
 	}
 
-	// 创建新的图片关系
-	imageRels := slice.Map(imageIds, func(_ int, imageId int32) db.ImageRel {
-		return db.ImageRel{
-			MemoId:  memoId,
-			ImageId: imageId,
+	// 快速退出
+	if len(fileIds) == 0 {
+		return nil
+	}
+
+	// 创建新的文件关系
+	fileRels := slice.Map(fileIds, func(_ int, fileId int32) db.FileRel {
+		return db.FileRel{
+			MemoId: memoId,
+			FileId: fileId,
 		}
 	})
 
-	// 批量创建图片关系
-	if err := tx.CreateInBatches(imageRels, 100).Error; err != nil {
+	// 批量创建文件关系
+	if err := tx.CreateInBatches(fileRels, 20).Error; err != nil {
 		return err
 	}
 
@@ -317,10 +273,8 @@ func (m MemoHandler) RemoveMemo(c echo.Context) error {
 		return FailRespWithMsg(c, Fail, "删除失败")
 	}
 
-	if memo.Imgs != "" {
-		// 删除memo的图片关系
-		_ = m.updateImageRel(m.base.db, memo.Id, []int32{})
-	}
+	// 删除 memo 的文件关系
+	m.updateFileRel(m.base.db, memo.Id, []int32{})
 
 	return SuccessResp(c, h{})
 }
@@ -461,7 +415,11 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 	bytes, _ := json.Marshal(req.Ext)
 	extJson = string(bytes)
 
-	memo.Imgs = strings.Join(req.Imgs, ",")
+	imgs := strings.Join(req.Imgs, ",")
+	needUpdateImageRel := memo.Imgs != imgs
+	needUpdateVideoRel := memo.Ext != extJson
+
+	memo.Imgs = imgs
 	memo.Location = req.Location
 	memo.ExternalUrl = req.ExternalUrl
 	memo.ExternalTitle = req.ExternalTitle
@@ -472,27 +430,36 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 
 	// 事务处理
 	err = m.base.db.Transaction(func(tx *gorm.DB) error {
-		// 获取图片ID
-		imageIds, err := m.getImageIdsByPaths(tx, req.Imgs)
-		if err != nil {
-			return err
-		}
-
-		// 创建memo
-		m.base.log.Info().Msgf("memo is %+v", memo)
+		// 创建 memo
 		if err := tx.Save(&memo).Error; err != nil {
 			return err
 		}
 
-		// 更新图片关系
-		if err := m.updateImageRel(tx, memo.Id, imageIds); err != nil {
+		if !needUpdateImageRel && !needUpdateVideoRel {
+			return nil
+		}
+
+		filePaths := []string{}
+		filePaths = append(filePaths, req.Ext.Video.Value)
+		filePaths = append(filePaths, req.Imgs...)
+
+		// 获取文件 ID
+		fileIds, err := m.getFileIdsByPaths(tx, filePaths)
+		if err != nil {
 			return err
 		}
+
+		// 更新文件关系
+		if err := m.updateFileRel(tx, memo.Id, fileIds); err != nil {
+			return err
+		}
+
 		return nil
 	})
 	if err != nil {
 		return FailRespWithMsg(c, Fail, err.Error())
 	}
+
 	return SuccessResp(c, h{})
 }
 
@@ -687,270 +654,270 @@ func getFaviconAndTitle(websiteURL string) (string, string, error) {
 
 // GetDoubanMovieInfo godoc
 //
-//    @Tags       Memo
-//    @Summary    获取豆瓣电影详情
-//    @Accept     json
-//    @Produce    json
-//    @Param      id          query       int     true    "豆瓣电影ID"
-//    @Param      x-api-token header      string  true    "登录TOKEN"
-//    @Success    200         {object}    vo.DoubanMovie
-//    @Router     /api/memo/getDoubanMovieInfo [post]
+//	@Tags       Memo
+//	@Summary    获取豆瓣电影详情
+//	@Accept     json
+//	@Produce    json
+//	@Param      id          query       int     true    "豆瓣电影ID"
+//	@Param      x-api-token header      string  true    "登录TOKEN"
+//	@Success    200         {object}    vo.DoubanMovie
+//	@Router     /api/memo/getDoubanMovieInfo [post]
 func (m MemoHandler) GetDoubanMovieInfo(c echo.Context) error {
 
-    var (
-        book        vo.DoubanMovie
-        sysConfigVo vo.FullSysConfigVO
-        sysConfig   db.SysConfig
-        userAgent   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-    )
+	var (
+		book        vo.DoubanMovie
+		sysConfigVo vo.FullSysConfigVO
+		sysConfig   db.SysConfig
+		userAgent   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+	)
 
-    if err := m.base.db.First(&sysConfig).Error; errors.Is(err, gorm.ErrRecordNotFound) {
-        return FailRespWithMsg(c, Fail, "系统配置为空")
-    }
-    err := json.Unmarshal([]byte(sysConfig.Content), &sysConfigVo)
-    if err != nil {
-        return FailRespWithMsg(c, Fail, "读取系统配置异常")
-    }
+	if err := m.base.db.First(&sysConfig).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		return FailRespWithMsg(c, Fail, "系统配置为空")
+	}
+	err := json.Unmarshal([]byte(sysConfig.Content), &sysConfigVo)
+	if err != nil {
+		return FailRespWithMsg(c, Fail, "读取系统配置异常")
+	}
 
-    id := c.QueryParam("id")
-    target := fmt.Sprintf("https://movie.douban.com/subject/%s/", id)
+	id := c.QueryParam("id")
+	target := fmt.Sprintf("https://movie.douban.com/subject/%s/", id)
 
-    req, _ := http.NewRequest("GET", target, nil)
-    req.Header.Set("User-Agent", userAgent)
-    start := time.Now()
-    res, err := m.hc.Do(req)
-    m.base.log.Info().Str("豆瓣读书ID", id).Str("URL", target).Str("耗时", fmt.Sprintf("%f秒", time.Since(start).Seconds())).Msgf("获取豆瓣读书")
-    if err != nil {
-        m.base.log.Error().Msgf("获取豆瓣电影异常:%s", err.Error())
-        return FailRespWithMsg(c, Fail, err.Error())
-    }
-    defer res.Body.Close()
-    if res.StatusCode != 200 {
-        m.base.log.Error().Msgf("豆瓣电影API返回码不是200,而是:%d", res.StatusCode)
-        return FailRespWithMsg(c, Fail, fmt.Sprintf("豆瓣读书API返回码不是200,而是:%d,URL:%s", res.StatusCode, target))
-    }
+	req, _ := http.NewRequest("GET", target, nil)
+	req.Header.Set("User-Agent", userAgent)
+	start := time.Now()
+	res, err := m.hc.Do(req)
+	m.base.log.Info().Str("豆瓣读书ID", id).Str("URL", target).Str("耗时", fmt.Sprintf("%f秒", time.Since(start).Seconds())).Msgf("获取豆瓣读书")
+	if err != nil {
+		m.base.log.Error().Msgf("获取豆瓣电影异常:%s", err.Error())
+		return FailRespWithMsg(c, Fail, err.Error())
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		m.base.log.Error().Msgf("豆瓣电影API返回码不是200,而是:%d", res.StatusCode)
+		return FailRespWithMsg(c, Fail, fmt.Sprintf("豆瓣读书API返回码不是200,而是:%d,URL:%s", res.StatusCode, target))
+	}
 
-    // Load the HTML document
-    doc, err := goquery.NewDocumentFromReader(res.Body)
-    if err != nil {
-        m.base.log.Error().Msgf("初始化html错误,%s", err.Error())
-        return FailRespWithMsg(c, Fail, fmt.Sprintf("初始化html错误,%s", err.Error()))
-    }
+	// Load the HTML document
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		m.base.log.Error().Msgf("初始化html错误,%s", err.Error())
+		return FailRespWithMsg(c, Fail, fmt.Sprintf("初始化html错误,%s", err.Error()))
+	}
 
-    doc.Find("meta[property]").Each(func(i int, s *goquery.Selection) {
-        if properties, exists := s.Attr("property"); exists {
-            value := s.AttrOr("content", "")
-            if properties == "og:title" {
-                book.Title = value
-            } else if properties == "og:description" {
-                book.Desc = value
-            } else if properties == "og:image" {
-                book.Image = value
-            } else if properties == "video:director" {
-                book.Director = value
-            } else if properties == "video:actor" {
-                book.Actors = value + "/"
-            }
-        }
-    })
-    book.Url = target
-    book.ReleaseDate = doc.Find("span[property='v:initialReleaseDate']").AttrOr("content", "")
-    book.Runtime = doc.Find("span[property='v:runtime']").AttrOr("content", "")
-    book.Rating = doc.Find("strong.rating_num").Text()
-    if book.Rating == "" {
-        book.Rating = "未知评分"
-    }
+	doc.Find("meta[property]").Each(func(i int, s *goquery.Selection) {
+		if properties, exists := s.Attr("property"); exists {
+			value := s.AttrOr("content", "")
+			if properties == "og:title" {
+				book.Title = value
+			} else if properties == "og:description" {
+				book.Desc = value
+			} else if properties == "og:image" {
+				book.Image = value
+			} else if properties == "video:director" {
+				book.Director = value
+			} else if properties == "video:actor" {
+				book.Actors = value + "/"
+			}
+		}
+	})
+	book.Url = target
+	book.ReleaseDate = doc.Find("span[property='v:initialReleaseDate']").AttrOr("content", "")
+	book.Runtime = doc.Find("span[property='v:runtime']").AttrOr("content", "")
+	book.Rating = doc.Find("strong.rating_num").Text()
+	if book.Rating == "" {
+		book.Rating = "未知评分"
+	}
 
-    if !strings.HasPrefix(book.Image, "http") {
-        return FailRespWithMsg(c, Fail, "无法获取电影封面")
-    }
-    if sysConfigVo.EnableS3 {
-        cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(sysConfigVo.S3.Region),
-            config.WithEndpointResolver(aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-                return aws.Endpoint{URL: sysConfigVo.S3.Endpoint}, nil
-            })),
-            config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(sysConfigVo.S3.AccessKey, sysConfigVo.S3.SecretKey, "")))
-        if err != nil {
-            m.base.log.Error().Msgf("无法加载S3 SDK配置, %s", err)
-            return FailRespWithMsg(c, Fail, err.Error())
-        }
-        imageReq, _ := http.NewRequest("GET", book.Image, nil)
-        imageReq.Header.Set("User-Agent", userAgent)
-        imageResponse, err := m.hc.Do(imageReq)
-        if err != nil {
-            return FailRespWithMsg(c, Fail, fmt.Sprintf("下载豆瓣电影图片异常:%s", err.Error()))
-        }
-        defer imageResponse.Body.Close()
-        client := s3.NewFromConfig(cfg)
-        key := fmt.Sprintf("moments/%s/%s", time.Now().Format("2006/01/02"), strings.ReplaceAll(uuid.NewString(), "-", ""))
-        _, err = client.PutObject(context.TODO(), &s3.PutObjectInput{
-            Bucket: aws.String(sysConfigVo.S3.Bucket),
-            Key:    aws.String(key),
-            Body:   imageResponse.Body,
-        })
-        if err != nil {
-            return FailRespWithMsg(c, Fail, fmt.Sprintf("上传图片到s3异常:%s", err.Error()))
-        }
-        book.Image = fmt.Sprintf("%s/%s", sysConfigVo.S3.Domain, key)
-    } else {
-        image, err := downloadImage(book.Image, m.base.log, m.base.cfg)
-        if err != nil {
-            return FailRespWithMsg(c, Fail, fmt.Sprintf("下载豆瓣电影图片异常:%s", err.Error()))
-        }
-        book.Image = image
-    }
-    return SuccessResp(c, book)
+	if !strings.HasPrefix(book.Image, "http") {
+		return FailRespWithMsg(c, Fail, "无法获取电影封面")
+	}
+	if sysConfigVo.EnableS3 {
+		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(sysConfigVo.S3.Region),
+			config.WithEndpointResolver(aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{URL: sysConfigVo.S3.Endpoint}, nil
+			})),
+			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(sysConfigVo.S3.AccessKey, sysConfigVo.S3.SecretKey, "")))
+		if err != nil {
+			m.base.log.Error().Msgf("无法加载S3 SDK配置, %s", err)
+			return FailRespWithMsg(c, Fail, err.Error())
+		}
+		imageReq, _ := http.NewRequest("GET", book.Image, nil)
+		imageReq.Header.Set("User-Agent", userAgent)
+		imageResponse, err := m.hc.Do(imageReq)
+		if err != nil {
+			return FailRespWithMsg(c, Fail, fmt.Sprintf("下载豆瓣电影图片异常:%s", err.Error()))
+		}
+		defer imageResponse.Body.Close()
+		client := s3.NewFromConfig(cfg)
+		key := fmt.Sprintf("moments/%s/%s", time.Now().Format("2006/01/02"), strings.ReplaceAll(uuid.NewString(), "-", ""))
+		_, err = client.PutObject(context.TODO(), &s3.PutObjectInput{
+			Bucket: aws.String(sysConfigVo.S3.Bucket),
+			Key:    aws.String(key),
+			Body:   imageResponse.Body,
+		})
+		if err != nil {
+			return FailRespWithMsg(c, Fail, fmt.Sprintf("上传图片到s3异常:%s", err.Error()))
+		}
+		book.Image = fmt.Sprintf("%s/%s", sysConfigVo.S3.Domain, key)
+	} else {
+		image, err := downloadImage(book.Image, m.base.log, m.base.cfg)
+		if err != nil {
+			return FailRespWithMsg(c, Fail, fmt.Sprintf("下载豆瓣电影图片异常:%s", err.Error()))
+		}
+		book.Image = image
+	}
+	return SuccessResp(c, book)
 }
 
 func downloadImage(src string, log zerolog.Logger, conf *vo.AppConfig) (string, error) {
-    start := time.Now()
-    client := &http.Client{}
-    req, _ := http.NewRequest("GET", src, nil)
-    req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
-    response, err := client.Do(req)
-    log.Info().Msgf("下载图片完成:%s,耗时:%f", src, time.Since(start).Seconds())
-    if err != nil {
-        return "", err
-    }
-    defer response.Body.Close()
+	start := time.Now()
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", src, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
+	response, err := client.Do(req)
+	log.Info().Msgf("下载图片完成:%s,耗时:%f", src, time.Since(start).Seconds())
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
 
-    key := strings.ReplaceAll(uuid.NewString(), "-", "")
-    filepath := fmt.Sprintf("%s/%s.jpg", conf.UploadDir, key)
-    dst, err := os.Create(filepath)
-    log.Info().Msgf("保存图片到本地完成:%s,耗时:%f", src, time.Since(start).Seconds())
-    if err != nil {
-        log.Error().Msgf("打开目标图片异常:%s", err)
-        return "", err
-    }
-    defer dst.Close()
+	key := strings.ReplaceAll(uuid.NewString(), "-", "")
+	filepath := fmt.Sprintf("%s/%s.jpg", conf.UploadDir, key)
+	dst, err := os.Create(filepath)
+	log.Info().Msgf("保存图片到本地完成:%s,耗时:%f", src, time.Since(start).Seconds())
+	if err != nil {
+		log.Error().Msgf("打开目标图片异常:%s", err)
+		return "", err
+	}
+	defer dst.Close()
 
-    _, err = io.Copy(dst, response.Body)
-    log.Info().Msgf("保存图片到本地完成:%s,耗时:%f", src, time.Since(start).Seconds())
-    if err != nil {
-        return "", err
-    }
-    return fmt.Sprintf("/upload/%s.jpg", key), err
+	_, err = io.Copy(dst, response.Body)
+	log.Info().Msgf("保存图片到本地完成:%s,耗时:%f", src, time.Since(start).Seconds())
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("/upload/%s.jpg", key), err
 }
 
 // GetDoubanBookInfo godoc
 //
-//    @Tags       Memo
-//    @Summary    获取豆瓣读书详情
-//    @Accept     json
-//    @Produce    json
-//    @Param      id          query       int     true    "豆瓣读书ID"
-//    @Param      x-api-token header      string  true    "登录TOKEN"
-//    @Success    200         {object}    vo.DoubanBook
-//    @Router     /api/memo/getDoubanBookInfo [post]
+//	@Tags       Memo
+//	@Summary    获取豆瓣读书详情
+//	@Accept     json
+//	@Produce    json
+//	@Param      id          query       int     true    "豆瓣读书ID"
+//	@Param      x-api-token header      string  true    "登录TOKEN"
+//	@Success    200         {object}    vo.DoubanBook
+//	@Router     /api/memo/getDoubanBookInfo [post]
 func (m MemoHandler) GetDoubanBookInfo(c echo.Context) error {
 
-    var (
-        book        vo.DoubanBook
-        sysConfigVo vo.FullSysConfigVO
-        sysConfig   db.SysConfig
-        re          = regexp.MustCompile(`\d{4}-\d{1,2}(-\d{1,2})?`)
-        userAgent   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-    )
-    if err := m.base.db.First(&sysConfig).Error; errors.Is(err, gorm.ErrRecordNotFound) {
-        return FailRespWithMsg(c, Fail, "系统配置为空")
-    }
-    err := json.Unmarshal([]byte(sysConfig.Content), &sysConfigVo)
-    if err != nil {
-        return FailRespWithMsg(c, Fail, "读取系统配置异常")
-    }
+	var (
+		book        vo.DoubanBook
+		sysConfigVo vo.FullSysConfigVO
+		sysConfig   db.SysConfig
+		re          = regexp.MustCompile(`\d{4}-\d{1,2}(-\d{1,2})?`)
+		userAgent   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+	)
+	if err := m.base.db.First(&sysConfig).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		return FailRespWithMsg(c, Fail, "系统配置为空")
+	}
+	err := json.Unmarshal([]byte(sysConfig.Content), &sysConfigVo)
+	if err != nil {
+		return FailRespWithMsg(c, Fail, "读取系统配置异常")
+	}
 
-    id := c.QueryParam("id")
-    m.base.log.Info().Msgf("开始分析豆瓣图书,id:%s", id)
+	id := c.QueryParam("id")
+	m.base.log.Info().Msgf("开始分析豆瓣图书,id:%s", id)
 
-    target := fmt.Sprintf("https://book.douban.com/subject/%s/", id)
-    // Request the HTML page.
-    client := &http.Client{}
-    start := time.Now()
-    req, _ := http.NewRequest("GET", target, nil)
-    m.base.log.Info().Msgf("请求豆瓣读书地址:%s,耗时:%f秒", target, time.Since(start).Seconds())
-    req.Header.Set("User-Agent", userAgent)
-    res, err := client.Do(req)
-    if err != nil {
-        m.base.log.Error().Msgf("获取豆瓣读书异常:%s", err.Error())
-        return FailRespWithMsg(c, Fail, err.Error())
-    }
-    defer res.Body.Close()
-    if res.StatusCode != 200 {
-        m.base.log.Error().Msgf("豆瓣读书API返回码不是200,而是:%d", res.StatusCode)
-        return FailRespWithMsg(c, Fail, fmt.Sprintf("豆瓣读书API返回码不是200,而是:%d,URL:%s", res.StatusCode, target))
-    }
+	target := fmt.Sprintf("https://book.douban.com/subject/%s/", id)
+	// Request the HTML page.
+	client := &http.Client{}
+	start := time.Now()
+	req, _ := http.NewRequest("GET", target, nil)
+	m.base.log.Info().Msgf("请求豆瓣读书地址:%s,耗时:%f秒", target, time.Since(start).Seconds())
+	req.Header.Set("User-Agent", userAgent)
+	res, err := client.Do(req)
+	if err != nil {
+		m.base.log.Error().Msgf("获取豆瓣读书异常:%s", err.Error())
+		return FailRespWithMsg(c, Fail, err.Error())
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		m.base.log.Error().Msgf("豆瓣读书API返回码不是200,而是:%d", res.StatusCode)
+		return FailRespWithMsg(c, Fail, fmt.Sprintf("豆瓣读书API返回码不是200,而是:%d,URL:%s", res.StatusCode, target))
+	}
 
-    // Load the HTML document
-    doc, err := goquery.NewDocumentFromReader(res.Body)
-    if err != nil {
-        m.base.log.Error().Msgf("初始化html错误,%s", err.Error())
-        return FailRespWithMsg(c, Fail, fmt.Sprintf("初始化html错误,%s", err.Error()))
-    }
+	// Load the HTML document
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		m.base.log.Error().Msgf("初始化html错误,%s", err.Error())
+		return FailRespWithMsg(c, Fail, fmt.Sprintf("初始化html错误,%s", err.Error()))
+	}
 
-    doc.Find("meta[property]").Each(func(i int, s *goquery.Selection) {
-        if properties, exists := s.Attr("property"); exists {
-            value := s.AttrOr("content", "")
-            if properties == "og:title" {
-                book.Title = value
-            } else if properties == "og:description" {
-                book.Desc = value
-            } else if properties == "og:image" {
-                book.Image = value
-            } else if properties == "book:author" {
-                book.Author = value
-            } else if properties == "book:isbn" {
-                book.Isbn = value
-            }
-        }
-    })
-    book.Url = target
-    book.Keywords = doc.Find("meta[name='keywords']").AttrOr("content", "")
-    date := re.FindString(book.Keywords)
-    if date != "" {
-        book.PubDate = date
-    }
-    book.Rating = doc.Find("strong.rating_num").Text()
-    if strings.TrimSpace(book.Rating) == "" {
-        book.Rating = "暂无"
-    }
+	doc.Find("meta[property]").Each(func(i int, s *goquery.Selection) {
+		if properties, exists := s.Attr("property"); exists {
+			value := s.AttrOr("content", "")
+			if properties == "og:title" {
+				book.Title = value
+			} else if properties == "og:description" {
+				book.Desc = value
+			} else if properties == "og:image" {
+				book.Image = value
+			} else if properties == "book:author" {
+				book.Author = value
+			} else if properties == "book:isbn" {
+				book.Isbn = value
+			}
+		}
+	})
+	book.Url = target
+	book.Keywords = doc.Find("meta[name='keywords']").AttrOr("content", "")
+	date := re.FindString(book.Keywords)
+	if date != "" {
+		book.PubDate = date
+	}
+	book.Rating = doc.Find("strong.rating_num").Text()
+	if strings.TrimSpace(book.Rating) == "" {
+		book.Rating = "暂无"
+	}
 
-    if !strings.HasPrefix(book.Image, "http") {
-        return FailRespWithMsg(c, Fail, "无法获取图书封面")
-    }
-    if sysConfigVo.EnableS3 {
-        cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(sysConfigVo.S3.Region),
-            config.WithEndpointResolver(aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-                return aws.Endpoint{URL: sysConfigVo.S3.Endpoint}, nil
-            })),
-            config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(sysConfigVo.S3.AccessKey, sysConfigVo.S3.SecretKey, "")))
-        if err != nil {
-            m.base.log.Error().Msgf("无法加载S3 SDK配置, %s", err)
-            return FailRespWithMsg(c, Fail, err.Error())
-        }
-        imageReq, _ := http.NewRequest("GET", book.Image, nil)
-        imageReq.Header.Set("User-Agent", userAgent)
-        imageResponse, err := client.Do(imageReq)
-        if err != nil {
-            return FailRespWithMsg(c, Fail, fmt.Sprintf("下载豆瓣图片异常:%s", err.Error()))
-        }
-        defer imageResponse.Body.Close()
-        s3Client := s3.NewFromConfig(cfg)
-        key := fmt.Sprintf("moments/%s/%s", time.Now().Format("2006/01/02"), strings.ReplaceAll(uuid.NewString(), "-", ""))
-        _, err = s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
-            Bucket: aws.String(sysConfigVo.S3.Bucket),
-            Key:    aws.String(key),
-            Body:   imageResponse.Body,
-        })
-        if err != nil {
-            return FailRespWithMsg(c, Fail, fmt.Sprintf("上传图片到s3异常:%s", err.Error()))
-        }
-        book.Image = fmt.Sprintf("%s/%s", sysConfigVo.S3.Domain, key)
-    } else {
-        image, err := downloadImage(book.Image, m.base.log, m.base.cfg)
-        if err != nil {
-            return FailRespWithMsg(c, Fail, fmt.Sprintf("下载豆瓣图片异常:%s", err.Error()))
-        }
-        book.Image = image
-    }
-    return SuccessResp(c, book)
+	if !strings.HasPrefix(book.Image, "http") {
+		return FailRespWithMsg(c, Fail, "无法获取图书封面")
+	}
+	if sysConfigVo.EnableS3 {
+		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(sysConfigVo.S3.Region),
+			config.WithEndpointResolver(aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+				return aws.Endpoint{URL: sysConfigVo.S3.Endpoint}, nil
+			})),
+			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(sysConfigVo.S3.AccessKey, sysConfigVo.S3.SecretKey, "")))
+		if err != nil {
+			m.base.log.Error().Msgf("无法加载S3 SDK配置, %s", err)
+			return FailRespWithMsg(c, Fail, err.Error())
+		}
+		imageReq, _ := http.NewRequest("GET", book.Image, nil)
+		imageReq.Header.Set("User-Agent", userAgent)
+		imageResponse, err := client.Do(imageReq)
+		if err != nil {
+			return FailRespWithMsg(c, Fail, fmt.Sprintf("下载豆瓣图片异常:%s", err.Error()))
+		}
+		defer imageResponse.Body.Close()
+		s3Client := s3.NewFromConfig(cfg)
+		key := fmt.Sprintf("moments/%s/%s", time.Now().Format("2006/01/02"), strings.ReplaceAll(uuid.NewString(), "-", ""))
+		_, err = s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+			Bucket: aws.String(sysConfigVo.S3.Bucket),
+			Key:    aws.String(key),
+			Body:   imageResponse.Body,
+		})
+		if err != nil {
+			return FailRespWithMsg(c, Fail, fmt.Sprintf("上传图片到s3异常:%s", err.Error()))
+		}
+		book.Image = fmt.Sprintf("%s/%s", sysConfigVo.S3.Domain, key)
+	} else {
+		image, err := downloadImage(book.Image, m.base.log, m.base.cfg)
+		if err != nil {
+			return FailRespWithMsg(c, Fail, fmt.Sprintf("下载豆瓣图片异常:%s", err.Error()))
+		}
+		book.Image = image
+	}
+	return SuccessResp(c, book)
 }

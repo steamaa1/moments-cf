@@ -1,7 +1,7 @@
 package fs_util
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"os"
@@ -16,10 +16,11 @@ func Exists(path string) bool {
 	return true
 }
 
-func CalHash(src io.Reader) (string, error) {
-	hash := md5.New()
-	if _, err := io.Copy(hash, src); err != nil {
+func Sha256(reader io.Reader) (string, error) {
+	hash := sha256.New()
+	if _, err := io.Copy(hash, reader); err != nil {
 		return "", err
 	}
+
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }

@@ -34,7 +34,7 @@
           
           <template #uploadVideo="{ item }">
             <div class="text-xs text-gray-400">上传视频</div>
-            <UInput type="file" size="sm" icon="i-heroicons-folder" @change="handleUploadVideo"/>
+            <UInput type="file" accept="video/*" size="sm" icon="i-heroicons-folder" @change="handleUploadVideo"/>
             <div class="text-xs text-gray-400">视频地址</div>
             <UInput type="text" size="sm" v-model="onlineUrl">
               <template #leading>

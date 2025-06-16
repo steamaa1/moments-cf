@@ -104,7 +104,7 @@ func main() {
 
 	migrateTo3(tx, myLogger)
 	migrateIframeVideoUrl(tx, myLogger)
-	migrageImage(tx, myLogger, cfg.UploadDir)
+	migrageFile(tx, myLogger)
 
 	e.HideBanner = true
 	err = e.Start(fmt.Sprintf(":%d", cfg.Port))

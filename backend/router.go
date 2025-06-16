@@ -39,7 +39,6 @@ func setupRouter(injector do.Injector) {
 	memoGroup.POST("/getFaviconAndTitle", memoHandler.GetFaviconAndTitle)
 	memoGroup.POST("/getDoubanMovieInfo", memoHandler.GetDoubanMovieInfo)
 	memoGroup.POST("/getDoubanBookInfo", memoHandler.GetDoubanBookInfo)
-	memoGroup.POST("/removeImage", memoHandler.RemoveImage)
 
 	commentGroup := apiGroup.Group("/comment")
 	commentGroup.POST("/add", commentHandler.AddComment)
@@ -54,9 +53,9 @@ func setupRouter(injector do.Injector) {
 	tagGroup.POST("/list", tagHandler.List)
 
 	fileGroup := apiGroup.Group("/file")
+	fileGroup.POST("/exist", fileHandler.Exist)
 	fileGroup.POST("/upload", fileHandler.Upload)
-	fileGroup.POST("/uploadImage", fileHandler.UploadImage)
-	fileGroup.POST("/deleteNoRelImage", fileHandler.DeleteNoRelImage)
+	fileGroup.POST("/clean", fileHandler.Clean)
 	fileGroup.POST("/s3PreSigned", fileHandler.S3PreSigned)
 
 	uploadGroup := e.Group("/upload")
