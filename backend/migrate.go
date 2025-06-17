@@ -323,8 +323,9 @@ func migrageFile(tx *gorm.DB, log zerolog.Logger, uploadDir string) {
 
 			// 记录文件与 memo 的关联关系
 			fileRel := db.FileRel{
-				MemoId: memo.Id,
-				FileId: file.Id,
+				RelId:   memo.Id,
+				RelType: db.RelTypeMemo,
+				FileId:  file.Id,
 			}
 			if err := tx.Model(&db.FileRel{}).Create(&fileRel).Error; err != nil {
 				log.Error().Msgf("创建文件 %s 与 memo %d 的关系错误: %v", filePath, memo.Id, err)
@@ -332,13 +333,101 @@ func migrageFile(tx *gorm.DB, log zerolog.Logger, uploadDir string) {
 		}
 	}
 
+	// 处理系统配置
+	var sysConfig db.SysConfig
+	var result vo.FullSysConfigVO
+	err = tx.First(&sysConfig).Error
+	if err != nil {
+		log.Error().Msgf("查询系统配置异常: %v", err)
+		return
+	}
+	if err := json.Unmarshal([]byte(sysConfig.Content), &result); err != nil {
+		log.Error().Msgf("读取系统配置异常: %v", err)
+		return
+	}
+	filePath := result.Favicon
+	// 只处理上传到本地的文件
+	if strings.HasPrefix(filePath, "/upload/") {
+		// 创建文件记录
+		var file db.File
+		err = tx.Model(&db.File{}).FirstOrCreate(&file, db.File{Path: filePath}).Error
+		if err != nil {
+			log.Error().Msgf("创建文件 %s 信息错误: %v", filePath, err)
+		} else {
+			// 文件已记录
+			isFileRecorded[file.Path] = true
+
+			// 记录文件与 系统配置 的关联关系
+			fileRel := db.FileRel{
+				RelId:   0,
+				RelType: db.RelTypeFavicon,
+				FileId:  file.Id,
+			}
+			if err := tx.Model(&db.FileRel{}).Create(&fileRel).Error; err != nil {
+				log.Error().Msgf("创建文件 %s 与 系统配置 的关系错误: %v", filePath, err)
+			}
+		}
+	}
+
+	// 处理用户信息
+	var users []db.User
+	tx.Find(&users)
+	for _, user := range users {
+		filePath := user.AvatarUrl
+		// 只处理上传到本地的文件
+		if strings.HasPrefix(filePath, "/upload/") {
+			// 创建文件记录
+			var file db.File
+			err = tx.Model(&db.File{}).FirstOrCreate(&file, db.File{Path: filePath}).Error
+			if err != nil {
+				log.Error().Msgf("创建文件 %s 信息错误: %v", filePath, err)
+			} else {
+				// 文件已记录
+				isFileRecorded[file.Path] = true
+
+				// 记录文件与 用户 的关联关系
+				fileRel := db.FileRel{
+					RelId:   user.Id,
+					RelType: db.RelTypeUserAvatar,
+					FileId:  file.Id,
+				}
+				if err := tx.Model(&db.FileRel{}).Create(&fileRel).Error; err != nil {
+					log.Error().Msgf("创建文件 %s 与 用户 %d 的关系错误: %v", filePath, user.Id, err)
+				}
+			}
+		}
+
+		filePath = user.CoverUrl
+		// 只处理上传到本地的文件
+		if strings.HasPrefix(filePath, "/upload/") {
+			// 创建文件记录
+			var file db.File
+			err = tx.Model(&db.File{}).FirstOrCreate(&file, db.File{Path: filePath}).Error
+			if err != nil {
+				log.Error().Msgf("创建文件 %s 信息错误: %v", filePath, err)
+			} else {
+				// 文件已记录
+				isFileRecorded[file.Path] = true
+
+				// 记录文件与 用户 的关联关系
+				fileRel := db.FileRel{
+					RelId:   user.Id,
+					RelType: db.RelTypeUserCover,
+					FileId:  file.Id,
+				}
+				if err := tx.Model(&db.FileRel{}).Create(&fileRel).Error; err != nil {
+					log.Error().Msgf("创建文件 %s 与 用户 %d 的关系错误: %v", filePath, user.Id, err)
+				}
+			}
+		}
+	}
+
+	// 处理未被引用的文件
 	fileList, err := fs_util.GetFileList(uploadDir)
 	if err != nil {
 		log.Error().Msgf("获取文件列表错误: %v", err)
 		return
 	}
-
-	// 处理未被引用的文件
 	for _, filename := range fileList {
 		filePath := filepath.Join("/upload", filename)
 		fmt.Println("filePath", filePath)

@@ -15,8 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/duke-git/lancet/v2/slice"
-
 	"github.com/PuerkitoBio/goquery"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -90,59 +88,6 @@ func (m MemoHandler) handleImgConfigs(sysConfigVO *vo.FullSysConfigVO, memo *db.
 	}
 
 	memo.ImgConfigs = &imgConfigs
-}
-
-/*
-根据文件路径获取文件 ID
-*/
-func (m MemoHandler) getFileIdsByPaths(tx *gorm.DB, filePaths []string) ([]int32, error) {
-	// 快速退出
-	if len(filePaths) == 0 {
-		return []int32{}, nil
-	}
-
-	// 过滤出本地文件
-	localFilePaths := slice.Filter(filePaths, func(_ int, path string) bool {
-		return strings.HasPrefix(path, "/upload/")
-	})
-
-	// 获取本地文件的 ID
-	var fileIds []int32
-	if err := tx.Model(&db.File{}).Where("path IN (?)", localFilePaths).Select("id").Find(&fileIds).Error; err != nil {
-		return nil, err
-	}
-
-	return fileIds, nil
-}
-
-/*
-更新 memo 的文件关系, 先删除旧的文件关系，再创建新的文件关系
-*/
-func (m MemoHandler) updateFileRel(tx *gorm.DB, memoId int32, fileIds []int32) error {
-	// 删除旧的文件关系
-	if err := tx.Delete(&db.FileRel{}, "memoId = ?", memoId).Error; err != nil {
-		return err
-	}
-
-	// 快速退出
-	if len(fileIds) == 0 {
-		return nil
-	}
-
-	// 创建新的文件关系
-	fileRels := slice.Map(fileIds, func(_ int, fileId int32) db.FileRel {
-		return db.FileRel{
-			MemoId: memoId,
-			FileId: fileId,
-		}
-	})
-
-	// 批量创建文件关系
-	if err := tx.CreateInBatches(fileRels, 20).Error; err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // ListMemos godoc
@@ -274,7 +219,7 @@ func (m MemoHandler) RemoveMemo(c echo.Context) error {
 	}
 
 	// 删除 memo 的文件关系
-	m.updateFileRel(m.base.db, memo.Id, []int32{})
+	UpdateFileRel(m.base.db, memo.Id, db.RelTypeMemo, []int32{})
 
 	return SuccessResp(c, h{})
 }
@@ -444,13 +389,13 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 		filePaths = append(filePaths, req.Imgs...)
 
 		// 获取文件 ID
-		fileIds, err := m.getFileIdsByPaths(tx, filePaths)
+		fileIds, err := GetFileIdsByPaths(tx, filePaths)
 		if err != nil {
 			return err
 		}
 
 		// 更新文件关系
-		if err := m.updateFileRel(tx, memo.Id, fileIds); err != nil {
+		if err := UpdateFileRel(tx, memo.Id, db.RelTypeMemo, fileIds); err != nil {
 			return err
 		}
 

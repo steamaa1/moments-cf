@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/vo"
@@ -115,17 +116,33 @@ func (s SysConfigHandler) SaveConfig(c echo.Context) error {
 		return FailRespWithMsg(c, Fail, "读取系统配置异常")
 	}
 
-	if err := s.base.db.First(&config).Error; errors.Is(err, gorm.ErrRecordNotFound) {
-		config.Content = string(data)
-		if err = s.base.db.Save(&config).Error; err != nil {
-			return FailRespWithMsg(c, Fail, "保存系统配置异常")
+	err = s.base.db.Transaction(func(tx *gorm.DB) error {
+		// 更新文件关系
+		fileIds, err := GetFileIdsByPaths(tx, []string{result.Favicon})
+		if err != nil {
+			return fmt.Errorf("获取文件ID异常")
 		}
-	} else {
-		config.Content = string(data)
-		if err = s.base.db.Updates(&config).Error; err != nil {
-			return FailRespWithMsg(c, Fail, "保存系统配置异常")
+		if err := UpdateFileRel(tx, 0, db.RelTypeFavicon, fileIds); err != nil {
+			return fmt.Errorf("更新文件关系异常")
 		}
+
+		// 保存系统配置
+		if err := tx.First(&config).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			config.Content = string(data)
+			if err = tx.Save(&config).Error; err != nil {
+				return fmt.Errorf("保存系统配置异常")
+			}
+		} else {
+			config.Content = string(data)
+			if err = tx.Updates(&config).Error; err != nil {
+				return fmt.Errorf("保存系统配置异常")
+			}
+		}
+		tx.Table("User").Where("id=?", 1).Update("username", result.AdminUserName)
+		return nil
+	})
+	if err != nil {
+		return FailRespWithMsg(c, Fail, err.Error())
 	}
-	s.base.db.Table("User").Where("id=?", 1).Update("username", result.AdminUserName)
 	return SuccessResp(c, h{})
 }

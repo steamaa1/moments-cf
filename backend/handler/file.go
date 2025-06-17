@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/duke-git/lancet/v2/slice"
 	"github.com/google/uuid"
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/vo"
@@ -337,4 +338,60 @@ func (f FileHandler) S3PreSigned(c echo.Context) error {
 			ImageUrl:     fmt.Sprintf("%s/%s", sysConfigVo.S3.Domain, key),
 		},
 	)
+}
+
+/*
+根据文件路径获取文件 ID
+*/
+func GetFileIdsByPaths(tx *gorm.DB, filePaths []string) ([]int32, error) {
+	// 快速退出
+	if len(filePaths) == 0 {
+		return []int32{}, nil
+	}
+
+	// 过滤出本地文件
+	localFilePaths := slice.Filter(filePaths, func(_ int, path string) bool {
+		return strings.HasPrefix(path, "/upload/")
+	})
+
+	// 获取本地文件的 ID
+	var fileIds []int32
+	if err := tx.Model(&db.File{}).Where("path IN (?)", localFilePaths).Select("id").Find(&fileIds).Error; err != nil {
+		return nil, err
+	}
+
+	return fileIds, nil
+}
+
+/*
+更新文件关系, 先删除旧的文件关系，再创建新的文件关系
+*/
+func UpdateFileRel(tx *gorm.DB, relId int32, relType string, fileIds []int32) error {
+	// 删除旧的文件关系
+	if err := tx.Where("relId = ?", relId).
+		Where("relType = ?", relType).
+		Delete(&db.FileRel{}).Error; err != nil {
+		return err
+	}
+
+	// 快速退出
+	if len(fileIds) == 0 {
+		return nil
+	}
+
+	// 创建新的文件关系
+	fileRels := slice.Map(fileIds, func(_ int, fileId int32) db.FileRel {
+		return db.FileRel{
+			RelId:   relId,
+			RelType: relType,
+			FileId:  fileId,
+		}
+	})
+
+	// 批量创建文件关系
+	if err := tx.CreateInBatches(fileRels, 20).Error; err != nil {
+		return err
+	}
+
+	return nil
 }
