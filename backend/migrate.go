@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	fs_util "github.com/kingwrcy/moments/util"
 
 	"github.com/kingwrcy/moments/db"
 	"github.com/kingwrcy/moments/handler"
@@ -261,7 +264,7 @@ func migrateIframeVideoUrl(tx *gorm.DB, log zerolog.Logger) {
 }
 
 // migrageFile 迁移文件数据
-func migrageFile(tx *gorm.DB, log zerolog.Logger) {
+func migrageFile(tx *gorm.DB, log zerolog.Logger, uploadDir string) {
 	// 检查文件信息表是否已有数据
 	var count int64
 	err := tx.Model(&db.File{}).Count(&count).Error
@@ -288,6 +291,7 @@ func migrageFile(tx *gorm.DB, log zerolog.Logger) {
 	}
 
 	// 遍历每个 memo 处理其中的文件
+	isFileRecorded := make(map[string]bool)
 	for _, memo := range memos {
 		var memoExt vo.MemoExt
 		err := json.Unmarshal([]byte(memo.Ext), &memoExt)
@@ -307,20 +311,44 @@ func migrageFile(tx *gorm.DB, log zerolog.Logger) {
 			}
 
 			// 创建文件记录
-			var image db.File
-			err := tx.Model(&db.File{}).FirstOrCreate(&image, db.File{Path: filePath}).Error
+			var file db.File
+			err = tx.Model(&db.File{}).FirstOrCreate(&file, db.File{Path: filePath}).Error
 			if err != nil {
 				log.Error().Msgf("创建文件 %s 信息错误: %v", filePath, err)
 				continue
 			}
 
+			// 文件已记录
+			isFileRecorded[file.Path] = true
+
 			// 记录文件与 memo 的关联关系
-			imageRel := db.FileRel{
+			fileRel := db.FileRel{
 				MemoId: memo.Id,
-				FileId: image.Id,
+				FileId: file.Id,
 			}
-			if err := tx.Model(&db.FileRel{}).Create(&imageRel).Error; err != nil {
+			if err := tx.Model(&db.FileRel{}).Create(&fileRel).Error; err != nil {
 				log.Error().Msgf("创建文件 %s 与 memo %d 的关系错误: %v", filePath, memo.Id, err)
+			}
+		}
+	}
+
+	fileList, err := fs_util.GetFileList(uploadDir)
+	if err != nil {
+		log.Error().Msgf("获取文件列表错误: %v", err)
+		return
+	}
+
+	// 处理未被引用的文件
+	for _, filename := range fileList {
+		filePath := filepath.Join("/upload", filename)
+		fmt.Println("filePath", filePath)
+		if _, ok := isFileRecorded[filePath]; !ok {
+			// 创建文件记录
+			var file db.File
+			err = tx.Model(&db.File{}).FirstOrCreate(&file, db.File{Path: filePath}).Error
+			if err != nil {
+				log.Error().Msgf("创建文件 %s 信息错误: %v", filePath, err)
+				return
 			}
 		}
 	}
