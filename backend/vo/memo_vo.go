@@ -48,6 +48,7 @@ type SaveMemoReq struct {
 	Imgs            []string `json:"imgs,omitempty"`            //图片列表,最多9张
 	Location        string   `json:"location,omitempty"`        //地理位置
 	Tags            []string `json:"tags,omitempty"`            //标签数组
+	CustomTime      string   `json:"customTime,omitempty"`      //自定义时间
 }
 
 type DoubanMovie struct {
