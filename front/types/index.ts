@@ -41,7 +41,6 @@ export type  MemoVO = {
     user: UserVO,
     comments: Array<CommentVO>
     tags: string
-    customTime: string
 }
 
 export type UserVO = {
