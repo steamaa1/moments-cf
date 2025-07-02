@@ -38,7 +38,7 @@
         共 {{ friendList.length }} 个朋友
       </span>
       <span v-else class="text-gray-600 dark:text-gray-300 font-semibold">
-        空空如也，请点击左上角添加
+        空空如也{{ globalState.userinfo.id === 1 ? '，请点击右上角添加' : '' }}
       </span>
     </div>
   </div>
@@ -47,7 +47,7 @@
     v-model="showAddModal"
     :ui="{
       container:
-        'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center',
+        'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur',
     }"
   >
     <div class="p-4">
