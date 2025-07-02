@@ -16,6 +16,19 @@
       <music v-bind="state.music" @confirm="updateMusic"/>
       <upload-video @confirm="handleVideo" v-bind="state.video"/>
       <douban-edit v-model:type="doubanType" v-model:data="doubanData"/>
+      <UPopover :popper="{ arrow: true }" mode="click">
+        <UIcon name="i-carbon-calendar" class="w-6 h-6" title="自定义时间"/>
+        <template #panel="{close}">
+          <DatePicker
+            v-model="state.createdAt"
+            mode="datetime"
+            is24hr
+            :time-accuracy="2"
+            :rules="{ seconds: 0 }"
+            @close="close"
+          />
+        </template>
+      </UPopover>
       <UIcon name="i-carbon-text-clear-format" @click="reset" class="w-6 h-6 cursor-pointer" title="清空"></UIcon>
     </div>
 
@@ -34,7 +47,6 @@
           <span v-else>选择标签</span>
         </template>
       </USelectMenu>
-      
 
       <UContextMenu v-model="isOpen" :virtual-element="virtualElement">
         <div class="px-2 py-1 flex flex-col gap-2 text-xs">
@@ -64,14 +76,12 @@
         </UPopover>
       </div>
 
-      <div class="flex gap-1 text-gray-500 gap-4">
-        <div class="flex gap-1 items-center">
+      <div class="flex gap-1 text-gray-500 items-center">
           <span>{{ state.showType ? '公开' : '私密' }}</span>
           <UToggle v-model="state.showType"/>
         </div>
       </div>
-    </div>
-    
+
     <div class="flex flex-col gap-2">
       <external-url-preview :favicon="state.externalFavicon" :title="state.externalTitle" :url="state.externalUrl"/>
       <upload-image-preview :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
@@ -103,6 +113,7 @@ import type {
 import {toast} from "vue-sonner";
 import UploadImage from "~/components/UploadImage.vue";
 import Emoji from "~/components/Emoji.vue";
+import dayjs from "dayjs";
 
 const doubanType = ref<'book' | 'movie'>('book')
 const doubanData = ref<DoubanBook | DoubanMovie>({})
@@ -110,6 +121,7 @@ const contentRef = ref(null)
 const props = defineProps<{ id?: number }>()
 const defaultState = {
   id: props.id || 0,
+  createdAt: '' as string,
   content: "",
   ext: "",
   pinned: false,
@@ -248,6 +260,7 @@ onMounted(async () => {
     doubanType.value = ext.doubanBook && ext.doubanBook.title ? 'book' : 'movie'
     doubanData.value = doubanType.value === 'book' ? ext.doubanBook : ext.doubanMovie
     selectedLabel.value = res.tags ? res.tags.substring(0,res.tags.length-1).split(',') : []
+    state.createdAt = dayjs(res.createdAt).format()
   }
   await loadTags()
 })
@@ -277,6 +290,7 @@ const saveMemo = async () => {
     imgs: state.imgs.split(",").filter(Boolean),
     location: state.location,
     tags: selectedLabel.value,
+    createdAt: state.createdAt || dayjs().format(),
   })
   toast.success("保存成功!")
   await navigateTo('/')

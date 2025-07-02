@@ -189,8 +189,10 @@ func (m MemoHandler) ListMemos(c echo.Context) error {
 	}
 	if currentUser == nil {
 		tx = tx.Where("showType = 1")
+		tx = tx.Where("createdAt <= ?", time.Now())
 	} else {
 		tx = tx.Where("userId = ? or (userId <> ? and showType = 1)", currentUser.Id, currentUser.Id)
+		tx = tx.Where("userId = ? or createdAt <= ?", currentUser.Id, time.Now())
 	}
 	if req.Tag != "" {
 		if strings.Contains(req.Tag, ",") {
@@ -424,6 +426,11 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 	memo.Pinned = req.Pinned
 	memo.Ext = extJson
 	memo.ShowType = req.ShowType
+
+	// 处理自定义时间
+	if req.CreatedAt != nil {
+		*memo.CreatedAt = req.CreatedAt.Local()
+	}
 
 	m.base.log.Info().Msgf("memo is %+v", memo)
 	m.base.db.Save(&memo)

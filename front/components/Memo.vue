@@ -130,7 +130,10 @@
             {{
               sysConfig.timeFormat === "timeAgo"
                 ? $dayjs(item.createdAt).fromNow()
-                : $dayjs(item.createdAt).format("YYYY-MM-DD HH:mm:ss")
+                : $dayjs(item.createdAt).format("YYYY-MM-DD HH:mm")
+            }}
+            {{
+              $dayjs(item.createdAt).isAfter($dayjs()) ? '，未到发布时间，仅自己可见' : ''
             }}
           </div>
           <div
