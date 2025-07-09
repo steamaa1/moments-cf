@@ -66,8 +66,6 @@ func main() {
 
 	backupDatabase(myLogger, &cfg)
 
-	migrateFriendLink(myLogger, &cfg)
-
 	do.Provide(injector, db.NewDB)
 	do.Provide(injector, newEchoEngine)
 	do.Provide(injector, handler.NewBaseHandler)
@@ -105,6 +103,7 @@ func main() {
 	migrateTo3(tx, myLogger)
 	migrateIframeVideoUrl(tx, myLogger)
 	migrageFile(tx, myLogger, cfg.UploadDir)
+	migrateFriendLink(tx, myLogger)
 
 	e.HideBanner = true
 	err = e.Start(fmt.Sprintf(":%d", cfg.Port))
