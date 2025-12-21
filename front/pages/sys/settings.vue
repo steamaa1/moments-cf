@@ -13,7 +13,7 @@
     </UFormGroup>
     <UFormGroup label="Favicon" name="favicon"
                 :ui="{label:{base:'font-bold'}}">
-      <UInput type="file" size="sm" icon="i-heroicons-folder" @change="uploadFavicon"/>
+      <UInput type="file" size="sm" icon="i-heroicons-folder" accept="image/*" @change="uploadFavicon"/>
       <div class="text-gray-500 text-sm my-2">或者输入在线地址</div>
       <UInput v-model="state.favicon" class="mb-2"/>
       <UAvatar :src="state.favicon"/>
@@ -109,9 +109,26 @@
         <UInput v-model="state.smtpPassword" type="password"/>
       </UFormGroup>
       </template>
-    
+    <UButton class="justify-center" color="red" @click="showCleanFileModal = true">清理已上传的文件</UButton>
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
+
+  <UModal
+    v-model="showCleanFileModal"
+    :ui="{
+      container:
+        'flex justify-center items-center backdrop-blur',
+    }"
+  >
+    <div class="p-4 bg-white dark:bg-neutral-800 rounded-lg shadow-md">
+      <p class="text-lg font-bold mb-2">谨慎操作</p>
+      <p class="text-gray-600 mb-4">确认要清理未使用的文件（图片、视频）吗？清理后，文件将被移动到 {uploadDir}/removed 目录下，请在检查后手动删除文件以释放空间。</p>
+      <div class="flex justify-end gap-2 mt-4">
+        <UButton color="white" @click="showCleanFileModal = false">取消</UButton>
+        <UButton @click="cleanFile">确认清理</UButton>
+      </div>
+        </div>
+  </UModal>
 </template>
 
 <script setup lang="ts">
@@ -157,6 +174,8 @@ const state = reactive({
   smtpPassword: "",
 })
 
+const showCleanFileModal = ref<boolean>(false);
+
 const reload = async () => {
   const res = await useMyFetch<SysConfigVO>('/sysConfig/getFull')
   if (res) {
@@ -183,6 +202,14 @@ const uploadFavicon = async (files: FileList) => {
   if (result.length) {
     toast.success("上传成功")
     state.favicon = result[0]
+  }
+}
+
+const cleanFile = async () => {
+  const res = await useMyFetch<{num: number}>('/file/clean', undefined)
+  if (res) {
+    toast.success(`成功清理 ${res.num} 个未使用的文件`)
+    showCleanFileModal.value = false
   }
 }
 

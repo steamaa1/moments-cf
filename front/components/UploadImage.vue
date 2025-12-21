@@ -35,7 +35,7 @@
 import { useUpload } from "~/utils";
 import { toast } from "vue-sonner";
 
-const imgs = defineModel<string>('imgs')
+const imgs = defineModel<string>('imgs', { default: '' })
 const progress = ref(0)
 const filename = ref('')
 const total = ref(0)
@@ -70,17 +70,11 @@ const addImg = () => {
     return
   }
 
-  const imgsArr = imgs.value.split(',').filter(Boolean)
-  if (imgsArr.includes(imgUrlToAdd.value)) {
-    toast.error("不能使用重复的图片地址");
-    return
-  }
-
-  imgs.value += `,${imgUrlToAdd.value}`
+  imgs.value = [imgs.value, imgUrlToAdd.value].filter(Boolean).join(',')
   imgUrlToAdd.value = ''
 }
 
-const removeImg = (index) => {
+const removeImg = (index: number) => {
   const imgsArr = imgs.value.split(',').filter(Boolean)
   imgsArr.splice(index, 1)
   imgs.value = imgsArr.join(',')
