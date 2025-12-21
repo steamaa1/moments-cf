@@ -225,8 +225,6 @@ func migrateIframeVideoUrl(tx *gorm.DB, log zerolog.Logger) {
 
 		if strings.HasPrefix(ext.Video.Value, "//") {
 			ext.Video.Value = fmt.Sprintf("https:%s", ext.Video.Value)
-		} else if strings.HasPrefix(ext.Video.Value, "http://") {
-			ext.Video.Value = strings.Replace(ext.Video.Value, "http://", "https://", 1)
 		} else if ext.Video.Type == "bilibili" {
 			matchResult := bilibiliUrlReg.FindStringSubmatch(ext.Video.Value)
 			if matchResult == nil {
