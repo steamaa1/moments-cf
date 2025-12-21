@@ -39,7 +39,7 @@ export const useMyFetch = async <T>(url: string, data?: any) => {
   return res.data
 }
 
-const sha256 = async (file: File) => {
+export const sha256 = async (file: File) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.readAsArrayBuffer(file)
@@ -173,18 +173,18 @@ const uploadFile2Server = async (
         onProgress(files.length, i + 1, file.name, 0)
       }
 
-      const hash = await sha256(file)
-      const ext = file.name.split(".").pop()
-      const filename = `${hash}.${ext}`
-      const res = await useMyFetch<{ exist: boolean, path: string }>(`/file/exist?filename=${filename}`)
-      if (res.exist) {
-        result.push(res.path)
-        if (onProgress) {
-          onProgress(files.length, i + 1, file.name, 1)
-        }
+      // const hash = await sha256(file)
+      // const ext = file.name.split(".").pop()
+      // const filename = `${hash}.${ext}`
+      // const res = await useMyFetch<{ exist: boolean, path: string }>(`/file/exist?filename=${filename}`)
+      // if (res.exist) {
+      //   result.push(res.path)
+      //   if (onProgress) {
+      //     onProgress(files.length, i + 1, file.name, 1)
+      //   }
 
-        continue
-      }
+      //   continue
+      // }
 
       const urlList = await uploadFile2ServerWithProgress(
         "/api/file/upload",

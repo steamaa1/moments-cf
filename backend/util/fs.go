@@ -26,21 +26,21 @@ func Sha256(reader io.Reader) (string, error) {
 }
 
 func GetFileList(dir string) ([]string, error) {
-    var fileList []string
+	var fileList []string
 
-    // 读取目录内容
-    entries, err := os.ReadDir(dir)
-    if err != nil {
-        return nil, err
-    }
+	// 读取目录内容
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
 
-    // 遍历目录项
-    for _, entry := range entries {
-        // 排除文件夹，只保留文件
-        if !entry.IsDir() {
-            fileList = append(fileList, entry.Name())
-        }
-    }
+	// 遍历目录项
+	for _, entry := range entries {
+		// 排除文件夹，只保留文件
+		if !entry.IsDir() {
+			fileList = append(fileList, entry.Name())
+		}
+	}
 
-    return fileList, nil
+	return fileList, nil
 }

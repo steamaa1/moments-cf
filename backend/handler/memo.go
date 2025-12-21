@@ -220,9 +220,6 @@ func (m MemoHandler) RemoveMemo(c echo.Context) error {
 		return FailRespWithMsg(c, Fail, "删除失败")
 	}
 
-	// 删除 memo 的文件关系
-	UpdateFileRel(m.base.db, memo.Id, db.RelTypeMemo, []int32{})
-
 	return SuccessResp(c, h{})
 }
 
@@ -362,11 +359,7 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 	bytes, _ := json.Marshal(req.Ext)
 	extJson = string(bytes)
 
-	imgs := strings.Join(req.Imgs, ",")
-	needUpdateImageRel := memo.Imgs != imgs
-	needUpdateVideoRel := memo.Ext != extJson
-
-	memo.Imgs = imgs
+	memo.Imgs = strings.Join(req.Imgs, ",")
 	memo.Location = req.Location
 	memo.ExternalUrl = req.ExternalUrl
 	memo.ExternalTitle = req.ExternalTitle
@@ -380,39 +373,7 @@ func (m MemoHandler) SaveMemo(c echo.Context) error {
 		*memo.CreatedAt = req.CreatedAt.Local()
 	}
 
-	m.base.log.Info().Msgf("memo is %+v", memo)
-
-	// 事务处理
-	err = m.base.db.Transaction(func(tx *gorm.DB) error {
-		// 创建 memo
-		if err := tx.Save(&memo).Error; err != nil {
-			return err
-		}
-
-		if !needUpdateImageRel && !needUpdateVideoRel {
-			return nil
-		}
-
-		filePaths := []string{}
-		filePaths = append(filePaths, req.Ext.Video.Value)
-		filePaths = append(filePaths, req.Imgs...)
-
-		// 获取文件 ID
-		fileIds, err := GetFileIdsByPaths(tx, filePaths)
-		if err != nil {
-			return err
-		}
-
-		// 更新文件关系
-		if err := UpdateFileRel(tx, memo.Id, db.RelTypeMemo, fileIds); err != nil {
-			return err
-		}
-
-		return nil
-	})
-	if err != nil {
-		return FailRespWithMsg(c, Fail, err.Error())
-	}
+	m.base.db.Save(&memo)
 
 	return SuccessResp(c, h{})
 }

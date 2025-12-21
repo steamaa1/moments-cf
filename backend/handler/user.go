@@ -10,7 +10,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/samber/do/v2"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type UserHandler struct {
@@ -204,23 +203,7 @@ func (u UserHandler) SaveProfile(c echo.Context) error {
 	user.CoverUrl = req.CoverUrl
 	user.Email = req.Email
 
-	err = u.base.db.Transaction(func(tx *gorm.DB) error {
-		// 更新文件关系
-		fileIds, err := GetFileIdsByPaths(tx, []string{req.AvatarUrl, req.CoverUrl})
-		if err != nil {
-			return err
-		}
-		if err := UpdateFileRel(tx, user.Id, db.RelTypeUserAvatar, fileIds); err != nil {
-			return err
-		}
-
-		// 保存用户信息
-		if err := tx.Save(&user).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
+	if err := u.base.db.Save(&user).Error; err != nil {
 		return FailResp(c, Fail)
 	}
 	return SuccessResp(c, h{})

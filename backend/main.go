@@ -102,7 +102,6 @@ func main() {
 
 	migrateTo3(tx, myLogger)
 	migrateIframeVideoUrl(tx, myLogger)
-	migrageFile(tx, myLogger, cfg.UploadDir)
 	migrateFriendLink(tx, myLogger)
 
 	e.HideBanner = true
