@@ -196,11 +196,11 @@ const {x, y} = useMouse()
 const {y: windowY} = useWindowScroll()
 const isOpen = ref(false)
 const virtualElement = ref({getBoundingClientRect: () => ({})})
-const handleRemoveImage = (img: string) => {
-  state.imgs = state.imgs
-    .split(",")
-    .filter(item => item && item != img)
-    .join(",")
+
+const handleRemoveImage = (index: number) => {
+  const arr = state.imgs.split(",").filter(Boolean)
+  arr.splice(index, 1)
+  state.imgs = arr.join(",")
 }
 
 function onContextMenu() {
