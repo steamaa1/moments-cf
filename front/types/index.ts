@@ -41,6 +41,10 @@ export type  MemoVO = {
     user: UserVO,
     comments: Array<CommentVO>
     tags: string
+    imgConfigs: Array<{
+        url: string;
+        thumbUrl: string;
+    }>
 }
 
 export type UserVO = {
