@@ -20,4 +20,4 @@ bucket_name = "moments-media"
 CORS_ORIGIN = "*"
 # Add these as encrypted Cloudflare Worker secrets before deployment:
 # JWT_SECRET, INIT_SECRET
-# Optional: PBKDF2_ITERATIONS (default 210000)
+# Optional: PBKDF2_ITERATIONS (default 100000)

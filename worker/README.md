@@ -19,7 +19,7 @@
 | `JWT_SECRET` | 至少 32 字符的随机密钥，用于登录令牌签名 |
 | `INIT_SECRET` | 首次管理员初始化接口的单次保护密钥，至少 24 字符 |
 
-可选变量：`PBKDF2_ITERATIONS`，默认 `210000`。不要把任何 Secret 写入 `wrangler.toml` 或 Git。
+可选变量：`PBKDF2_ITERATIONS`，默认 `100000`。不要把任何 Secret 写入 `wrangler.toml` 或 Git。
 
 ## Phase 2 API
 

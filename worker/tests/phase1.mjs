@@ -28,8 +28,10 @@ const initNoSecret = await worker.fetch(new Request('https://moments.example.com
 }), baseEnv);
 expect(initNoSecret.status === 503, 'initialization without secret must return 503');
 
-const hash = await passwordHash('password123', 1000);
-expect(hash.startsWith('pbkdf2-sha256$1000$'), 'password hash scheme mismatch');
+const hash = await passwordHash('password123', 10000);
+expect(hash.startsWith('pbkdf2-sha256$10000$'), 'password hash scheme mismatch');
+const cappedHash = await passwordHash('password123', 100001);
+expect(cappedHash.startsWith('pbkdf2-sha256$100000$'), 'iteration count above Worker limit must be capped');
 expect(await passwordMatches('password123', hash), 'correct password must match');
 expect(!(await passwordMatches('wrong-password', hash)), 'wrong password must not match');
 
@@ -97,7 +99,7 @@ const integrationEnv = {
   MEDIA: { async put(key, body, options) { uploaded.push({ key, body, options }); } },
   JWT_SECRET: 'integration-jwt-secret',
   INIT_SECRET: 'integration-init-secret',
-  PBKDF2_ITERATIONS: '1000',
+  PBKDF2_ITERATIONS: '10000',
   CORS_ORIGIN: '*',
 };
 

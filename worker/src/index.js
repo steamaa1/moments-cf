@@ -36,6 +36,8 @@ const ALLOWED_MEDIA_TYPES = new Set([
   'video/mp4', 'video/webm', 'video/quicktime',
 ]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const DEFAULT_PBKDF2_ITERATIONS = 100000;
+const MAX_PBKDF2_ITERATIONS = 100000;
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -112,7 +114,15 @@ async function verifyJwt(token, secret) {
     return payload.exp && payload.exp > Math.floor(Date.now() / 1000) ? payload : null;
   } catch { return null; }
 }
-async function passwordHash(password, iterations = 210000) {
+function pbkdf2Iterations(value = DEFAULT_PBKDF2_ITERATIONS) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 10000 || parsed > MAX_PBKDF2_ITERATIONS) {
+    return DEFAULT_PBKDF2_ITERATIONS;
+  }
+  return parsed;
+}
+async function passwordHash(password, iterations = DEFAULT_PBKDF2_ITERATIONS) {
+  iterations = pbkdf2Iterations(iterations);
   const salt = randomToken(16);
   const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations }, key, 256);
@@ -121,8 +131,10 @@ async function passwordHash(password, iterations = 210000) {
 async function passwordMatches(password, stored) {
   const [scheme, iterations, salt, expected] = String(stored || '').split('$');
   if (scheme !== 'pbkdf2-sha256' || !iterations || !salt || !expected) return false;
+  const safeIterations = Number(iterations);
+  if (!Number.isInteger(safeIterations) || safeIterations < 10000 || safeIterations > MAX_PBKDF2_ITERATIONS) return false;
   const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations: Number(iterations) }, key, 256);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations: safeIterations }, key, 256);
   const actual = base64url(bits);
   if (actual.length !== expected.length) return false;
   let mismatch = 0;
@@ -168,7 +180,7 @@ async function initialize(request, env, headers) {
   const exists = await db.prepare('SELECT id FROM users LIMIT 1').first();
   if (exists) return json(fail('站点已初始化'), 409, headers);
   const username = String(body.username).trim();
-  const hash = await passwordHash(String(body.password), Number(env.PBKDF2_ITERATIONS || 210000));
+  const hash = await passwordHash(String(body.password), pbkdf2Iterations(env.PBKDF2_ITERATIONS));
   const config = { ...DEFAULT_CONFIG, adminUserName: username };
   await db.batch([
     db.prepare('INSERT INTO users (id, username, nickname, password_hash, slogan) VALUES (1, ?, ?, ?, ?)').bind(username, String(body.nickname || username).slice(0, 80), hash, '记录生活的每一个瞬间。'),
@@ -207,7 +219,7 @@ async function saveProfile(request, env, headers) {
   let tokenVersion = Number(access.user.token_version);
   if (body.password) {
     if (String(body.password).length < 8) return json(fail('密码至少 8 位'), 400, headers);
-    password = await passwordHash(String(body.password), Number(env.PBKDF2_ITERATIONS || 210000));
+    password = await passwordHash(String(body.password), pbkdf2Iterations(env.PBKDF2_ITERATIONS));
     tokenVersion += 1;
   }
   await env.DB.prepare('UPDATE users SET nickname=?, avatar_url=?, slogan=?, cover_url=?, email=?, password_hash=?, token_version=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
