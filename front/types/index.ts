@@ -71,6 +71,7 @@ export type SysConfigVO = {
     enableRegister: boolean
     enableGoogleRecaptcha: boolean,
     googleSiteKey: string,
+    googleSecretKey?: string,
     enableComment: boolean,
     maxCommentLength: number,
     memoMaxHeight: number,

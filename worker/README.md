@@ -1,6 +1,6 @@
 # Moments Cloudflare Worker
 
-当前是 **Phase 4**：在 Phase 3 动态、标签、点赞与 RSS 的基础上，新增评论、友链，以及带 SSRF 防护的网页标题/Favicon 抓取。
+当前是 **Phase 5**：核心功能已迁移至 Worker，并完成公开邮箱/评论隐私、Markdown XSS、reCAPTCHA 服务端验证、评论批量查询、R2/D1 上传回滚、点赞计数一致性及错误脱敏加固。
 
 ## 资源绑定
 
@@ -35,7 +35,7 @@ Workers Builds 使用的 API Token 需有：`D1 Read`、`D1 Write`、`Workers Sc
 
 可选变量：`PBKDF2_ITERATIONS`，默认 `100000`。不要把任何 Secret 写入 `wrangler.toml` 或 Git。
 
-## Phase 4 API
+## Phase 5 API
 
 所有 API 保持 Moments 原本的 `{ code, message?, data }` 响应格式。登录后的请求继续兼容 `x-api-token`。
 
@@ -56,10 +56,10 @@ Workers Builds 使用的 API Token 需有：`D1 Read`、`D1 Write`、`Workers Sc
 | `/api/memo/save` | POST | 登录后发布或编辑动态 |
 | `/api/memo/remove?id=` | POST | 作者或管理员删除动态 |
 | `/api/memo/setPinned?id=` | POST | 管理员切换唯一置顶动态 |
-| `/api/memo/like?id=` | POST | 匿名访客点赞；同一浏览器去重 |
+| `/api/memo/like?id=&token=` | POST | 匿名访客点赞；同一浏览器去重；启用 reCAPTCHA 时服务端验证 token |
 | `/api/tag/list` | POST | 当前登录用户的标签列表 |
 | `/rss` | GET | 最近 15 条公开动态 RSS |
-| `/api/comment/add` | POST | 添加评论（访客或登录用户） |
+| `/api/comment/add` | POST | 添加评论（访客或登录用户）；启用 reCAPTCHA 时服务端验证 token |
 | `/api/comment/remove?id=` | POST | 动态作者或管理员删除评论 |
 | `/api/friend/list` | POST | 公开友链列表 |
 | `/api/friend/add` | POST | 管理员添加友链 |
@@ -74,9 +74,10 @@ Workers Builds 使用的 API Token 需有：`D1 Read`、`D1 Write`、`Workers Sc
 worker/migrations/0001_schema.sql
 worker/migrations/0002_memos.sql
 worker/migrations/0003_comments_friends.sql
+worker/migrations/0004_like_counters.sql
 ```
 
-在 Workers Builds 自动部署模式下，Migration 不会自动执行；需通过 Dashboard SQL Console 手动粘贴执行，或后续配置专门的受控 migration 工作流。
+正常的 Workers Builds 部署命令 `npm run deploy:cf` 会在发布 Worker 前自动执行尚未应用的 Migration。`0004_like_counters.sql` 会按 `memo_likes` 修正已有点赞数，并通过 D1 Trigger 原子维护后续计数。仅在不使用该部署命令时，才需要在 Dashboard 手动执行。
 
 ## 本地检查
 
@@ -85,4 +86,4 @@ cd worker
 npm run check
 ```
 
-无需安装 Worker 专属依赖；检查包含语法、Phase 2 配置守卫及路由/密码/JWT 行为测试。
+无需安装 Worker 专属依赖；检查包含 Worker/API 回归、安全与隐私、SQL Migration 真实 SQLite 行为、只读迁移工具和部署前检查。上线后可按 `scripts/release/README.md` 执行只读冒烟测试。

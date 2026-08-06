@@ -18,6 +18,7 @@ const DEFAULT_CONFIG = {
   rss: '',
   enableGoogleRecaptcha: false,
   googleSiteKey: '',
+  googleSecretKey: '',
   enableComment: true,
   maxCommentLength: 300,
   memoMaxHeight: 0,
@@ -82,12 +83,14 @@ function requireBinding(env, name) {
 async function readJson(request) {
   try { return await request.json(); } catch { return null; }
 }
-function publicUser(user) {
+function publicUser(user, includeEmail = false) {
   if (!user) return null;
-  return {
+  const result = {
     id: Number(user.id), username: user.username, nickname: user.nickname,
-    avatarUrl: user.avatar_url, slogan: user.slogan, coverUrl: user.cover_url, email: user.email,
+    avatarUrl: user.avatar_url, slogan: user.slogan, coverUrl: user.cover_url,
   };
+  if (includeEmail) result.email = user.email;
+  return result;
 }
 function parseConfig(value) {
   try { return { ...DEFAULT_CONFIG, ...(value ? JSON.parse(value) : {}) }; } catch { return { ...DEFAULT_CONFIG }; }
@@ -203,10 +206,16 @@ async function login(request, env, headers) {
 }
 async function getProfile(request, env, headers, username = null) {
   const db = requireBinding(env, 'DB');
-  const user = username
-    ? await db.prepare('SELECT * FROM users WHERE username = ?').bind(decodeURIComponent(username)).first()
-    : (await currentUser(request, env)) || await db.prepare('SELECT * FROM users WHERE id = 1').first();
-  return json(ok(publicUser(user)), 200, headers);
+  let user;
+  let includeEmail = false;
+  if (username) {
+    user = await db.prepare('SELECT * FROM users WHERE username = ?').bind(decodeURIComponent(username)).first();
+  } else {
+    const me = await currentUser(request, env);
+    if (me) { user = me; includeEmail = true; }
+    else user = await db.prepare('SELECT * FROM users WHERE id = 1').first();
+  }
+  return json(ok(publicUser(user, includeEmail)), 200, headers);
 }
 async function saveProfile(request, env, headers) {
   const access = await requireUser(request, env, headers);
@@ -275,9 +284,15 @@ async function upload(request, env, headers) {
     if (file.size > MAX_UPLOAD_BYTES) return json(fail('文件不能超过 25MB'), 413, headers);
     const extension = file.name.includes('.') ? file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') : '';
     const key = `media/${new Date().toISOString().slice(0, 10).replaceAll('-', '/')}/${randomToken(18)}${extension ? `.${extension}` : ''}`;
-    await env.MEDIA.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { ownerId: String(access.user.id), originalFilename: file.name.slice(0, 255) } });
-    await env.DB.prepare('INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes) VALUES (?, ?, ?, ?, ?)')
-      .bind(access.user.id, key, file.name.slice(0, 255), file.type, file.size).run();
+    try {
+      await env.MEDIA.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { ownerId: String(access.user.id), originalFilename: file.name.slice(0, 255) } });
+      await env.DB.prepare('INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes) VALUES (?, ?, ?, ?, ?)')
+        .bind(access.user.id, key, file.name.slice(0, 255), file.type, file.size).run();
+    } catch (error) {
+      // Avoid leaving an unregistered R2 object if the D1 insert fails.
+      await env.MEDIA.delete(key).catch(() => {});
+      throw error;
+    }
     urls.push(`/upload/${key}`);
   }
   return json(ok(urls), 200, headers);
@@ -390,6 +405,7 @@ async function canReadMemo(memo, user) {
 }
 async function listMemos(request, env, headers) {
   const body = (await readJson(request)) || {};
+  const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   const page = Math.max(1, intParam(body.page, 1));
   const size = Math.min(50, Math.max(1, intParam(body.size, 10)));
   const user = await currentUser(request, env);
@@ -414,20 +430,29 @@ async function listMemos(request, env, headers) {
   const count = await env.DB.prepare(`SELECT COUNT(*) AS total FROM memos m JOIN users u ON u.id=m.user_id${where}`).bind(...values).first();
   const result = await env.DB.prepare(`${MEMO_SELECT}${where} ORDER BY m.pinned DESC, m.created_at DESC LIMIT ? OFFSET ?`).bind(...values, size, (page - 1) * size).all();
   const total = Number(count?.total || 0);
-  const list = [];
-  for (const row of result.results || []) {
-    const view = memoView(row);
+  const rows = result.results || [];
+  const commentsByMemo = new Map();
+  if (rows.length) {
     try {
-      const comments = await env.DB.prepare('SELECT * FROM comments WHERE memo_id=? ORDER BY created_at DESC LIMIT 5').bind(row.id).all();
-      view.comments = (comments.results || []).map(commentView);
+      const ids = rows.map(row => Number(row.id));
+      const placeholders = ids.map(() => '?').join(',');
+      const order = config.commentOrder === 'asc' ? 'ASC' : 'DESC';
+      const all = await env.DB.prepare(`SELECT * FROM comments WHERE memo_id IN (${placeholders}) ORDER BY memo_id, created_at ${order}`).bind(...ids).all();
+      for (const row of all.results || []) {
+        const bucket = commentsByMemo.get(Number(row.memo_id)) || [];
+        if (bucket.length < 5) bucket.push(commentView(row));
+        commentsByMemo.set(Number(row.memo_id), bucket);
+      }
     } catch (error) {
       // During a rolling deployment, 0003_comments_friends.sql might not be applied yet.
-      // Keep the public feed usable; the deployment script applies migrations before deploy.
       console.warn('Comments are temporarily unavailable for memo list', error);
-      view.comments = [];
     }
-    list.push(view);
   }
+  const list = rows.map(row => {
+    const view = memoView(row);
+    view.comments = commentsByMemo.get(Number(row.id)) || [];
+    return view;
+  });
   return json(ok({ list, total, hasNext: page * size < total }), 200, headers);
 }
 async function getMemo(request, env, headers) {
@@ -437,9 +462,11 @@ async function getMemo(request, env, headers) {
   const memo = await env.DB.prepare(`${MEMO_SELECT} WHERE m.id = ?`).bind(id).first();
   if (!memo) return json(fail('动态不存在'), 404, headers);
   if (!(await canReadMemo(memo, await currentUser(request, env)))) return json(fail('暂无权限查看'), 403, headers);
+  const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   const view = memoView(memo);
   try {
-    const comments = await env.DB.prepare('SELECT * FROM comments WHERE memo_id=? ORDER BY created_at DESC').bind(id).all();
+    const order = config.commentOrder === 'asc' ? 'ASC' : 'DESC';
+    const comments = await env.DB.prepare(`SELECT * FROM comments WHERE memo_id=? ORDER BY created_at ${order}`).bind(id).all();
     view.comments = (comments.results || []).map(commentView);
   } catch (error) {
     console.warn('Comments are temporarily unavailable for memo detail', error);
@@ -507,12 +534,15 @@ async function setPinned(request, env, headers) {
 }
 async function likeMemo(request, env, headers) {
   const id = intParam(new URL(request.url).searchParams.get('id'));
+  const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
+  const recaptcha = await verifyRecaptchaToken(new URL(request.url).searchParams.get('token'), config);
+  if (!recaptcha.ok) return json(fail(recaptcha.message), 400, headers);
   const memo = await env.DB.prepare('SELECT id, show_type, created_at FROM memos WHERE id=?').bind(id).first();
   if (!memo || Number(memo.show_type) !== 1 || Date.parse(memo.created_at) > Date.now()) return json(fail('动态不存在或不可点赞'), 404, headers);
   const identity = await likeIdentity(request, env);
   const result = await env.DB.prepare('INSERT OR IGNORE INTO memo_likes (memo_id, identity_hash) VALUES (?, ?)').bind(id, identity.hash).run();
   if (Number(result.meta?.changes || 0) === 0) return json(fail('您已经点赞过了'), 409, { ...headers, ...Object.fromEntries(identity.headers) });
-  await env.DB.prepare('UPDATE memos SET fav_count=fav_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(id).run();
+  // D1 trigger trg_memo_likes_insert updates fav_count in the same transaction.
   return json(ok({}), 200, { ...headers, ...Object.fromEntries(identity.headers) });
 }
 async function listTags(request, env, headers) {
@@ -548,7 +578,29 @@ async function rss(request, env) {
 function validHttpUrl(value) {
   try { const url = new URL(value); return url.protocol === 'https:' || url.protocol === 'http:' ? url : null; } catch { return null; }
 }
-function commentView(row) { return { id: Number(row.id), content: row.content, replyTo: row.reply_to, replyEmail: row.reply_email, username: row.username, email: row.email, website: row.website, createdAt: row.created_at, updatedAt: row.updated_at, memoId: Number(row.memo_id), author: row.author }; }
+function commentView(row) {
+  return { id: Number(row.id), content: row.content, replyTo: row.reply_to, username: row.username, website: row.website, createdAt: row.created_at, updatedAt: row.updated_at, memoId: Number(row.memo_id), author: row.author };
+}
+async function verifyRecaptchaToken(token, config) {
+  if (!config.enableGoogleRecaptcha) return { ok: true };
+  if (!config.googleSecretKey) return { ok: false, message: 'reCAPTCHA 服务端未配置' };
+  if (!token) return { ok: false, message: 'token不能为空' };
+  try {
+    const response = await fetch('https://recaptcha.net/recaptcha/api/siteverify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret: config.googleSecretKey, response: token }).toString(),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return { ok: false, message: '人机校验服务不可用' };
+    const data = await response.json();
+    if (!data.success) return { ok: false, message: '人机校验不通过' };
+    if (typeof data.score === 'number' && data.score <= 0.5) return { ok: false, message: '人机校验不通过' };
+    return { ok: true };
+  } catch {
+    return { ok: false, message: '人机校验服务不可用' };
+  }
+}
 async function commentIdentity(request, env) {
   const existing = request.headers.get('cookie')?.match(/(?:^|;\s*)moments_comment_id=([^;]+)/)?.[1];
   const identity = existing || randomToken(20); const secret = env.LIKE_SALT || env.JWT_SECRET;
@@ -560,6 +612,8 @@ async function addComment(request, env, headers) {
   const body = await readJson(request); if (!body?.memoId || !String(body.content || '').trim()) return json(fail('评论内容不能为空'), 400, headers);
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   if (!config.enableComment) return json(fail('评论未开启'), 403, headers);
+  const recaptcha = await verifyRecaptchaToken(body.token, config);
+  if (!recaptcha.ok) return json(fail(recaptcha.message), 400, headers);
   const content = String(body.content).trim();
   const maxCommentLength = Math.max(1, Number(config.maxCommentLength) || 300);
   if (content.length > maxCommentLength) return json(fail(`评论字数超过限制长度:${maxCommentLength}`), 400, headers);
@@ -613,43 +667,43 @@ async function handleApi(request, env) {
   const headers = corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   try {
-    if (url.pathname === '/api/health') return json(ok({ ok: true, service: 'moments-cf', phase: 4, database: Boolean(env.DB), media: Boolean(env.MEDIA) }), 200, headers);
+    if (url.pathname === '/api/health') return json(ok({ ok: true, service: 'moments-cf', phase: 5, database: Boolean(env.DB), media: Boolean(env.MEDIA) }), 200, headers);
     if (request.method !== 'POST') return json(fail('仅支持 POST'), 405, headers);
-    if (url.pathname === '/api/admin/initialize') return initialize(request, env, headers);
-    if (url.pathname === '/api/user/login') return login(request, env, headers);
-    if (url.pathname === '/api/user/reg') return register(request, env, headers);
-    if (url.pathname === '/api/user/profile') return getProfile(request, env, headers);
-    if (url.pathname.startsWith('/api/user/profile/')) return getProfile(request, env, headers, url.pathname.slice('/api/user/profile/'.length));
-    if (url.pathname === '/api/user/saveProfile') return saveProfile(request, env, headers);
-    if (url.pathname === '/api/sysConfig/get') return getConfig(request, env, headers);
-    if (url.pathname === '/api/sysConfig/getFull') return getConfig(request, env, headers, true);
-    if (url.pathname === '/api/sysConfig/save') return saveConfig(request, env, headers);
-    if (url.pathname === '/api/file/upload') return upload(request, env, headers);
-    if (url.pathname === '/api/file/exist') return fileExists(request, env, headers);
-    if (url.pathname === '/api/file/clean') return cleanFiles(request, env, headers);
+    if (url.pathname === '/api/admin/initialize') return await initialize(request, env, headers);
+    if (url.pathname === '/api/user/login') return await login(request, env, headers);
+    if (url.pathname === '/api/user/reg') return await register(request, env, headers);
+    if (url.pathname === '/api/user/profile') return await getProfile(request, env, headers);
+    if (url.pathname.startsWith('/api/user/profile/')) return await getProfile(request, env, headers, url.pathname.slice('/api/user/profile/'.length));
+    if (url.pathname === '/api/user/saveProfile') return await saveProfile(request, env, headers);
+    if (url.pathname === '/api/sysConfig/get') return await getConfig(request, env, headers);
+    if (url.pathname === '/api/sysConfig/getFull') return await getConfig(request, env, headers, true);
+    if (url.pathname === '/api/sysConfig/save') return await saveConfig(request, env, headers);
+    if (url.pathname === '/api/file/upload') return await upload(request, env, headers);
+    if (url.pathname === '/api/file/exist') return await fileExists(request, env, headers);
+    if (url.pathname === '/api/file/clean') return await cleanFiles(request, env, headers);
     if (url.pathname === '/api/file/s3PreSigned') return json(fail('Cloudflare 版本使用 R2 直连上传，请关闭旧 S3 设置'), 400, headers);
-    if (url.pathname === '/api/memo/list') return listMemos(request, env, headers);
-    if (url.pathname === '/api/memo/get') return getMemo(request, env, headers);
-    if (url.pathname === '/api/memo/save') return saveMemo(request, env, headers);
-    if (url.pathname === '/api/memo/remove') return removeMemo(request, env, headers);
-    if (url.pathname === '/api/memo/setPinned') return setPinned(request, env, headers);
-    if (url.pathname === '/api/memo/like') return likeMemo(request, env, headers);
-    if (url.pathname === '/api/tag/list') return listTags(request, env, headers);
-    if (url.pathname === '/api/comment/add') return addComment(request, env, headers);
-    if (url.pathname === '/api/comment/remove') return removeComment(request, env, headers);
-    if (url.pathname === '/api/friend/list') return listFriends(request, env, headers);
-    if (url.pathname === '/api/friend/add') return addFriend(request, env, headers);
-    if (url.pathname === '/api/friend/delete') return deleteFriend(request, env, headers);
-    if (url.pathname === '/api/memo/getFaviconAndTitle') return externalInfo(request, env, headers);
+    if (url.pathname === '/api/memo/list') return await listMemos(request, env, headers);
+    if (url.pathname === '/api/memo/get') return await getMemo(request, env, headers);
+    if (url.pathname === '/api/memo/save') return await saveMemo(request, env, headers);
+    if (url.pathname === '/api/memo/remove') return await removeMemo(request, env, headers);
+    if (url.pathname === '/api/memo/setPinned') return await setPinned(request, env, headers);
+    if (url.pathname === '/api/memo/like') return await likeMemo(request, env, headers);
+    if (url.pathname === '/api/tag/list') return await listTags(request, env, headers);
+    if (url.pathname === '/api/comment/add') return await addComment(request, env, headers);
+    if (url.pathname === '/api/comment/remove') return await removeComment(request, env, headers);
+    if (url.pathname === '/api/friend/list') return await listFriends(request, env, headers);
+    if (url.pathname === '/api/friend/add') return await addFriend(request, env, headers);
+    if (url.pathname === '/api/friend/delete') return await deleteFriend(request, env, headers);
+    if (url.pathname === '/api/memo/getFaviconAndTitle') return await externalInfo(request, env, headers);
 
     return json(fail('Cloudflare API migration endpoint not implemented yet', 404), 404, headers);
   } catch (error) {
     console.error('API error', error);
-    return json(fail(error instanceof Error ? error.message : '服务异常'), 503, headers);
+    return json(fail('服务暂时不可用，请稍后再试'), 503, headers);
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, commentView, publicUser };
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);

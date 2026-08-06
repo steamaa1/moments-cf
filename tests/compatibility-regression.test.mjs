@@ -13,7 +13,7 @@ assert.match(worker, /评论过于频繁，请稍后再试/);
 assert.match(worker, /评论字数超过限制长度/);
 assert.match(worker, /env\.MEDIA\.delete\(media\.r2_key\)/);
 assert.match(worker, /no such table: comments|Comments are temporarily unavailable/);
-assert.match(worker, /service: 'moments-cf', phase: 4/);
+assert.match(worker, /service: 'moments-cf', phase: 5/);
 
 const config = await readFile(new URL('../worker/wrangler.toml', import.meta.url), 'utf8');
 assert.doesNotMatch(config, /database_id/);

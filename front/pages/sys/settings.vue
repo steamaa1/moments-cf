@@ -63,7 +63,7 @@
           <UInput v-model="state.googleSiteKey"/>
         </UFormGroup>
         <UFormGroup label="SecretKey" name="googleSecretKey" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.googleSecretKey"/>
+          <UInput v-model="state.googleSecretKey" type="password" autocomplete="off"/>
         </UFormGroup>
       </template>
       <UFormGroup label="是否启用S3存储" name="s3" :ui="{label:{base:'font-bold'}}">

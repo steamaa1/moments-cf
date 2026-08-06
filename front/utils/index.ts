@@ -228,7 +228,7 @@ export const useUpload = async (
 }
 
 export const md = markdownit({
-  html: true,
+  html: false,
   linkify: true,
   typographer: true,
   breaks: true,

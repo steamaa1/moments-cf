@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/index.js && node scripts/check-config.mjs && node tests/phase1.mjs && node ../tests/cloudflare-bootstrap.test.mjs && node ../tests/render-build-config.test.mjs && node ../tests/phase4-security.test.mjs && node ../tests/memo-collapse-regression.test.mjs && node ../tests/phase4-api-contract.test.mjs && node ../tests/compatibility-regression.test.mjs",
+    "check": "node --check src/index.js && node scripts/check-config.mjs && node tests/phase1.mjs && node ../tests/cloudflare-bootstrap.test.mjs && node ../tests/render-build-config.test.mjs && node ../tests/phase4-security.test.mjs && node ../tests/memo-collapse-regression.test.mjs && node ../tests/phase4-api-contract.test.mjs && node ../tests/compatibility-regression.test.mjs && node ../tests/phase5-security.test.mjs && node ../scripts/release/preflight.mjs && node ../scripts/release/self-check.mjs",
     "build:cf": "node scripts/build-cf.mjs",
     "deploy:cf": "node scripts/deploy-cf.mjs"
   }
