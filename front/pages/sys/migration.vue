@@ -32,7 +32,7 @@
         <p v-if="!report.backupAvailable" class="mt-3 text-sm text-red-600">当前未配置 D1 备份 API，为避免无备份写入生产数据，导入按钮已禁用。请先配置 D1_BACKUP_API_TOKEN。</p>
       </section>
 
-      <section v-if="progress.message" class="rounded-2xl border border-gray-200 p-5 dark:border-gray-700" aria-live="polite">
+      <section v-if="progress.message || progress.error" class="rounded-2xl border border-gray-200 p-5 dark:border-gray-700" aria-live="polite">
         <div class="flex items-center justify-between text-sm"><span>{{ progress.message }}</span><strong>{{ progress.percent }}%</strong></div>
         <div class="mt-2 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700"><div class="h-full rounded-full bg-sky-500 transition-all" :style="{width: `${progress.percent}%`}"/></div>
         <p v-if="progress.error" class="mt-3 text-sm text-red-600">{{ progress.error }}</p>
@@ -48,28 +48,28 @@ import { uploadFile } from '~/utils/upload'
 import { useGlobalState } from '~/store'
 import { toast } from 'vue-sonner'
 
-type Entry = { name: string; data: Uint8Array; type: number }
-type PackageManifest = { format: string; version: number; tables: Record<string, number>; mediaCount: number; mediaBytes: number; media: Array<{path:string;size:number;sha256:string;contentType:string}> }
+type TarMeta = { name: string; size: number; type: number; offset: number }
+type PackageManifest = { format: string; version: number; packageId: string; tables: Record<string, number>; mediaCount: number; mediaBytes: number; media: Array<{path:string;size:number;sha256:string;contentType:string}> }
 type Report = { packageId:string; existingRun?:{status:string;summary:string}|null; manifest: PackageManifest; destination: {users:number;memos:number}; backupAvailable:boolean; warnings:string[] }
 const currentUser = useState<UserVO>('userinfo')
 const global = useGlobalState()
 if (global.value.userinfo.id !== 1) await navigateTo('/', { replace: true })
 const selectedFile = ref<File | null>(null)
 const adminPassword = ref('')
-const fileInput = ref<HTMLInputElement | null>(null)
 const reading = ref(false), importing = ref(false)
 const report = ref<Report | null>(null)
 const packageData = ref<Record<string, unknown>>({})
-const mediaEntries = ref<Entry[]>([])
+const tarData = ref<Uint8Array>(new Uint8Array(0))
+const mediaMetas = ref<TarMeta[]>([])
 const maps = reactive({ users: {} as Record<string,number>, memos: {} as Record<string,number>, media: {} as Record<string,string> })
 const progress = reactive({ message:'', percent:0, error:'', done:'' })
 const canImport = computed(() => Boolean(report.value?.backupAvailable && report.value?.existingRun?.status !== 'completed' && adminPassword.value && !importing.value && packageData.value['tables/users.json']))
 const tokenHeaders = () => global.value.userinfo.token ? {'x-api-token': global.value.userinfo.token} : {}
 async function api<T>(path:string, body:unknown) { const response=await fetch(`/api${path}`, {method:'POST',headers:{'content-type':'application/json',...tokenHeaders()},body:JSON.stringify(body)}); const result=await response.json(); if(!response.ok || result.code!==0) throw new Error(result.message || '请求失败'); return result.data as T }
 function formatBytes(value:number) { if(value<1024) return `${value} B`; if(value<1024*1024) return `${(value/1024).toFixed(1)} KB`; if(value<1024*1024*1024) return `${(value/1024/1024).toFixed(1)} MB`; return `${(value/1024/1024/1024).toFixed(2)} GB` }
-function selectPackage(event:Event) { selectedFile.value = (event.target as HTMLInputElement).files?.[0] || null; report.value=null; packageData.value={}; progress.message=''; progress.error=''; progress.done='' }
+function selectPackage(event:Event) { selectedFile.value = (event.target as HTMLInputElement).files?.[0] || null; report.value=null; packageData.value={}; tarData.value=new Uint8Array(0); mediaMetas.value=[]; progress.message=''; progress.error=''; progress.done='' }
 async function gunzip(data:ArrayBuffer) { if(typeof DecompressionStream==='undefined') throw new Error('当前浏览器不支持 gzip 解压，请使用最新版 Chrome/Edge/Firefox'); const stream=new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip')); return new Uint8Array(await new Response(stream).arrayBuffer()) }
-function tarEntries(data:Uint8Array) { const entries:Entry[]=[]; for(let offset=0; offset+512<=data.length;) { const header=data.slice(offset,offset+512); if(header.every(byte=>byte===0)) break; const text=(start:number,length:number)=>new TextDecoder().decode(header.slice(start,start+length)).replace(/\0.*$/,'').trim(); const name=text(0,100); const size=parseInt(text(124,12)||'0',8)||0; const type=header[156]; const start=offset+512; if(name && type!==53) entries.push({name,data:data.slice(start,start+size),type}); offset=start+Math.ceil(size/512)*512 } return entries }
+function tarMetaEntries(data:Uint8Array) { const metas:TarMeta[]=[]; for(let offset=0; offset+512<=data.length;) { const header=data.slice(offset,offset+512); if(header.every(byte=>byte===0)) break; const text=(start:number,length:number)=>new TextDecoder().decode(header.slice(start,start+length)).replace(/\0.*$/,'').trim(); const name=text(0,100); const size=parseInt(text(124,12)||'0',8)||0; const type=header[156]; const start=offset+512; if(name && type!==53) metas.push({name,size,type,offset:start}); offset=start+Math.ceil(size/512)*512 } return metas }
 function rewriteConfig(row: unknown) {
   if (!row || typeof row !== 'object') return row
   const copy = { ...(row as Record<string, unknown>) }
@@ -85,38 +85,48 @@ function rewrite(value: unknown): unknown {
 async function inspect() {
   if (!selectedFile.value) return
   reading.value = true
+  progress.message = ''
   progress.error = ''
+  progress.done = ''
   try {
-    const entries = tarEntries(await gunzip(await selectedFile.value.arrayBuffer()))
-    const manifestArchiveEntry = entries.find(entry => entry.name === 'manifest.json' || entry.name.endsWith('/manifest.json'))
-    if (!manifestArchiveEntry) throw new Error('迁移包缺少 manifest.json')
-    const prefix = manifestArchiveEntry.name.slice(0, -'manifest.json'.length)
-    const entryMap = Object.fromEntries(entries.map(entry => [entry.name.startsWith(prefix) ? entry.name.slice(prefix.length) : entry.name, entry]))
-    const manifest = JSON.parse(new TextDecoder().decode(manifestArchiveEntry.data)) as PackageManifest
-    if (manifest.format !== 'moments-cf-migration' || manifest.version !== 1) throw new Error('迁移包格式或版本不支持')
+    const bytes = await gunzip(await selectedFile.value.arrayBuffer())
+    tarData.value = bytes
+    const metas = tarMetaEntries(bytes)
+    const manifestMeta = metas.find(entry => entry.name === 'manifest.json' || entry.name.endsWith('/manifest.json'))
+    if (!manifestMeta) throw new Error('迁移包缺少 manifest.json')
+    const prefix = manifestMeta.name.slice(0, -'manifest.json'.length)
+    const readText = (name: string) => {
+      const meta = metas.find(entry => entry.name === name || entry.name === `${prefix}${name}`)
+      return meta ? new TextDecoder().decode(bytes.slice(meta.offset, meta.offset + meta.size)) : ''
+    }
+    const manifest = JSON.parse(readText('manifest.json')) as PackageManifest
+    if (manifest.format !== 'moments-cf-migration' || manifest.version !== 1) throw new Error('迁移包格式或版本不受支持')
     const data: Record<string, unknown> = {}
     for (const name of ['tables/users.json', 'tables/memos.json', 'tables/comments.json', 'tables/friends.json', 'tables/sys_config.json']) {
-      if (entryMap[name]) data[name] = JSON.parse(new TextDecoder().decode(entryMap[name].data))
+      const text = readText(name)
+      if (text) data[name] = JSON.parse(text)
     }
-    mediaEntries.value = entries
-      .filter(entry => entry.name.startsWith(`${prefix}media/`) && entry.type !== 53)
-      .map(entry => ({ ...entry, name: entry.name.slice(`${prefix}media/`.length) }))
+    mediaMetas.value = metas
+      .filter(meta => meta.name.startsWith(`${prefix}media/`) && meta.type !== 53)
+      .map(meta => ({ ...meta, name: meta.name.slice(`${prefix}media/`.length) }))
     for (const [filename, expected] of Object.entries(manifest.tables || {})) {
       const rows = data[`tables/${filename}`]
       if (!Array.isArray(rows) || rows.length !== Number(expected)) throw new Error(`表数量不一致：${filename}，清单 ${expected}，实际 ${Array.isArray(rows) ? rows.length : 0}`)
     }
-    if (mediaEntries.value.length !== Number(manifest.mediaCount || 0)) throw new Error(`媒体数量不一致：清单 ${manifest.mediaCount || 0}，实际 ${mediaEntries.value.length}`)
-    const actualMediaBytes = mediaEntries.value.reduce((total, entry) => total + entry.data.byteLength, 0)
+    if (mediaMetas.value.length !== Number(manifest.mediaCount || 0)) throw new Error(`媒体数量不一致：清单 ${manifest.mediaCount || 0}，实际 ${mediaMetas.value.length}`)
+    const actualMediaBytes = mediaMetas.value.reduce((total, meta) => total + meta.size, 0)
     if (actualMediaBytes !== Number(manifest.mediaBytes || 0)) throw new Error(`媒体总大小不一致：清单 ${manifest.mediaBytes || 0}，实际 ${actualMediaBytes}`)
-    const mediaByPath = new Map(mediaEntries.value.map(entry => [entry.name, entry]))
+    const mediaByPath = new Map(mediaMetas.value.map(meta => [meta.name, meta]))
     for (const item of manifest.media || []) {
-      const entry = mediaByPath.get(item.path)
-      if (!entry || entry.data.byteLength !== Number(item.size)) throw new Error(`媒体缺失或大小不一致：${item.path}`)
+      const meta = mediaByPath.get(item.path)
+      if (!meta || meta.size !== Number(item.size)) throw new Error(`媒体缺失或大小不一致：${item.path}`)
     }
     packageData.value = data
     report.value = await api<Report>('/admin/migration/preflight', { manifest })
+    progress.message = `预检通过：${manifest.mediaCount || 0} 个媒体、${manifest.tables?.['memos.json'] || 0} 条动态、${manifest.tables?.['users.json'] || 0} 个用户`
     toast.success('迁移包预检通过')
   } catch (error) {
+    progress.message = '读取或预检失败'
     progress.error = error instanceof Error ? error.message : String(error)
   } finally {
     reading.value = false
@@ -141,11 +151,10 @@ async function startImport() {
       const item = mediaList[index]
       progress.message = `上传媒体 ${index + 1}/${mediaList.length}：${item.path}`
       progress.percent = Math.round(index / Math.max(1, mediaList.length) * 55)
-      const entry = mediaEntries.value.find(value => value.name === item.path)
-      if (!entry) throw new Error(`迁移包缺少媒体：${item.path}`)
-      if (entry.data.byteLength !== item.size) throw new Error(`媒体大小不一致：${item.path}`)
-      const bytes = entry.data.slice().buffer
-      const file = new File([bytes], item.path.split('/').pop() || 'media', { type: item.contentType || 'application/octet-stream' })
+      const meta = mediaMetas.value.find(value => value.name === item.path)
+      if (!meta) throw new Error(`迁移包缺少媒体：${item.path}`)
+      if (meta.size !== Number(item.size)) throw new Error(`媒体大小不一致：${item.path}`)
+      const file = new File([tarData.value.slice(meta.offset, meta.offset + meta.size)], item.path.split('/').pop() || 'media', { type: item.contentType || 'application/octet-stream' })
       const path = await uploadFile(file, value => {
         progress.percent = Math.round((index + value) / Math.max(1, mediaList.length) * 55)
       }, item.sha256)
