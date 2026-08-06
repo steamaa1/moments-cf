@@ -1,0 +1,22 @@
+name = "__WORKER_NAME__"
+main = "src/index.js"
+compatibility_date = "2026-08-06"
+
+[assets]
+directory = "../front/.output/public"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "__D1_DATABASE_NAME__"
+database_id = "__D1_DATABASE_ID__"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "__R2_BUCKET_NAME__"
+
+[vars]
+CORS_ORIGIN = "*"
+# Configure JWT_SECRET and INIT_SECRET as encrypted Worker Secrets.
+# Optional: PBKDF2_ITERATIONS (default 100000)

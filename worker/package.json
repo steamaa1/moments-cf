@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/index.js && node scripts/check-config.mjs && node tests/phase1.mjs"
+    "check": "node --check src/index.js && node scripts/check-config.mjs && node tests/phase1.mjs && node ../tests/cloudflare-bootstrap.test.mjs"
   }
 }

@@ -25,3 +25,7 @@ progress.md
 
 # Cloudflare local development state
 .wrangler/
+
+# Per-account Cloudflare bootstrap output (contains resource IDs, never commit)
+worker/wrangler.local.toml
+.moments-cf-bootstrap.json
