@@ -1,6 +1,6 @@
 # Moments Cloudflare Worker
 
-当前是 **Phase 3**：在 Phase 2 的初始化、认证、资料、配置与上传基础上，已实现动态、标签、置顶、访客点赞去重与 RSS；评论、友链与外部内容抓取将在后续阶段迁移。
+当前是 **Phase 4**：在 Phase 3 动态、标签、点赞与 RSS 的基础上，新增评论、友链，以及带 SSRF 防护的网页标题/Favicon 抓取。
 
 ## 资源绑定
 
@@ -21,7 +21,7 @@
 
 可选变量：`PBKDF2_ITERATIONS`，默认 `100000`。不要把任何 Secret 写入 `wrangler.toml` 或 Git。
 
-## Phase 3 API
+## Phase 4 API
 
 所有 API 保持 Moments 原本的 `{ code, message?, data }` 响应格式。登录后的请求继续兼容 `x-api-token`。
 
@@ -44,7 +44,13 @@
 | `/api/memo/setPinned?id=` | POST | 管理员切换唯一置顶动态 |
 | `/api/memo/like?id=` | POST | 匿名访客点赞；同一浏览器去重 |
 | `/api/tag/list` | POST | 当前登录用户的标签列表 |
-| `/rss` | GET | 最近 15 条公开动态 RSS
+| `/rss` | GET | 最近 15 条公开动态 RSS |
+| `/api/comment/add` | POST | 添加评论（访客或登录用户） |
+| `/api/comment/remove?id=` | POST | 动态作者或管理员删除评论 |
+| `/api/friend/list` | POST | 公开友链列表 |
+| `/api/friend/add` | POST | 管理员添加友链 |
+| `/api/friend/delete?id=` | POST | 管理员删除友链 |
+| `/api/memo/getFaviconAndTitle?url=` | POST | 登录后抓取网页标题/Favicon；禁止内网/重定向 SSRF
 
 ## D1 Migration
 
@@ -53,6 +59,7 @@
 ```text
 worker/migrations/0001_schema.sql
 worker/migrations/0002_memos.sql
+worker/migrations/0003_comments_friends.sql
 ```
 
 在 Workers Builds 自动部署模式下，Migration 不会自动执行；需通过 Dashboard SQL Console 手动粘贴执行，或后续配置专门的受控 migration 工作流。

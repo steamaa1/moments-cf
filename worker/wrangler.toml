@@ -1,3 +1,5 @@
+# Repository-safe configuration. Workers Builds uses npm run build:cf / deploy:cf,
+# which generates wrangler.build.toml from Dashboard Build Variables.
 name = "moments-cf"
 main = "src/index.js"
 compatibility_date = "2026-08-06"
@@ -6,18 +8,6 @@ compatibility_date = "2026-08-06"
 directory = "../front/.output/public"
 not_found_handling = "single-page-application"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "moments-db"
-database_id = "b7fd8fd7-1095-412f-99ad-90efb0a3ce08"
-migrations_dir = "migrations"
-
-[[r2_buckets]]
-binding = "MEDIA"
-bucket_name = "moments-media"
-
 [vars]
 CORS_ORIGIN = "*"
-# Add these as encrypted Cloudflare Worker secrets before deployment:
-# JWT_SECRET, INIT_SECRET
-# Optional: PBKDF2_ITERATIONS (default 100000)
+# JWT_SECRET and INIT_SECRET are encrypted Worker secrets, set in the Dashboard.

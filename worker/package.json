@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/index.js && node scripts/check-config.mjs && node tests/phase1.mjs && node ../tests/cloudflare-bootstrap.test.mjs"
+    "check": "node --check src/index.js && node scripts/check-config.mjs && node tests/phase1.mjs && node ../tests/cloudflare-bootstrap.test.mjs && node ../tests/render-build-config.test.mjs && node ../tests/phase4-security.test.mjs",
+    "build:cf": "node scripts/build-cf.mjs",
+    "deploy:cf": "node scripts/deploy-cf.mjs"
   }
 }

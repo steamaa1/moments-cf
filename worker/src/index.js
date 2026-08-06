@@ -359,7 +359,14 @@ async function listMemos(request, env, headers) {
   const count = await env.DB.prepare(`SELECT COUNT(*) AS total FROM memos m JOIN users u ON u.id=m.user_id${where}`).bind(...values).first();
   const result = await env.DB.prepare(`${MEMO_SELECT}${where} ORDER BY m.pinned DESC, m.created_at DESC LIMIT ? OFFSET ?`).bind(...values, size, (page - 1) * size).all();
   const total = Number(count?.total || 0);
-  return json(ok({ list: (result.results || []).map(memoView), total, hasNext: page * size < total }), 200, headers);
+  const list = [];
+  for (const row of result.results || []) {
+    const view = memoView(row);
+    const comments = await env.DB.prepare('SELECT * FROM comments WHERE memo_id=? ORDER BY created_at DESC LIMIT 5').bind(row.id).all();
+    view.comments = (comments.results || []).map(commentView);
+    list.push(view);
+  }
+  return json(ok({ list, total, hasNext: page * size < total }), 200, headers);
 }
 async function getMemo(request, env, headers) {
   const url = new URL(request.url);
@@ -368,7 +375,10 @@ async function getMemo(request, env, headers) {
   const memo = await env.DB.prepare(`${MEMO_SELECT} WHERE m.id = ?`).bind(id).first();
   if (!memo) return json(fail('动态不存在'), 404, headers);
   if (!(await canReadMemo(memo, await currentUser(request, env)))) return json(fail('暂无权限查看'), 403, headers);
-  return json(ok(memoView(memo)), 200, headers);
+  const view = memoView(memo);
+  const comments = await env.DB.prepare('SELECT * FROM comments WHERE memo_id=? ORDER BY created_at DESC').bind(id).all();
+  view.comments = (comments.results || []).map(commentView);
+  return json(ok(view), 200, headers);
 }
 async function verifyMemoMedia(imgs, user, env) {
   for (const url of imgs) {
@@ -467,6 +477,62 @@ async function rss(request, env) {
   return new Response(feed, { headers: { 'content-type': 'application/rss+xml; charset=UTF-8', 'cache-control': 'public, max-age=300' } });
 }
 
+
+function validHttpUrl(value) {
+  try { const url = new URL(value); return url.protocol === 'https:' || url.protocol === 'http:' ? url : null; } catch { return null; }
+}
+function commentView(row) { return { id: Number(row.id), content: row.content, replyTo: row.reply_to, replyEmail: row.reply_email, username: row.username, email: row.email, website: row.website, createdAt: row.created_at, updatedAt: row.updated_at, memoId: Number(row.memo_id), author: row.author }; }
+async function commentIdentity(request, env) {
+  const existing = request.headers.get('cookie')?.match(/(?:^|;\s*)moments_comment_id=([^;]+)/)?.[1];
+  const identity = existing || randomToken(20); const secret = env.LIKE_SALT || env.JWT_SECRET;
+  const hash = base64url(await hmac(secret, identity)); const headers = new Headers();
+  if (!existing) headers.append('set-cookie', `moments_comment_id=${identity}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`);
+  return { hash, headers };
+}
+async function addComment(request, env, headers) {
+  const body = await readJson(request); if (!body?.memoId || !String(body.content || '').trim()) return json(fail('评论内容不能为空'), 400, headers);
+  const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
+  if (!config.enableComment) return json(fail('评论未开启'), 403, headers);
+  const content = String(body.content).trim().slice(0, Math.max(1, Number(config.maxCommentLength) || 300));
+  const memo = await env.DB.prepare('SELECT * FROM memos WHERE id=?').bind(intParam(body.memoId)).first();
+  if (!memo || !(await canReadMemo(memo, await currentUser(request, env)))) return json(fail('动态不存在或不可评论'), 404, headers);
+  const user = await currentUser(request, env); const identity = await commentIdentity(request, env);
+  const website = body.website ? validHttpUrl(String(body.website)) : null;
+  if (body.website && !website) return json(fail('网站地址格式错误'), 400, headers);
+  const username = user ? user.nickname : String(body.username || `匿名用户_${randomToken(2)}`).trim().slice(0, 80);
+  await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(content, String(body.replyTo || '').slice(0, 80), String(body.replyEmail || '').slice(0, 254), username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash).run();
+  await env.DB.prepare('UPDATE memos SET comment_count=comment_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(memo.id).run();
+  return json(ok({}), 200, { ...headers, ...Object.fromEntries(identity.headers) });
+}
+async function removeComment(request, env, headers) {
+  const access = await requireUser(request, env, headers); if (access.response) return access.response;
+  const id = intParam(new URL(request.url).searchParams.get('id')); const comment = await env.DB.prepare('SELECT c.*, m.user_id FROM comments c JOIN memos m ON m.id=c.memo_id WHERE c.id=?').bind(id).first();
+  if (!comment) return json(fail('评论不存在'), 404, headers);
+  if (Number(comment.user_id) !== Number(access.user.id) && Number(access.user.id) !== 1) return json(fail('没有权限'), 403, headers);
+  await env.DB.batch([env.DB.prepare('DELETE FROM comments WHERE id=?').bind(id), env.DB.prepare('UPDATE memos SET comment_count=MAX(0, comment_count-1), updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(comment.memo_id)]);
+  return json(ok({}), 200, headers);
+}
+async function listFriends(_request, env, headers) { const rows = await env.DB.prepare('SELECT * FROM friends ORDER BY created_at ASC').all(); return json(ok({ list: (rows.results || []).map(row => ({ id: Number(row.id), name: row.name, icon: row.icon, url: row.url, desc: row.description })) }), 200, headers); }
+async function addFriend(request, env, headers) {
+  const access = await requireUser(request, env, headers, true); if (access.response) return access.response; const body = await readJson(request);
+  const url = validHttpUrl(body?.url); const icon = validHttpUrl(body?.icon); const name = String(body?.name || '').trim().slice(0, 80);
+  if (!name || !url || !icon) return json(fail('请填写正确的名称、链接和图标地址'), 400, headers);
+  await env.DB.prepare('INSERT INTO friends (name, icon, url, description) VALUES (?, ?, ?, ?)').bind(name, icon.href, url.href, String(body.desc || '').slice(0, 300)).run(); return json(ok({}), 200, headers);
+}
+async function deleteFriend(request, env, headers) { const access = await requireUser(request, env, headers, true); if (access.response) return access.response; await env.DB.prepare('DELETE FROM friends WHERE id=?').bind(intParam(new URL(request.url).searchParams.get('id'))).run(); return json(ok({}), 200, headers); }
+function forbiddenHost(host) { const h = host.toLowerCase(); if (h === 'localhost' || h.endsWith('.localhost') || h === '::1') return true; if (/^127\.|^10\.|^192\.168\.|^169\.254\./.test(h)) return true; const match = h.match(/^172\.(\d+)\./); return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31); }
+async function externalInfo(request, _env, headers) {
+  const target = validHttpUrl(new URL(request.url).searchParams.get('url')); if (!target || forbiddenHost(target.hostname)) return json(fail('不允许的链接地址'), 400, headers);
+  const response = await fetch(target.href, { redirect: 'manual', headers: { 'user-agent': 'Moments-CF/1.0' }, signal: AbortSignal.timeout(5000) });
+  if (response.status >= 300 && response.status < 400) return json(fail('不允许重定向链接'), 400, headers);
+  const type = response.headers.get('content-type') || ''; if (!response.ok || !type.includes('text/html')) return json(fail('无法读取网页信息'), 400, headers);
+  const html = (await response.text()).slice(0, 512000); const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/<[^>]*>/g, '').trim().slice(0, 300);
+  const href = html.match(/<link[^>]+rel=["'][^"']*(?:icon|shortcut icon)[^"']*["'][^>]+href=["']([^"']+)["']/i)?.[1];
+  let favicon = `${target.protocol}//${target.host}/favicon.ico`; try { if (href) favicon = new URL(href, target).href; } catch {}
+  return json(ok({ title, favicon }), 200, headers);
+}
+
 async function handleApi(request, env) {
   const url = new URL(request.url);
   const headers = corsHeaders(request, env);
@@ -490,6 +556,13 @@ async function handleApi(request, env) {
     if (url.pathname === '/api/memo/setPinned') return setPinned(request, env, headers);
     if (url.pathname === '/api/memo/like') return likeMemo(request, env, headers);
     if (url.pathname === '/api/tag/list') return listTags(request, env, headers);
+    if (url.pathname === '/api/comment/add') return addComment(request, env, headers);
+    if (url.pathname === '/api/comment/remove') return removeComment(request, env, headers);
+    if (url.pathname === '/api/friend/list') return listFriends(request, env, headers);
+    if (url.pathname === '/api/friend/add') return addFriend(request, env, headers);
+    if (url.pathname === '/api/friend/delete') return deleteFriend(request, env, headers);
+    if (url.pathname === '/api/memo/getFaviconAndTitle') return externalInfo(request, env, headers);
+
     return json(fail('Cloudflare API migration endpoint not implemented yet', 404), 404, headers);
   } catch (error) {
     console.error('API error', error);
@@ -497,7 +570,7 @@ async function handleApi(request, env) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost };
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);

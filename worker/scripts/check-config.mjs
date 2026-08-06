@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 const config = await readFile(new URL('../wrangler.toml', import.meta.url), 'utf8');
 const schema = await readFile(new URL('../migrations/0001_schema.sql', import.meta.url), 'utf8');
 const memoSchema = await readFile(new URL('../migrations/0002_memos.sql', import.meta.url), 'utf8');
+const phase4Schema = await readFile(new URL('../migrations/0003_comments_friends.sql', import.meta.url), 'utf8');
+const template = await readFile(new URL('../wrangler.toml.template', import.meta.url), 'utf8');
 const required = [
   'name = "moments-cf"',
   'main = "src/index.js"',
@@ -10,15 +12,12 @@ const required = [
   '[assets]',
   'directory = "../front/.output/public"',
   'not_found_handling = "single-page-application"',
-  'binding = "DB"',
-  'database_name = "moments-db"',
-  'database_id = "b7fd8fd7-1095-412f-99ad-90efb0a3ce08"',
-  'migrations_dir = "migrations"',
-  'binding = "MEDIA"',
-  'bucket_name = "moments-media"',
+
 ];
 const missing = required.filter(value => !config.includes(value));
 if (missing.length) throw new Error(`wrangler.toml is missing: ${missing.join(', ')}`);
+if (/database_id\s*=/.test(config) || /\[\[d1_databases\]\]/.test(config) || /\[\[r2_buckets\]\]/.test(config)) throw new Error('Repository wrangler.toml must not contain account-specific bindings.');
+for (const value of ['binding = "DB"', 'database_id = "__D1_DATABASE_ID__"', 'binding = "MEDIA"']) if (!template.includes(value)) throw new Error(`Wrangler template is missing: ${value}`);
 
 for (const table of ['CREATE TABLE IF NOT EXISTS users', 'CREATE TABLE IF NOT EXISTS sys_config', 'CREATE TABLE IF NOT EXISTS media']) {
   if (!schema.includes(table)) throw new Error(`schema is missing required table: ${table}`);
@@ -33,4 +32,5 @@ for (const secret of ['JWT_SECRET', 'INIT_SECRET']) {
 for (const table of ['CREATE TABLE IF NOT EXISTS memos', 'CREATE TABLE IF NOT EXISTS memo_likes']) {
   if (!memoSchema.includes(table)) throw new Error(`Phase 3 schema is missing: ${table}`);
 }
-console.log('Phase 3 Worker configuration guard: PASS');
+for (const table of ['CREATE TABLE IF NOT EXISTS comments', 'CREATE TABLE IF NOT EXISTS friends']) if (!phase4Schema.includes(table)) throw new Error(`Phase 4 schema is missing: ${table}`);
+console.log('Phase 4 Worker configuration guard: PASS');
