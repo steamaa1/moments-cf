@@ -10,6 +10,20 @@
 | `MEDIA` | R2：`moments-media` |
 | `ASSETS` | `../front/.output/public` 的 Nuxt SPA 静态资源 |
 
+## Cloudflare Workers Builds：只需两条命令
+
+在 Dashboard → Workers Builds 中填写：
+
+| 项目 | 填写 |
+| --- | --- |
+| 路径 | `worker` |
+| 构建命令 | `npm run build:cf` |
+| 部署命令 | `npm run deploy:cf` |
+
+**不需要** `D1_DATABASE_ID` Build Variable。部署脚本会通过 Workers Builds 已使用的 API Token 查询已存在的 `moments-db`，在构建环境临时生成完整 Wrangler 配置，自动执行未应用的 D1 Migration 后部署。
+
+Workers Builds 使用的 API Token 需有：`D1 Read`、`D1 Write`、`Workers Scripts Edit`，以及 R2 绑定/访问所需权限。仓库不会保存任何账户专属 D1 ID。
+
 ## 部署前必须设置的 Secrets
 
 在 Cloudflare Worker 的 **Settings → Variables and Secrets** 添加加密 Secret：

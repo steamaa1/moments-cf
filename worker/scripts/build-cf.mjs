@@ -6,4 +6,4 @@ const front = resolve(worker, '../front');
 function run(command, args, cwd) { return new Promise((ok, fail) => { const p = spawn(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' }); p.on('error', fail); p.on('exit', code => code === 0 ? ok() : fail(new Error(`${command} exited with ${code}`))); }); }
 await run('pnpm', ['install', '--frozen-lockfile'], front);
 await run('pnpm', ['run', 'generate'], front);
-await run(process.execPath, ['scripts/render-build-config.mjs'], worker);
+console.log('Frontend assets generated. Deployment config will be resolved during npm run deploy:cf.');
