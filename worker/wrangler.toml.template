@@ -4,6 +4,7 @@ compatibility_date = "2026-08-06"
 
 [assets]
 directory = "../front/.output/public"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [[d1_databases]]
