@@ -1,2 +1,0 @@
--- Phase 1 placeholder. D1 schema is added in Phase 2.
--- This file is intentionally non-destructive and contains no tables yet.

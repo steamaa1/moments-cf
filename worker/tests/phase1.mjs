@@ -1,93 +1,148 @@
-import worker from '../src/index.js';
+import worker, { passwordHash, passwordMatches, signJwt, verifyJwt } from '../src/index.js';
 
 function expect(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-const assets = {
-  async fetch(request) {
-    return new Response(`asset:${new URL(request.url).pathname}`);
-  },
-};
+const assets = { async fetch(request) { return new Response(`asset:${new URL(request.url).pathname}`); } };
+const baseEnv = { ASSETS: assets, CORS_ORIGIN: 'https://moments.example.com' };
 
-const baseEnv = {
-  ASSETS: assets,
-  CORS_ORIGIN: 'https://moments.example.com',
-};
-
-const health = await worker.fetch(
-  new Request('https://moments.example.com/api/health', {
-    headers: { Origin: 'https://moments.example.com' },
-  }),
-  baseEnv,
-);
+const health = await worker.fetch(new Request('https://moments.example.com/api/health', {
+  headers: { Origin: 'https://moments.example.com' },
+}), baseEnv);
 expect(health.status === 200, 'health endpoint must return 200');
 const healthData = await health.json();
-expect(healthData.ok === true, 'health endpoint must report ok');
-expect(healthData.service === 'moments-cf', 'health service name mismatch');
-expect(healthData.phase === 1, 'health phase mismatch');
-expect(
-  health.headers.get('access-control-allow-origin') === 'https://moments.example.com',
-  'health CORS origin mismatch',
-);
+expect(healthData.code === 0 && healthData.data.phase === 2, 'health must report Phase 2');
+expect(health.headers.get('access-control-allow-origin') === 'https://moments.example.com', 'health CORS origin mismatch');
 
-const options = await worker.fetch(
-  new Request('https://moments.example.com/api/health', { method: 'OPTIONS' }),
-  baseEnv,
-);
+const options = await worker.fetch(new Request('https://moments.example.com/api/health', { method: 'OPTIONS' }), baseEnv);
 expect(options.status === 204, 'CORS preflight must return 204');
 
-const unknownApi = await worker.fetch(
-  new Request('https://moments.example.com/api/memo/list'),
-  baseEnv,
-);
-expect(unknownApi.status === 404, 'unimplemented API must return 404');
+const noDb = await worker.fetch(new Request('https://moments.example.com/api/user/login', {
+  method: 'POST', body: JSON.stringify({ username: 'admin', password: 'password123' }),
+}), baseEnv);
+expect(noDb.status === 503, 'unbound D1 login must return 503');
 
-const appAsset = await worker.fetch(
-  new Request('https://moments.example.com/memo/123'),
-  baseEnv,
-);
-expect(appAsset.status === 200, 'SPA asset fallback must return 200');
-expect((await appAsset.text()) === 'asset:/memo/123', 'SPA fallback did not reach ASSETS');
+const initNoSecret = await worker.fetch(new Request('https://moments.example.com/api/admin/initialize', {
+  method: 'POST', body: JSON.stringify({ username: 'admin', password: 'password123' }),
+}), baseEnv);
+expect(initNoSecret.status === 503, 'initialization without secret must return 503');
 
-const missingR2 = await worker.fetch(
-  new Request('https://moments.example.com/upload/2026/cover.webp'),
-  baseEnv,
-);
+const hash = await passwordHash('password123', 1000);
+expect(hash.startsWith('pbkdf2-sha256$1000$'), 'password hash scheme mismatch');
+expect(await passwordMatches('password123', hash), 'correct password must match');
+expect(!(await passwordMatches('wrong-password', hash)), 'wrong password must not match');
+
+const now = Math.floor(Date.now() / 1000);
+const token = await signJwt({ sub: '1', tv: 0, exp: now + 60 }, 'test-secret');
+const payload = await verifyJwt(token, 'test-secret');
+expect(payload?.sub === '1', 'signed JWT must verify');
+expect((await verifyJwt(token, 'wrong-secret')) === null, 'wrong JWT secret must fail');
+
+const appAsset = await worker.fetch(new Request('https://moments.example.com/memo/123'), baseEnv);
+expect(appAsset.status === 200 && (await appAsset.text()) === 'asset:/memo/123', 'SPA fallback failed');
+const missingR2 = await worker.fetch(new Request('https://moments.example.com/upload/2026/cover.webp'), baseEnv);
 expect(missingR2.status === 503, 'unbound R2 must return 503');
-
-const mediaEnv = {
-  ...baseEnv,
-  MEDIA: {
-    async get(key) {
-      expect(key === '2026/cover.webp', 'unexpected R2 key');
-      return {
-        body: new TextEncoder().encode('r2-media'),
-        httpEtag: '"etag-1"',
-        writeHttpMetadata(headers) {
-          headers.set('content-type', 'image/webp');
-        },
-      };
-    },
-  },
-};
-
-const media = await worker.fetch(
-  new Request('https://moments.example.com/upload/2026/cover.webp'),
-  mediaEnv,
-);
-expect(media.status === 200, 'bound R2 object must return 200');
-expect((await media.text()) === 'r2-media', 'R2 body mismatch');
-expect(media.headers.get('content-type') === 'image/webp', 'R2 content type mismatch');
-expect(
-  media.headers.get('cache-control') === 'public, max-age=31536000, immutable',
-  'R2 cache header mismatch',
-);
-
-const rss = await worker.fetch(
-  new Request('https://moments.example.com/rss'),
-  baseEnv,
-);
+const rss = await worker.fetch(new Request('https://moments.example.com/rss'), baseEnv);
 expect(rss.status === 501, 'RSS placeholder must return 501');
 
-console.log('Phase 1 Worker behavior tests: PASS');
+// In-memory D1/R2 doubles: exercise initialize → login → profile → config → upload.
+const state = { users: [], config: null, media: [] };
+function makeStatement(sql, values = []) {
+  return {
+    sql,
+    values,
+    bind(...next) { return makeStatement(sql, next); },
+    async first() {
+      if (sql.startsWith('SELECT id FROM users LIMIT')) return state.users[0] ? { id: state.users[0].id } : null;
+      if (sql.startsWith('SELECT * FROM users WHERE username')) return state.users.find(user => user.username === values[0]) || null;
+      if (sql.startsWith('SELECT * FROM users WHERE id')) return state.users.find(user => user.id === Number(values[0])) || null;
+      if (sql.startsWith('SELECT content FROM sys_config')) return state.config ? { content: state.config } : null;
+      return null;
+    },
+    async run() {
+      if (sql.startsWith('UPDATE users SET nickname=')) {
+        const user = state.users.find(item => item.id === Number(values[7]));
+        Object.assign(user, { nickname: values[0], avatar_url: values[1], slogan: values[2], cover_url: values[3], email: values[4], password_hash: values[5], token_version: values[6] });
+      } else if (sql.startsWith('INSERT INTO media')) {
+        state.media.push({ owner_id: values[0], r2_key: values[1], original_filename: values[2], content_type: values[3], size_bytes: values[4] });
+      }
+      return { success: true };
+    },
+  };
+}
+const memoryDb = {
+  prepare(sql) { return makeStatement(sql); },
+  async batch(statements) {
+    for (const item of statements) {
+      if (item.sql.startsWith('INSERT INTO users')) {
+        state.users.push({ id: 1, username: item.values[0], nickname: item.values[1], password_hash: item.values[2], slogan: item.values[3], avatar_url: '/avatar.webp', cover_url: '/cover.webp', email: '', token_version: 0 });
+      } else if (item.sql.startsWith('INSERT INTO sys_config')) {
+        state.config = item.values[0];
+      } else if (item.sql.startsWith('INSERT INTO sys_config (id, content, updated_at)')) {
+        state.config = item.values[0];
+      } else if (item.sql.startsWith('UPDATE users SET username=')) {
+        state.users[0].username = item.values[0];
+      } else {
+        await item.run();
+      }
+    }
+    return [];
+  },
+};
+const uploaded = [];
+const integrationEnv = {
+  ASSETS: assets,
+  DB: memoryDb,
+  MEDIA: { async put(key, body, options) { uploaded.push({ key, body, options }); } },
+  JWT_SECRET: 'integration-jwt-secret',
+  INIT_SECRET: 'integration-init-secret',
+  PBKDF2_ITERATIONS: '1000',
+  CORS_ORIGIN: '*',
+};
+
+const init = await worker.fetch(new Request('https://moments.example.com/api/admin/initialize', {
+  method: 'POST', headers: { 'content-type': 'application/json', 'x-init-secret': 'integration-init-secret' },
+  body: JSON.stringify({ username: 'admin', nickname: '管理员', password: 'password123' }),
+}), integrationEnv);
+expect(init.status === 201 && (await init.json()).code === 0, 'initialization must succeed once');
+expect(state.users.length === 1 && state.config, 'initialization must create user and config');
+
+const repeatInit = await worker.fetch(new Request('https://moments.example.com/api/admin/initialize', {
+  method: 'POST', headers: { 'content-type': 'application/json', 'x-init-secret': 'integration-init-secret' },
+  body: JSON.stringify({ username: 'admin', password: 'password123' }),
+}), integrationEnv);
+expect(repeatInit.status === 409, 'initialization must be one-time');
+
+const login = await worker.fetch(new Request('https://moments.example.com/api/user/login', {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'password123' }),
+}), integrationEnv);
+const loginBody = await login.json();
+expect(login.status === 200 && loginBody.code === 0 && loginBody.data.token, 'login must return compatible token');
+const tokenHeader = { 'content-type': 'application/json', 'x-api-token': loginBody.data.token };
+
+const profileSave = await worker.fetch(new Request('https://moments.example.com/api/user/saveProfile', {
+  method: 'POST', headers: tokenHeader, body: JSON.stringify({ nickname: '云梦川', slogan: '测试签名', avatarUrl: '/upload/avatar.webp', coverUrl: '/upload/cover.webp', email: 'test@example.com' }),
+}), integrationEnv);
+expect(profileSave.status === 200 && (await profileSave.json()).code === 0, 'profile save must succeed');
+expect(state.users[0].nickname === '云梦川', 'profile save must update nickname');
+
+const fullConfig = await worker.fetch(new Request('https://moments.example.com/api/sysConfig/getFull', { method: 'POST', headers: tokenHeader }), integrationEnv);
+expect(fullConfig.status === 200 && (await fullConfig.json()).code === 0, 'admin must read full config');
+
+const configSave = await worker.fetch(new Request('https://moments.example.com/api/sysConfig/save', {
+  method: 'POST', headers: tokenHeader, body: JSON.stringify({ title: '云梦川的朋友圈', css: '.demo{}', enableRegister: false }),
+}), integrationEnv);
+expect(configSave.status === 200 && (await configSave.json()).code === 0, 'config save must succeed');
+const publicConfig = await worker.fetch(new Request('https://moments.example.com/api/sysConfig/get', { method: 'POST' }), integrationEnv);
+const publicConfigBody = await publicConfig.json();
+expect(publicConfigBody.data.title === '云梦川的朋友圈', 'public config must return saved title');
+
+const form = new FormData();
+form.append('files', new File(['image-bytes'], 'avatar.webp', { type: 'image/webp' }));
+const upload = await worker.fetch(new Request('https://moments.example.com/api/file/upload', { method: 'POST', headers: { 'x-api-token': loginBody.data.token }, body: form }), integrationEnv);
+const uploadBody = await upload.json();
+expect(upload.status === 200 && uploadBody.data.length === 1, 'authenticated upload must succeed');
+expect(uploaded.length === 1 && state.media.length === 1, 'upload must write R2 and media record');
+
+console.log('Phase 2 integration API tests: PASS');

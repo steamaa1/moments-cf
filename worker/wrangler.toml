@@ -6,15 +6,18 @@ compatibility_date = "2026-08-06"
 directory = "../front/.output/public"
 not_found_handling = "single-page-application"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "moments-db"
+database_id = "b7fd8fd7-1095-412f-99ad-90efb0a3ce08"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "moments-media"
+
 [vars]
 CORS_ORIGIN = "*"
-
-# Create and bind these resources before a real deployment.
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "moments"
-# database_id = "replace-me"
-
-# [[r2_buckets]]
-# binding = "MEDIA"
-# bucket_name = "moments-media"
+# Add these as encrypted Cloudflare Worker secrets before deployment:
+# JWT_SECRET, INIT_SECRET
+# Optional: PBKDF2_ITERATIONS (default 210000)
