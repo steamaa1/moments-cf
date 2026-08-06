@@ -60,7 +60,32 @@ export function sanitizeSafeHtml(input) {
 }
 
 function bytesToHex(bytes) { return [...new Uint8Array(bytes)].map(value => value.toString(16).padStart(2, '0')).join(''); }
+function bytesToBase64url(bytes) {
+  let binary = ''; for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}
+function base64urlToBytes(value) {
+  const padded = String(value).replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - String(value).length % 4) % 4);
+  return Uint8Array.from(atob(padded), character => character.charCodeAt(0));
+}
 async function sha256(value) { return crypto.subtle.digest('SHA-256', typeof value === 'string' ? encoder.encode(value) : value); }
+async function configEncryptionKey(secret) {
+  if (!secret || String(secret).length < 16) throw new Error('JWT_SECRET 未配置，无法加密邮件凭据');
+  return crypto.subtle.importKey('raw', await sha256(`moments-cf:config:v1:${secret}`), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+export async function encryptConfigSecret(value, secret) {
+  if (!value) return '';
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode('moments-cf:mail:v1') }, await configEncryptionKey(secret), encoder.encode(String(value)));
+  return `enc:v1:${bytesToBase64url(iv)}:${bytesToBase64url(cipher)}`;
+}
+export async function decryptConfigSecret(value, secret) {
+  if (!value) return '';
+  const parts = String(value).split(':');
+  if (parts.length !== 4 || parts[0] !== 'enc' || parts[1] !== 'v1') throw new Error('邮件凭据密文格式错误');
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: base64urlToBytes(parts[2]), additionalData: encoder.encode('moments-cf:mail:v1') }, await configEncryptionKey(secret), base64urlToBytes(parts[3]));
+  return new TextDecoder().decode(plain);
+}
 async function hmac(key, value) {
   const material = await crypto.subtle.importKey('raw', typeof key === 'string' ? encoder.encode(key) : key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return crypto.subtle.sign('HMAC', material, typeof value === 'string' ? encoder.encode(value) : value);
@@ -168,11 +193,14 @@ export async function sendResend(apiKey, message, fetchImpl = fetch) {
 }
 export async function sendNotification(env, config, message, dependencies = {}) {
   const errors = [];
-  if (config.smtpHost && config.smtpUsername && env.SMTP_PASSWORD) {
-    try { await sendSmtp({ host: config.smtpHost, port: config.smtpPort || '465', username: config.smtpUsername, password: env.SMTP_PASSWORD }, message, dependencies.connect); return { provider: 'smtp' }; }
+  const credential = config.mailCredential || '';
+  const resendKey = credential.startsWith('re_') ? credential : env.RESEND_API_KEY;
+  const smtpPassword = credential && !credential.startsWith('re_') ? credential : env.SMTP_PASSWORD;
+  if (config.smtpHost && config.smtpUsername && smtpPassword) {
+    try { await sendSmtp({ host: config.smtpHost, port: config.smtpPort || '465', username: config.smtpUsername, password: smtpPassword }, message, dependencies.connect); return { provider: 'smtp' }; }
     catch (error) { errors.push(`SMTP: ${error.message}`); }
   }
-  try { await sendResend(env.RESEND_API_KEY, message, dependencies.fetch || fetch); return { provider: 'resend', fallback: errors.length > 0 }; }
+  try { await sendResend(resendKey, message, dependencies.fetch || fetch); return { provider: 'resend', fallback: errors.length > 0 }; }
   catch (error) { errors.push(`Resend: ${error.message}`); throw new Error(errors.join('; ')); }
 }
 

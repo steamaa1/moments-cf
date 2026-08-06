@@ -1,7 +1,7 @@
 import {
   sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
   sendNotification, createD1Backup, listBackups, restoreD1Backup, renderRssDescription,
-  BACKUP_PREFIX,
+  encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
 } from './phase7.js';
 import { openApiDocument, openApiHtml } from './openapi.js';
 
@@ -26,6 +26,9 @@ const DEFAULT_CONFIG = {
   enableGoogleRecaptcha: false,
   googleSiteKey: '',
   googleSecretKey: '',
+  enableTurnstile: false,
+  turnstileSiteKey: '',
+  turnstileSecretKey: '',
   enableComment: true,
   maxCommentLength: 300,
   memoMaxHeight: 0,
@@ -36,7 +39,7 @@ const DEFAULT_CONFIG = {
   smtpHost: '',
   smtpPort: '465',
   smtpUsername: '',
-  emailFrom: '',
+  smtpPasswordEncrypted: '',
   s3: { thumbnailSuffix: '' },
 };
 const ALLOWED_MEDIA_TYPES = new Set([
@@ -48,7 +51,7 @@ const DIRECT_UPLOAD_THRESHOLD = 20 * 1024 * 1024;
 const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
-  'enableGoogleRecaptcha', 'googleSiteKey', 'enableComment', 'maxCommentLength',
+  'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableComment', 'maxCommentLength',
   'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
@@ -266,7 +269,13 @@ async function getConfig(request, env, headers, full = false) {
   if (full) {
     delete config.enableS3;
     delete config.s3;
-    delete config.smtpPassword;
+    config.smtpPasswordConfigured = Boolean(config.smtpPasswordEncrypted || env.SMTP_PASSWORD || env.RESEND_API_KEY);
+    config.smtpPassword = '';
+    config.googleSecretKeyConfigured = Boolean(config.googleSecretKey);
+    config.turnstileSecretKeyConfigured = Boolean(config.turnstileSecretKey);
+    config.googleSecretKey = '';
+    config.turnstileSecretKey = '';
+    delete config.smtpPasswordEncrypted;
   }
   return json(ok(full ? config : publicConfig(config)), 200, headers);
 }
@@ -276,13 +285,25 @@ async function saveConfig(request, env, headers) {
   const body = await readJson(request);
   if (!body || typeof body !== 'object') return json(fail('参数错误'), 400, headers);
   const old = await env.DB.prepare('SELECT content FROM sys_config WHERE id = 1').first();
-  const config = { ...parseConfig(old?.content), ...body, adminUserName: String(body.adminUserName || access.user.username).trim() };
+  const previousConfig = parseConfig(old?.content);
+  const config = { ...previousConfig, ...body, adminUserName: String(body.adminUserName || access.user.username).trim() };
   config.beiAnNo = sanitizeSafeHtml(body.beiAnNo);
   config.enableEmail = Boolean(body.enableEmail);
   config.smtpHost = String(body.smtpHost || '').trim().slice(0, 253);
   config.smtpPort = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : '465';
   config.smtpUsername = String(body.smtpUsername || '').trim().slice(0, 254);
-  config.emailFrom = String(body.emailFrom || '').trim().slice(0, 254);
+  config.googleSecretKey = String(body.googleSecretKey || previousConfig.googleSecretKey || '').trim().slice(0, 300);
+  config.enableTurnstile = Boolean(body.enableTurnstile);
+  config.turnstileSiteKey = String(body.turnstileSiteKey || '').trim().slice(0, 200);
+  config.turnstileSecretKey = String(body.turnstileSecretKey || previousConfig.turnstileSecretKey || '').trim().slice(0, 300);
+  config.smtpPasswordEncrypted = previousConfig.smtpPasswordEncrypted || '';
+  const mailSecret = String(body.smtpPassword || '');
+  if (mailSecret) config.smtpPasswordEncrypted = await encryptConfigSecret(mailSecret, env.JWT_SECRET);
+  delete config.smtpPassword;
+  delete config.smtpPasswordConfigured;
+  delete config.googleSecretKeyConfigured;
+  delete config.turnstileSecretKeyConfigured;
+  delete config.emailFrom;
   delete config.version;
   delete config.commitId;
   // Unsupported legacy credentials must never be persisted by the Cloudflare edition.
@@ -683,8 +704,8 @@ async function likeMemo(request, env, headers) {
   const id = intParam(new URL(request.url).searchParams.get('id'));
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   const requestUrl = new URL(request.url);
-  const recaptcha = await verifyRecaptchaToken(requestUrl.searchParams.get('token'), config, 'likeMemo', requestUrl.hostname);
-  if (!recaptcha.ok) return json(fail(recaptcha.message), 400, headers);
+  const human = await verifyHumanToken(requestUrl.searchParams.get('token'), config, 'likeMemo', requestUrl.hostname);
+  if (!human.ok) return json(fail(human.message), 400, headers);
   const memo = await env.DB.prepare('SELECT id, show_type, created_at FROM memos WHERE id=?').bind(id).first();
   if (!memo || Number(memo.show_type) !== 1 || Date.parse(memo.created_at) > Date.now()) return json(fail('动态不存在或不可点赞'), 404, headers);
   const identity = await likeIdentity(request, env);
@@ -771,7 +792,7 @@ function sanitizeMemoExt(input) {
     const clean = {
       id: String(item.id || '').replace(/\D/g, '').slice(0, 20),
       url: safeHttpHref(item.url, '豆瓣链接'), title: String(item.title).slice(0, 300),
-      desc: String(item.desc || '').slice(0, 4000), image: safeHttpHref(item.image, '豆瓣封面', { allowRelativeUpload: true }),
+      desc: String(item.desc || '').slice(0, 4000), image: String(item.image || '').startsWith('/douban-cover?') ? String(item.image).slice(0, 4096) : safeHttpHref(item.image, '豆瓣封面', { allowRelativeUpload: true }),
       rating: String(item.rating || '').slice(0, 30),
     };
     if (isBook) Object.assign(clean, { isbn: String(item.isbn || '').slice(0, 40), author: String(item.author || '').slice(0, 300), pubDate: String(item.pubDate || '').slice(0, 40), keywords: String(item.keywords || '').slice(0, 1000) });
@@ -805,6 +826,27 @@ async function verifyRecaptchaToken(token, config, expectedAction = '', expected
     return { ok: false, message: '人机校验服务不可用' };
   }
 }
+async function verifyTurnstileToken(token, config, expectedAction = '', expectedHostname = '') {
+  if (!config.enableTurnstile) return { ok: true };
+  if (!config.turnstileSecretKey) return { ok: false, message: 'Turnstile 服务端未配置' };
+  if (!token) return { ok: false, message: 'token不能为空' };
+  try {
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret: config.turnstileSecretKey, response: token }).toString(), signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return { ok: false, message: '人机校验服务不可用' };
+    const data = await response.json();
+    if (!data.success) return { ok: false, message: '人机校验不通过' };
+    if (expectedAction && data.action !== expectedAction) return { ok: false, message: '人机校验场景不匹配' };
+    if (expectedHostname && data.hostname !== expectedHostname) return { ok: false, message: '人机校验域名不匹配' };
+    return { ok: true };
+  } catch { return { ok: false, message: '人机校验服务不可用' }; }
+}
+async function verifyHumanToken(token, config, expectedAction = '', expectedHostname = '') {
+  if (config.enableTurnstile) return verifyTurnstileToken(token, config, expectedAction, expectedHostname);
+  return verifyRecaptchaToken(token, config, expectedAction, expectedHostname);
+}
 async function commentIdentity(request, env) {
   const existing = request.headers.get('cookie')?.match(/(?:^|;\s*)moments_comment_id=([^;]+)/)?.[1];
   const identity = existing || randomToken(20); const secret = env.LIKE_SALT || env.JWT_SECRET;
@@ -816,8 +858,8 @@ async function addComment(request, env, headers, ctx) {
   const body = await readJson(request); if (!body?.memoId || !String(body.content || '').trim()) return json(fail('评论内容不能为空'), 400, headers);
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   if (!config.enableComment) return json(fail('评论未开启'), 403, headers);
-  const recaptcha = await verifyRecaptchaToken(body.token, config, 'newComment', new URL(request.url).hostname);
-  if (!recaptcha.ok) return json(fail(recaptcha.message), 400, headers);
+  const human = await verifyHumanToken(body.token, config, 'newComment', new URL(request.url).hostname);
+  if (!human.ok) return json(fail(human.message), 400, headers);
   const content = String(body.content).trim();
   const maxCommentLength = Math.max(1, Number(config.maxCommentLength) || 300);
   if (content.length > maxCommentLength) return json(fail(`评论字数超过限制长度:${maxCommentLength}`), 400, headers);
@@ -837,10 +879,13 @@ async function addComment(request, env, headers, ctx) {
   if (config.enableEmail) {
     const owner = await env.DB.prepare('SELECT nickname,email FROM users WHERE id=?').bind(memo.user_id).first();
     const target = replyTo ? replyEmail : owner?.email;
-    if (target && config.emailFrom) {
+    if (target && config.smtpUsername) {
       const email = buildCommentEmail({ title: config.title, host: new URL(request.url).origin, poster: replyTo || owner.nickname, commenter: username || '匿名用户', content, memoId: memo.id, createdAt: new Date().toISOString().slice(0,19).replace('T',' ') });
-      const message = { from: config.emailFrom, to: target, ...email };
-      const task = sendNotification(env, config, message).catch(error => console.error('Email notification failed', error));
+      const message = { from: config.smtpUsername, to: target, ...email };
+      let mailCredential = '';
+      try { mailCredential = config.smtpPasswordEncrypted ? await decryptConfigSecret(config.smtpPasswordEncrypted, env.JWT_SECRET) : ''; }
+      catch (error) { console.error('Mail credential decrypt failed', error); }
+      const task = sendNotification(env, { ...config, mailCredential }, message).catch(error => console.error('Email notification failed', error));
       if (ctx?.waitUntil) ctx.waitUntil(task); else await task;
     }
   }
@@ -881,23 +926,40 @@ function selectorText(html, className) {
   const match = html.match(new RegExp(`<[^>]+class=["'][^"']*\\b${escaped}\\b[^"']*["'][^>]*>([\\s\\S]*?)<\\/[^>]+>`, 'i'));
   return decodeHtml((match?.[1] || '').replace(/<[^>]*>/g, '')).trim();
 }
+function doubanJsonLd(html) {
+  for (const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try { const value = JSON.parse(decodeHtml(match[1])); if (value && typeof value === 'object') return value; } catch {}
+  }
+  return {};
+}
+function doubanCoverPath(source) {
+  const url = safeHttpHref(source, '豆瓣封面');
+  return `/douban-cover?url=${encodeURIComponent(url)}`;
+}
+function namesFromJsonLd(value) {
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  return list.map(item => typeof item === 'string' ? item : item?.name).filter(Boolean).join('/');
+}
 function parseDouban(html, type, id) {
   const target = `https://${type === 'book' ? 'book' : 'movie'}.douban.com/subject/${id}/`;
+  const ld = doubanJsonLd(html);
+  const title = metaContent(html, 'property', 'og:title') || ld.name || ld.headline || '';
+  const imageSource = metaContent(html, 'property', 'og:image') || (Array.isArray(ld.image) ? ld.image[0] : ld.image) || '';
   const common = {
-    id, url: target, title: metaContent(html, 'property', 'og:title').slice(0, 300),
-    desc: metaContent(html, 'property', 'og:description').slice(0, 4000),
-    image: safeHttpHref(metaContent(html, 'property', 'og:image'), '豆瓣封面'),
-    rating: selectorText(html, 'rating_num') || (type === 'book' ? '暂无' : '未知评分'),
+    id, url: target, title: String(title).slice(0, 300),
+    desc: String(metaContent(html, 'property', 'og:description') || ld.description || '').slice(0, 4000),
+    image: doubanCoverPath(imageSource),
+    rating: selectorText(html, 'rating_num') || String(ld.aggregateRating?.ratingValue || '') || (type === 'book' ? '暂无' : '未知评分'),
   };
-  if (!common.title || !common.image) throw new Error('无法解析豆瓣页面');
+  if (!common.title || !imageSource) throw new Error('无法解析豆瓣页面');
   if (type === 'book') {
     const keywords = metaContent(html, 'name', 'keywords');
     return { ...common, author: metaContent(html, 'property', 'book:author'), isbn: metaContent(html, 'property', 'book:isbn'), keywords, pubDate: keywords.match(/\d{4}-\d{1,2}(?:-\d{1,2})?/)?.[0] || '' };
   }
   const releaseDate = html.match(/<span[^>]+property=["']v:initialReleaseDate["'][^>]+content=["']([^"']*)["']/i)?.[1] || '';
   const runtime = html.match(/<span[^>]+property=["']v:runtime["'][^>]+content=["']([^"']*)["']/i)?.[1] || '';
-  const actors = [...html.matchAll(/<meta[^>]+property=["']video:actor["'][^>]+content=["']([^"']*)["']/gi)].map(match => decodeHtml(match[1])).join('/');
-  return { ...common, director: metaContent(html, 'property', 'video:director'), actors, releaseDate: decodeHtml(releaseDate), runtime: decodeHtml(runtime) };
+  const actors = [...html.matchAll(/<meta(?=[^>]+property=["']video:actor["'])(?=[^>]+content=["']([^"']*)["'])[^>]*>/gi)].map(match => decodeHtml(match[1])).join('/') || namesFromJsonLd(ld.actor);
+  return { ...common, director: metaContent(html, 'property', 'video:director') || namesFromJsonLd(ld.director), actors, releaseDate: decodeHtml(releaseDate) || String(ld.datePublished || ''), runtime: decodeHtml(runtime) || String(ld.duration || '').replace(/^PT|M$/g, '') };
 }
 async function doubanInfo(request, env, headers, type) {
   const access = await requireUser(request, env, headers);
@@ -913,6 +975,20 @@ async function doubanInfo(request, env, headers, type) {
   const html = (await response.text()).slice(0, 1024 * 1024);
   try { return json(ok(parseDouban(html, type, id)), 200, headers); }
   catch { return json(fail('无法解析豆瓣页面，页面结构可能已变化'), 502, headers); }
+}
+async function serveDoubanCover(request) {
+  const source = validHttpUrl(new URL(request.url).searchParams.get('url'));
+  const allowed = source && /(^|\.)doubanio\.com$|(^|\.)douban\.com$/.test(source.hostname);
+  if (!allowed) return new Response('Not Found', { status: 404 });
+  try {
+    const response = await fetch(source.href, {
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; Moments-CF/1.0)', referer: 'https://www.douban.com/' },
+      redirect: 'manual', signal: AbortSignal.timeout(8000),
+    });
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || !contentType.startsWith('image/')) return new Response('Cover unavailable', { status: 502 });
+    return new Response(response.body, { headers: { 'content-type': contentType, 'cache-control': 'public, max-age=604800, stale-while-revalidate=86400', 'x-content-type-options': 'nosniff' } });
+  } catch { return new Response('Cover unavailable', { status: 502 }); }
 }
 async function externalInfo(request, env, headers) {
   const access = await requireUser(request, env, headers);
@@ -988,7 +1064,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, commentView, publicUser, sanitizeMemoExt, parseDouban };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseDouban };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;
@@ -1047,6 +1123,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === '/openapi.json') return json(openApiDocument(url.origin));
     if (url.pathname === '/docs') return new Response(openApiHtml(), { headers: { 'content-type': 'text/html; charset=UTF-8' } });
+    if (url.pathname === '/douban-cover') return serveDoubanCover(request);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env, ctx);
     if (url.pathname.startsWith('/upload/')) {
       const key = url.pathname.slice('/upload/'.length);

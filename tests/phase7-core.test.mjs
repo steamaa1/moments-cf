@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
   sendNotification, md5Hex, renderRssDescription, listBackups, purgeOldBackups,
+  encryptConfigSecret, decryptConfigSecret,
 } from '../worker/src/phase7.js';
 
 const safe = sanitizeSafeHtml(`<a href="https://example.com" target="_blank" onclick="bad()">链接</a><script>alert(1)</script><img src="javascript:bad"><strong>粗体</strong>`);
@@ -25,6 +26,15 @@ assert.match(mail.html, /&lt;Admin&gt;/); assert.doesNotMatch(mail.html, /<scrip
 let resendCalls = 0;
 const result = await sendNotification({ RESEND_API_KEY: 'key' }, {}, { from: 'noreply@example.com', to: 'to@example.com', ...mail }, { fetch: async () => { resendCalls += 1; return new Response('{}', { status: 200 }); } });
 assert.equal(result.provider, 'resend'); assert.equal(resendCalls, 1);
+let configuredResendAuthorization = '';
+const configuredResend = await sendNotification({}, { mailCredential: 're_from-admin' }, { from: 'noreply@example.com', to: 'to@example.com', ...mail }, { fetch: async (_url, init) => { configuredResendAuthorization = init.headers.authorization; return new Response('{}', { status: 200 }); } });
+assert.equal(configuredResend.provider, 'resend');
+assert.equal(configuredResendAuthorization, 'Bearer re_from-admin');
+const encrypted = await encryptConfigSecret('re_secret-value', 'jwt-secret-at-least-sixteen-characters');
+assert.match(encrypted, /^enc:v1:/);
+assert.doesNotMatch(encrypted, /secret-value/);
+assert.equal(await decryptConfigSecret(encrypted, 'jwt-secret-at-least-sixteen-characters'), 're_secret-value');
+await assert.rejects(() => decryptConfigSecret(encrypted, 'wrong-secret-at-least-sixteen-chars'));
 
 assert.equal(md5Hex(new TextEncoder().encode('').buffer), 'd41d8cd98f00b204e9800998ecf8427e');
 assert.equal(md5Hex(new TextEncoder().encode('abc').buffer), '900150983cd24fb0d6963f7d28e17f72');

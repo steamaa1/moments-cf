@@ -1,11 +1,11 @@
 <template>
   <div class="douban-card-block">
     <a class="douban-card" :href="book?.url" target="_blank">
-      <div class="douban-card-bgimg" :style="`background-image: url('${book?.image}')`">
+      <div class="douban-card-bgimg" :style="`background-image: url('${coverUrl}')`">
       </div>
       <div class="flex gap-2">
         <div class="douban-card-left">
-          <div class="douban-card-img" :style="`background-image: url('${book?.image}')`">
+          <div class="douban-card-img" :style="`background-image: url('${coverUrl}')`">
           </div>
         </div>
         <div class="douban-card-right w-fit max-w-[120px] overflow-hidden">
@@ -28,6 +28,15 @@ const props = withDefaults(
       book: DoubanBook | undefined,
     }>(), {}
 )
+const coverUrl = computed(() => {
+  const image = props.book?.image || ''
+  if (!image || image.startsWith('/douban-cover?')) return image
+  try {
+    const url = new URL(image)
+    if (/(^|\.)douban(?:io)?\.com$/.test(url.hostname)) return `/douban-cover?url=${encodeURIComponent(url.href)}`
+  } catch {}
+  return image
+})
 </script>
 
 <style scoped>

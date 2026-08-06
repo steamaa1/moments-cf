@@ -1,10 +1,10 @@
 <template>
   <div class="douban-card-block">
     <a class="douban-card" :href="movie?.url" target="_blank">
-      <div class="douban-card-bgimg" :style="`background-image: url('${movie?.image}')`">
+      <div class="douban-card-bgimg" :style="`background-image: url('${coverUrl}')`">
       </div>
       <div class="douban-card-left">
-        <div class="douban-card-img" :style="`background-image: url('${movie?.image}')`">
+        <div class="douban-card-img" :style="`background-image: url('${coverUrl}')`">
         </div>
       </div>
       <div class="douban-card-right">
@@ -29,6 +29,15 @@ const props = withDefaults(
       movie: DoubanMovie | undefined,
     }>(), {}
 )
+const coverUrl = computed(() => {
+  const image = props.movie?.image || ''
+  if (!image || image.startsWith('/douban-cover?')) return image
+  try {
+    const url = new URL(image)
+    if (/(^|\.)douban(?:io)?\.com$/.test(url.hostname)) return `/douban-cover?url=${encodeURIComponent(url.href)}`
+  } catch {}
+  return image
+})
 </script>
 
 <style scoped>

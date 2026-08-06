@@ -24,6 +24,12 @@ const movie = parseDouban(movieHtml, 'movie', '123');
 assert.equal(movie.title, '测试电影');
 assert.equal(movie.director, '导演甲');
 assert.equal(movie.rating, '8.8');
+assert.match(movie.image, /^\/douban-cover\?url=/);
+const jsonLdMovie = parseDouban(`<script type="application/ld+json">{"name":"JSON电影","description":"简介","image":"https://img.example/json.jpg","director":{"name":"导演乙"},"actor":[{"name":"演员乙"}],"datePublished":"2026-02-03","duration":"PT125M","aggregateRating":{"ratingValue":"8.6"}}</script>`, 'movie', '789');
+assert.equal(jsonLdMovie.title, 'JSON电影');
+assert.equal(jsonLdMovie.director, '导演乙');
+assert.equal(jsonLdMovie.actors, '演员乙');
+assert.equal(jsonLdMovie.rating, '8.6');
 
 const bookHtml = `<!doctype html><html><head>
 <meta property="og:title" content="测试图书"/><meta property="og:description" content="图书简介"/>

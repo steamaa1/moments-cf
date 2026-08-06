@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { publicUser, commentView, verifyRecaptchaToken } from '../worker/src/index.js';
+import worker, { publicUser, commentView, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken } from '../worker/src/index.js';
 
 const user = {
   id: 1,
@@ -55,6 +55,20 @@ try {
   assert.equal(wrongAction.ok, false);
 } finally {
   globalThis.fetch = originalFetch;
+}
+
+
+const turnstileOriginalFetch = globalThis.fetch;
+try {
+  globalThis.fetch = async () => new Response(JSON.stringify({ success: true, action: 'newComment', hostname: 'moments.example' }), { status: 200 });
+  assert.deepEqual(await verifyTurnstileToken('token', { enableTurnstile: true, turnstileSecretKey: 'secret' }, 'newComment', 'moments.example'), { ok: true });
+  assert.deepEqual(await verifyHumanToken('token', { enableTurnstile: true, turnstileSecretKey: 'secret', enableGoogleRecaptcha: true }, 'newComment', 'moments.example'), { ok: true });
+  assert.equal((await verifyTurnstileToken('token', { enableTurnstile: true, turnstileSecretKey: 'secret' }, 'likeMemo', 'moments.example')).ok, false);
+  assert.equal((await verifyTurnstileToken('token', { enableTurnstile: true, turnstileSecretKey: 'secret' }, 'newComment', 'other.example')).ok, false);
+  globalThis.fetch = async () => new Response(JSON.stringify({ success: false }), { status: 200 });
+  assert.equal((await verifyTurnstileToken('bad', { enableTurnstile: true, turnstileSecretKey: 'secret' })).ok, false);
+} finally {
+  globalThis.fetch = turnstileOriginalFetch;
 }
 
 const internalFailure = await worker.fetch(new Request('https://moments.example/api/memo/list', {

@@ -57,15 +57,12 @@ const state = reactive({
 })
 
 
+const { verify } = useHumanVerification()
 const comment = async () => {
-  if (sysConfig.value.enableGoogleRecaptcha) {
-    grecaptcha.ready(() => {
-      grecaptcha.execute(sysConfig.value.googleSiteKey, {action: 'newComment'}).then(async (token) => {
-        await doComment(token)
-      })
-    })
-  } else {
-    await doComment()
+  try {
+    await doComment(await verify('newComment'))
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '人机验证失败')
   }
 }
 

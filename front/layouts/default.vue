@@ -108,7 +108,16 @@ useHead({
   ],
 });
 
-if (sysConfigVO.enableGoogleRecaptcha) {
+if (sysConfigVO.enableTurnstile) {
+  useHead({
+    script: [{
+      type: "text/javascript",
+      src: "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
+      async: true,
+      defer: true,
+    }],
+  });
+} else if (sysConfigVO.enableGoogleRecaptcha) {
   useHead({
     script: [
       {

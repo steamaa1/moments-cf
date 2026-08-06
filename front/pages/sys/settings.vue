@@ -27,9 +27,8 @@
     <UFormGroup label="是否开启注册用户" name="enableRegister" :ui="{label:{base:'font-bold'}}">
       <UToggle v-model="state.enableRegister"/>
     </UFormGroup>
-    <UFormGroup label="备案信息（安全 HTML）" name="beiAnNo" :ui="{label:{base:'font-bold'}}">
+    <UFormGroup label="备案信息" name="beiAnNo" :ui="{label:{base:'font-bold'}}">
       <UTextarea v-model="state.beiAnNo" :rows="3" placeholder='<a href="https://beian.miit.gov.cn/" target="_blank">京ICP备...</a>'/>
-      <p class="mt-1 text-xs text-gray-500">允许 a、span、br、strong、em、img；服务端会移除脚本、事件属性和危险链接。</p>
     </UFormGroup>
     <UFormGroup label="自定义CSS" name="css" :ui="{label:{base:'font-bold'}}">
       <UTextarea v-model="state.css" :rows="5"/>
@@ -64,15 +63,24 @@
           <UInput v-model="state.googleSiteKey"/>
         </UFormGroup>
         <UFormGroup label="SecretKey" name="googleSecretKey" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.googleSecretKey" type="password" autocomplete="off"/>
+          <UInput v-model="state.googleSecretKey" type="password" autocomplete="new-password" :placeholder="state.googleSecretKeyConfigured ? '已配置，留空保持不变' : ''"/>
         </UFormGroup>
       </template>
+      <UFormGroup label="是否启用 Cloudflare 人机验证" name="enableTurnstile" :ui="{label:{base:'font-bold'}}">
+        <UToggle v-model="state.enableTurnstile"/>
+      </UFormGroup>
+      <template v-if="state.enableTurnstile">
+        <UFormGroup label="Turnstile Site Key" name="turnstileSiteKey" :ui="{label:{base:'font-bold'}}"><UInput v-model="state.turnstileSiteKey"/></UFormGroup>
+        <UFormGroup label="Turnstile Secret Key" name="turnstileSecretKey" :ui="{label:{base:'font-bold'}}"><UInput v-model="state.turnstileSecretKey" type="password" autocomplete="new-password" :placeholder="state.turnstileSecretKeyConfigured ? '已配置，留空保持不变' : ''"/></UFormGroup>
+        <p class="text-xs text-gray-500">启用后评论和点赞优先使用 Cloudflare Turnstile。</p>
+      </template>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div class="flex items-center justify-between"><div><p class="font-semibold">评论邮件通知</p><p class="text-xs text-gray-500">SMTP 失败后自动回退 Resend；密码与 API Key 在 Cloudflare Secrets 配置。</p></div><UToggle v-model="state.enableEmail"/></div>
+      <div class="flex items-center justify-between"><div><p class="font-semibold">评论邮件通知</p><p class="text-xs text-gray-500">支持 SMTP 465/587；填入 re_ 开头的 Resend API Key 时使用 Resend。</p></div><UToggle v-model="state.enableEmail"/></div>
       <template v-if="state.enableEmail">
-        <UFormGroup label="发件邮箱"><UInput v-model="state.emailFrom" type="email" placeholder="noreply@example.com"/></UFormGroup>
-        <UFormGroup label="SMTP 主机"><UInput v-model="state.smtpHost" placeholder="smtp.example.com"/></UFormGroup>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3"><UFormGroup label="SMTP 端口"><USelectMenu v-model="state.smtpPort" :options="['465','587']"/></UFormGroup><UFormGroup label="SMTP 用户名"><UInput v-model="state.smtpUsername"/></UFormGroup></div>
+        <UFormGroup label="服务器"><UInput v-model="state.smtpHost" placeholder="smtp.example.com"/></UFormGroup>
+        <UFormGroup label="端口"><USelectMenu v-model="state.smtpPort" :options="['465','587']"/></UFormGroup>
+        <UFormGroup label="用户名（即发件邮箱）"><UInput v-model="state.smtpUsername" type="email" placeholder="noreply@example.com"/></UFormGroup>
+        <UFormGroup label="密码 / 授权码"><UInput v-model="state.smtpPassword" type="password" autocomplete="new-password" :placeholder="state.smtpPasswordConfigured ? '已配置，留空保持不变' : 'SMTP 授权码或 re_ 开头的 Resend API Key'"/></UFormGroup>
       </template>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-neutral-900/40 p-4 space-y-3">
@@ -94,7 +102,7 @@
       <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">D1 生产备份</p><p class="mt-1 text-xs text-gray-500">每周日 03:00 UTC 自动备份，保留 90 天。恢复前会自动再创建一份安全备份。</p></div><UButton size="sm" icon="i-carbon-renew" :loading="backupLoading" @click="createBackup">立即备份</UButton></div>
       <UButton block color="gray" variant="soft" icon="i-carbon-data-backup" @click="openBackups">管理备份</UButton>
     </div>
-    <div class="flex gap-2"><UButton class="flex-1 justify-center min-h-11" @click="save">保存设置</UButton><UButton color="gray" variant="soft" to="/docs" target="_blank" icon="i-carbon-api">API 文档</UButton></div>
+    <div class="flex gap-2"><UButton class="flex-1 justify-center min-h-11" @click="save">保存设置</UButton><a href="/docs" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-11 items-center gap-2 rounded-md bg-gray-100 px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-500 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"><UIcon name="i-carbon-api"/>API 文档</a></div>
   </div>
 
   <UModal
@@ -169,6 +177,11 @@ const state = reactive({
   enableGoogleRecaptcha: false,
   googleSiteKey:"",
   googleSecretKey:"",
+  googleSecretKeyConfigured: false,
+  enableTurnstile: false,
+  turnstileSiteKey: "",
+  turnstileSecretKey: "",
+  turnstileSecretKeyConfigured: false,
   enableAutoLoadNextPage: true,
   enableComment: true,
   enableRegister: true,
@@ -187,7 +200,8 @@ const state = reactive({
   smtpHost: "",
   smtpPort: "465" as '465' | '587',
   smtpUsername: "",
-  emailFrom: "",
+  smtpPassword: "",
+  smtpPasswordConfigured: false,
 })
 
 type TrashFile = { id: number; path: string; filename: string; contentType: string; size: number; trashedAt: string }

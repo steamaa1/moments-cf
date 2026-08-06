@@ -71,6 +71,11 @@ export type SysConfigVO = {
     enableGoogleRecaptcha: boolean,
     googleSiteKey: string,
     googleSecretKey?: string,
+    googleSecretKeyConfigured?: boolean,
+    enableTurnstile: boolean,
+    turnstileSiteKey: string,
+    turnstileSecretKey?: string,
+    turnstileSecretKeyConfigured?: boolean,
     enableComment: boolean,
     maxCommentLength: number,
     memoMaxHeight: number,
@@ -80,7 +85,8 @@ export type SysConfigVO = {
     smtpHost: string,
     smtpPort: '465' | '587',
     smtpUsername: string,
-    emailFrom: string
+    smtpPassword?: string,
+    smtpPasswordConfigured: boolean
 }
 
 

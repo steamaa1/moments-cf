@@ -13,13 +13,36 @@ assert.equal(spec.openapi, '3.1.0');
 for (const path of ['/api/file/direct/init', '/api/admin/backup/restore', '/api/comment/add']) assert.ok(spec.paths[path], `OpenAPI missing ${path}`);
 const docs = await worker.fetch(new Request('https://moments.example/docs'), {});
 assert.match(await docs.text(), /Moments CF API/);
+const outsideCover = await worker.fetch(new Request('https://moments.example/douban-cover?url=https%3A%2F%2Fevil.example%2Fa.jpg'), {});
+assert.equal(outsideCover.status, 404);
+const originalFetch = globalThis.fetch;
+try {
+  globalThis.fetch = async () => new Response('image', { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  const cover = await worker.fetch(new Request('https://moments.example/douban-cover?url=https%3A%2F%2Fimg1.doubanio.com%2Fview%2Fphoto.jpg'), {});
+  assert.equal(cover.status, 200);
+  assert.equal(cover.headers.get('x-content-type-options'), 'nosniff');
+  globalThis.fetch = async () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } });
+  const badCover = await worker.fetch(new Request('https://moments.example/douban-cover?url=https%3A%2F%2Fimg1.doubanio.com%2Fbad'), {});
+  assert.equal(badCover.status, 502);
+} finally { globalThis.fetch = originalFetch; }
 assert.ok(openApiDocument().components.securitySchemes.ApiToken);
 
 const footer = await readFile(new URL('../front/components/Footer.vue', import.meta.url), 'utf8');
 assert.match(footer, /v-html="sysConfig\.beiAnNo"/);
 const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');
-assert.match(settings, /安全 HTML/);
-assert.match(settings, /SMTP 失败后自动回退 Resend/);
+assert.doesNotMatch(settings, /备案信息（安全 HTML）|允许 a、span/);
+assert.match(settings, /是否启用 Cloudflare 人机验证/);
+assert.match(settings, /用户名（即发件邮箱）/);
+assert.match(settings, /密码 \/ 授权码/);
+assert.doesNotMatch(settings, /to="\/docs"/);
+assert.match(settings, /href="\/docs"/);
+assert.match(footer, />原项目<|>原项目\s*</);
+assert.match(footer, /Cloudflare 版/);
+assert.doesNotMatch(footer, /img\.shields\.io|github\/stars/);
+const bookPreview = await readFile(new URL('../front/components/DoubanBookPreview.vue', import.meta.url), 'utf8');
+const moviePreview = await readFile(new URL('../front/components/DoubanMoviePreview.vue', import.meta.url), 'utf8');
+assert.match(bookPreview, /douban-cover/);
+assert.match(moviePreview, /douban-cover/);
 const upload = await readFile(new URL('../front/utils/upload.ts', import.meta.url), 'utf8');
 assert.match(upload, /500 \* 1024 \* 1024/);
 assert.match(upload, /imageThumbnail/);
@@ -31,6 +54,18 @@ for (const route of ['/api/file/direct/init', '/api/file/direct/complete', '/api
 assert.match(source, /async scheduled/);
 assert.match(source, /renderRssDescription/);
 assert.match(source, /sendNotification/);
+assert.match(source, /serveDoubanCover/);
+assert.match(source, /verifyTurnstileToken/);
+assert.match(source, /redirect: 'manual'/);
+assert.match(source, /previousConfig\.turnstileSecretKey/);
+assert.match(source, /previousConfig\.googleSecretKey/);
+assert.match(source, /config\.smtpPasswordEncrypted = previousConfig\.smtpPasswordEncrypted/);
+assert.match(source, /turnstileSecretKeyConfigured/);
+const captcha = await readFile(new URL('../front/composables/useHumanVerification.ts', import.meta.url), 'utf8');
+assert.match(captcha, /enableTurnstile/);
+assert.match(captcha, /turnstileToken/);
+assert.match(captcha, /interaction-only/);
+assert.match(captcha, /role', 'dialog/);
 
 const template = await readFile(new URL('../worker/wrangler.toml.template', import.meta.url), 'utf8');
 assert.match(template, /crons = \["0 3 \* \* SUN"\]/);

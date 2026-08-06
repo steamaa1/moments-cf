@@ -33,14 +33,16 @@ R2: 图片和视频对象
 
 ## Phase 7 新增
 
-- 评论邮件通知：SMTP 465/587，失败自动回退 Resend
+- 评论邮件通知：后台按“服务器→端口→用户名（发件邮箱）→密码/授权码”配置 SMTP 465/587；`re_` 开头凭据使用 Resend，凭据经 AES-GCM 加密后存入 D1
 - 浏览器生成 WebP 缩略图，原图与缩略图写入私有 R2
 - SHA-256 秒传
 - 最大 500MB 的 R2 SigV4 预签名直传
 - D1 每周备份到 R2、90 天保留、后台下载与双重确认恢复
 - OpenAPI 3.1：`/openapi.json`，文档页：`/docs`
 - RSS 扩展内容等价输出
-- 备案信息安全 HTML 白名单
+- Cloudflare Turnstile 人机验证（评论/点赞，启用时优先于 Google reCAPTCHA）
+- 备案信息 HTML 与服务端安全过滤
+- 豆瓣电影 JSON-LD 解析兜底与同域封面代理
 
 ## Cloudflare 资源
 

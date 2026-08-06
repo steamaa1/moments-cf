@@ -31,8 +31,9 @@ const doParse = async (close: Function) => {
   pending.value = true
   const url = type.value === 'book' ? '/memo/getDoubanBookInfo' : '/memo/getDoubanMovieInfo'
   try {
-    const res = await useMyFetch(`${url}?id=${data.value.id}`)
-    Object.assign(data.value, res)
+    const id = data.value.id
+    const res = await useMyFetch<DoubanBook | DoubanMovie>(`${url}?id=${id}`)
+    data.value = {...res}
     close()
   } finally {
     pending.value = false

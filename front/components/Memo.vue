@@ -407,6 +407,7 @@ const doLike = async (id: number, token: string = "") => {
   liked.value = true;
 };
 
+const { verify: verifyHuman } = useHumanVerification();
 const likeMemo = async (id: number) => {
   showToolbar.value = false;
   const likes = JSON.parse(
@@ -417,16 +418,10 @@ const likeMemo = async (id: number) => {
     return;
   }
 
-  if (sysConfig.value.enableGoogleRecaptcha) {
-    grecaptcha.ready(() => {
-      grecaptcha
-        .execute(sysConfig.value.googleSiteKey, { action: "likeMemo" })
-        .then(async (token) => {
-          await doLike(id, token);
-        });
-    });
-  } else {
-    await doLike(id);
+  try {
+    await doLike(id, await verifyHuman('likeMemo'));
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : '人机验证失败');
   }
 };
 
