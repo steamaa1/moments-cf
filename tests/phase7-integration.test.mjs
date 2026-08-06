@@ -55,6 +55,8 @@ assert.match(source, /async scheduled/);
 assert.match(source, /renderRssDescription/);
 assert.match(source, /sendNotification/);
 assert.match(source, /serveDoubanCover/);
+assert.match(source, /rexxar\/api\/v2\/movie/);
+assert.match(source, /parseDoubanMovieJson/);
 assert.match(source, /verifyTurnstileToken/);
 assert.match(source, /redirect: 'manual'/);
 assert.match(source, /previousConfig\.turnstileSecretKey/);

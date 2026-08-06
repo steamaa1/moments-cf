@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { parseDouban, sanitizeMemoExt } from '../worker/src/index.js';
+import worker, { parseDouban, parseDoubanMovieJson, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
 
 const userPage = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userPage, /userId:\s*parseInt\(userId\)/);
@@ -30,6 +30,48 @@ assert.equal(jsonLdMovie.title, 'JSON电影');
 assert.equal(jsonLdMovie.director, '导演乙');
 assert.equal(jsonLdMovie.actors, '演员乙');
 assert.equal(jsonLdMovie.rating, '8.6');
+const kungFu = parseDoubanMovieJson({
+  id: '1291543', title: '功夫', intro: '1940年代的上海',
+  cover_url: 'https://img1.doubanio.com/view/photo/m_ratio_poster/public/p2219011938.jpg',
+  rating: { value: 8.9 }, directors: [{ name: '周星驰' }],
+  actors: [{ name: '周星驰' }, { name: '元秋' }, { name: '元华' }],
+  pubdate: ['2004-12-23(中国大陆)'], durations: ['100分钟(3D重映)', '95分钟(中国大陆)'],
+  url: 'https://movie.douban.com/subject/1291543/',
+}, '1291543');
+assert.equal(kungFu.title, '功夫');
+assert.equal(kungFu.rating, '8.9');
+assert.equal(kungFu.director, '周星驰');
+assert.equal(kungFu.actors, '周星驰/元秋/元华');
+assert.equal(kungFu.runtime, '100');
+assert.equal(kungFu.releaseDate, '2004-12-23(中国大陆)');
+assert.match(kungFu.image, /douban-cover/);
+
+const movieApiSecret = 'movie-route-test-secret';
+const movieApiToken = await signJwt({ sub: '1', tv: 0, exp: Math.floor(Date.now() / 1000) + 60 }, movieApiSecret);
+const movieApiDb = { prepare(sql) { return { bind() { return this; }, async first() { return sql.startsWith('SELECT * FROM users WHERE id') ? { id: 1, token_version: 0 } : null; } }; } };
+const movieRouteOriginalFetch = globalThis.fetch;
+let desktopMovieRequested = false;
+try {
+  globalThis.fetch = async url => {
+    const href = String(url);
+    if (href === 'https://m.douban.com/rexxar/api/v2/movie/1291543') return new Response(JSON.stringify({
+      id: '1291543', title: '功夫', intro: '1940年代的上海',
+      cover_url: 'https://img1.doubanio.com/view/photo/m_ratio_poster/public/p2219011938.jpg',
+      rating: { value: 8.9 }, directors: [{ name: '周星驰' }], actors: [{ name: '周星驰' }, { name: '元秋' }],
+      pubdate: ['2004-12-23(中国大陆)'], durations: ['100分钟(3D重映)'],
+      url: 'https://movie.douban.com/subject/1291543/',
+    }), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    desktopMovieRequested = true;
+    return new Response('', { status: 302, headers: { location: 'https://sec.douban.com/' } });
+  };
+  const movieRouteResponse = await worker.fetch(new Request('https://moments.example/api/memo/getDoubanMovieInfo?id=1291543', { method: 'POST', headers: { 'x-api-token': movieApiToken } }), { DB: movieApiDb, JWT_SECRET: movieApiSecret });
+  const movieRouteBody = await movieRouteResponse.json();
+  assert.equal(movieRouteResponse.status, 200);
+  assert.equal(movieRouteBody.code, 0);
+  assert.equal(movieRouteBody.data.title, '功夫');
+  assert.equal(movieRouteBody.data.rating, '8.9');
+  assert.equal(desktopMovieRequested, false, 'JSON success must not request the blocked desktop page');
+} finally { globalThis.fetch = movieRouteOriginalFetch; }
 
 const bookHtml = `<!doctype html><html><head>
 <meta property="og:title" content="测试图书"/><meta property="og:description" content="图书简介"/>

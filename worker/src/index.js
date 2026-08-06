@@ -940,6 +940,28 @@ function namesFromJsonLd(value) {
   const list = Array.isArray(value) ? value : value ? [value] : [];
   return list.map(item => typeof item === 'string' ? item : item?.name).filter(Boolean).join('/');
 }
+function parseDoubanMovieJson(input, id) {
+  const data = input && typeof input === 'object' ? input : {};
+  const imageSource = data.cover_url || data.pic?.large || data.pic?.normal || data.cover?.url || '';
+  const title = String(data.title || '').trim();
+  if (!title || !imageSource) throw new Error('豆瓣电影 JSON 缺少标题或封面');
+  const rating = data.rating && typeof data.rating === 'object' ? data.rating.value : data.rating;
+  const releaseDate = Array.isArray(data.pubdate) ? data.pubdate[0] : data.release_date || data.year || '';
+  const durationText = Array.isArray(data.durations) ? data.durations[0] : data.duration || '';
+  const runtime = String(durationText).match(/\d+/)?.[0] || '';
+  return {
+    id: String(data.id || id),
+    url: safeHttpHref(data.url || `https://movie.douban.com/subject/${id}/`, '豆瓣链接'),
+    title: title.slice(0, 300),
+    desc: String(data.intro || data.description || '').slice(0, 4000),
+    image: doubanCoverPath(imageSource),
+    rating: String(rating || '未知评分').slice(0, 30),
+    director: namesFromJsonLd(data.directors || data.director).slice(0, 300),
+    actors: namesFromJsonLd(data.actors || data.actor).slice(0, 1000),
+    releaseDate: String(releaseDate).slice(0, 80),
+    runtime: runtime.slice(0, 40),
+  };
+}
 function parseDouban(html, type, id) {
   const target = `https://${type === 'book' ? 'book' : 'movie'}.douban.com/subject/${id}/`;
   const ld = doubanJsonLd(html);
@@ -966,9 +988,18 @@ async function doubanInfo(request, env, headers, type) {
   if (access.response) return access.response;
   const id = String(new URL(request.url).searchParams.get('id') || '');
   if (!/^\d{1,20}$/.test(id)) return json(fail('豆瓣 ID 格式错误'), 400, headers);
+  const fetchHeaders = { 'user-agent': 'Mozilla/5.0 (compatible; Moments-CF/1.0)', referer: 'https://m.douban.com/' };
+  if (type === 'movie') {
+    try {
+      const apiResponse = await fetch(`https://m.douban.com/rexxar/api/v2/movie/${id}`, { redirect: 'manual', headers: fetchHeaders, signal: AbortSignal.timeout(8000) });
+      if (apiResponse.ok && (apiResponse.headers.get('content-type') || '').includes('application/json')) {
+        return json(ok(parseDoubanMovieJson(await apiResponse.json(), id)), 200, headers);
+      }
+    } catch {}
+  }
   const hostname = type === 'book' ? 'book.douban.com' : 'movie.douban.com';
   const target = `https://${hostname}/subject/${id}/`;
-  const response = await fetch(target, { redirect: 'manual', headers: { 'user-agent': 'Mozilla/5.0 (compatible; Moments-CF/1.0)' }, signal: AbortSignal.timeout(8000) });
+  const response = await fetch(target, { redirect: 'manual', headers: fetchHeaders, signal: AbortSignal.timeout(8000) });
   if (!response.ok) return json(fail(`豆瓣页面暂时不可用（${response.status}）`), 502, headers);
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) return json(fail('豆瓣返回了非网页内容'), 502, headers);
@@ -1064,7 +1095,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseDouban };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseDouban, parseDoubanMovieJson };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;
