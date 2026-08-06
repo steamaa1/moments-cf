@@ -1,4 +1,4 @@
-import worker from '../src/index.ts';
+import worker from '../src/index.js';
 
 function expect(condition, message) {
   if (!condition) throw new Error(message);

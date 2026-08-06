@@ -1,5 +1,5 @@
 name = "moments-cf"
-main = "src/index.ts"
+main = "src/index.js"
 compatibility_date = "2026-08-06"
 
 [assets]

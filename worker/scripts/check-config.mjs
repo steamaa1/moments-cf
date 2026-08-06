@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 const config = await readFile(new URL('../wrangler.toml', import.meta.url), 'utf8');
 const required = [
   'name = "moments-cf"',
-  'main = "src/index.ts"',
+  'main = "src/index.js"',
   'compatibility_date = "2026-08-06"',
   '[assets]',
   'directory = "../front/.output/public"',

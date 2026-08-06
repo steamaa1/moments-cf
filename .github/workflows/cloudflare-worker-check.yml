@@ -37,10 +37,6 @@ jobs:
         working-directory: front
         run: pnpm run generate
 
-      - name: Check Worker syntax
-        working-directory: worker
-        run: node --check src/index.ts
-
       - name: Run Worker Phase 1 checks
         working-directory: worker
         run: npm run check
