@@ -65,11 +65,48 @@ const maps = reactive({ users: {} as Record<string,number>, memos: {} as Record<
 const progress = reactive({ message:'', percent:0, error:'', done:'' })
 const canImport = computed(() => Boolean(report.value?.backupAvailable && report.value?.existingRun?.status !== 'completed' && adminPassword.value && !importing.value && packageData.value['tables/users.json']))
 const tokenHeaders = () => global.value.userinfo.token ? {'x-api-token': global.value.userinfo.token} : {}
-async function api<T>(path:string, body:unknown) { const response=await fetch(`/api${path}`, {method:'POST',headers:{'content-type':'application/json',...tokenHeaders()},body:JSON.stringify(body)}); const result=await response.json(); if(!response.ok || result.code!==0) throw new Error(result.message || '请求失败'); return result.data as T }
+async function api<T>(path:string, body:unknown) {
+  let response: Response
+  try {
+    response = await fetch(`/api${path}`, { method:'POST', headers:{'content-type':'application/json',...tokenHeaders()}, body:JSON.stringify(body), signal: AbortSignal.timeout(60000) })
+  } catch (error) {
+    throw new Error(error instanceof Error && error.name === 'TimeoutError' ? '请求超时，请重试' : '网络请求失败，请检查网络连接后重试')
+  }
+  let result: { code:number; message?:string; data?:T }
+  try { result = await response.json() } catch { throw new Error(`服务器响应异常（HTTP ${response.status}），请稍后重试`) }
+  if (!response.ok || result.code !== 0) throw new Error(result.message || '请求失败')
+  return result.data as T
+}
 function formatBytes(value:number) { if(value<1024) return `${value} B`; if(value<1024*1024) return `${(value/1024).toFixed(1)} KB`; if(value<1024*1024*1024) return `${(value/1024/1024).toFixed(1)} MB`; return `${(value/1024/1024/1024).toFixed(2)} GB` }
 function selectPackage(event:Event) { selectedFile.value = (event.target as HTMLInputElement).files?.[0] || null; report.value=null; packageData.value={}; tarData.value=new Uint8Array(0); mediaMetas.value=[]; progress.message=''; progress.error=''; progress.done='' }
 async function gunzip(data:ArrayBuffer) { if(typeof DecompressionStream==='undefined') throw new Error('当前浏览器不支持 gzip 解压，请使用最新版 Chrome/Edge/Firefox'); const stream=new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip')); return new Uint8Array(await new Response(stream).arrayBuffer()) }
-function tarMetaEntries(data:Uint8Array) { const metas:TarMeta[]=[]; for(let offset=0; offset+512<=data.length;) { const header=data.slice(offset,offset+512); if(header.every(byte=>byte===0)) break; const text=(start:number,length:number)=>new TextDecoder().decode(header.slice(start,start+length)).replace(/\0.*$/,'').trim(); const name=text(0,100); const size=parseInt(text(124,12)||'0',8)||0; const type=header[156]; const start=offset+512; if(name && type!==53) metas.push({name,size,type,offset:start}); offset=start+Math.ceil(size/512)*512 } return metas }
+function tarMetaEntries(data:Uint8Array) {
+  const metas: TarMeta[] = []
+  let pendingName = ''
+  const read = (start: number, length: number) => new TextDecoder().decode(data.slice(start, start + length)).replace(/\0.*$/, '').trim()
+  for (let offset = 0; offset + 512 <= data.length;) {
+    const header = data.slice(offset, offset + 512)
+    if (header.every(byte => byte === 0)) break
+    const name = read(offset, 100)
+    const size = parseInt(read(offset + 124, 12) || '0', 8) || 0
+    const type = header[156]
+    const start = offset + 512
+    const content = data.slice(start, start + size)
+    if (type === 76 || type === 120 || type === 121) {
+      const raw = new TextDecoder().decode(content)
+      if (type === 76) pendingName = raw.replace(/\0.*$/, '')
+      else for (const record of raw.split('\n')) { const match = record.match(/^\d+ path=(.*)$/); if (match) pendingName = match[1] }
+      offset = start + Math.ceil(size / 512) * 512
+      continue
+    }
+    let fullName = name
+    if (pendingName) { fullName = pendingName; pendingName = '' }
+    else { const prefix = read(offset + 345, 155); if (prefix) fullName = `${prefix}/${name}` }
+    if (fullName && type !== 53) metas.push({ name: fullName, size, type, offset: start })
+    offset = start + Math.ceil(size / 512) * 512
+  }
+  return metas
+}
 function rewriteConfig(row: unknown) {
   if (!row || typeof row !== 'object') return row
   const copy = { ...(row as Record<string, unknown>) }
@@ -122,7 +159,16 @@ async function inspect() {
       if (!meta || meta.size !== Number(item.size)) throw new Error(`媒体缺失或大小不一致：${item.path}`)
     }
     packageData.value = data
-    report.value = await api<Report>('/admin/migration/preflight', { manifest })
+    report.value = await api<Report>('/admin/migration/preflight', {
+      manifest: {
+        format: manifest.format,
+        version: manifest.version,
+        packageId: manifest.packageId,
+        tables: manifest.tables,
+        mediaCount: manifest.mediaCount,
+        mediaBytes: manifest.mediaBytes,
+      },
+    })
     progress.message = `预检通过：${manifest.mediaCount || 0} 个媒体、${manifest.tables?.['memos.json'] || 0} 条动态、${manifest.tables?.['users.json'] || 0} 个用户`
     toast.success('迁移包预检通过')
   } catch (error) {

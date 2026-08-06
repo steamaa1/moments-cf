@@ -143,7 +143,7 @@ def build_package(source: Path, output: Path, archive: Path | None = None) -> di
     if archive:
         archive.parent.mkdir(parents=True, exist_ok=True)
         with tarfile.open(archive, "w:gz") as tar:
-            tar.add(output, arcname=output.name)
+            tar.add(output, arcname="migration")
     if temporary:
         temporary.cleanup()
     return manifest
