@@ -1,0 +1,20 @@
+name = "moments-cf"
+main = "src/index.ts"
+compatibility_date = "2026-08-06"
+
+[assets]
+directory = "../front/.output/public"
+not_found_handling = "single-page-application"
+
+[vars]
+CORS_ORIGIN = "*"
+
+# Create and bind these resources before a real deployment.
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "moments"
+# database_id = "replace-me"
+
+# [[r2_buckets]]
+# binding = "MEDIA"
+# bucket_name = "moments-media"

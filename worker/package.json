@@ -1,0 +1,8 @@
+{
+  "name": "moments-cf-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/index.ts && node scripts/check-config.mjs && node tests/phase1.mjs"
+  }
+}

@@ -17,3 +17,11 @@ logs
 upload
 *.sqlite
 moments.exe
+
+# Local planning and assessment artifacts
+task_plan.md
+findings.md
+progress.md
+
+# Cloudflare local development state
+.wrangler/
