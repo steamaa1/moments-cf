@@ -113,6 +113,8 @@ import {toast} from "vue-sonner";
 import UploadImage from "~/components/UploadImage.vue";
 import Emoji from "~/components/Emoji.vue";
 import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+dayjs.extend(utc);
 
 const doubanType = ref<'book' | 'movie'>('book')
 const doubanData = ref<DoubanBook | DoubanMovie>({})
