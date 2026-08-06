@@ -46,10 +46,17 @@
                      :options="[{value:-1,label:'所有的'},{value:1,label:'公开的'},{value:0,label:'自己可见'}]"
                      option-attribute="label" value-attribute="value"/>
       </UFormGroup>
-      <UButton class="my-2" @click="reload">搜索</UButton>
+      <div class="flex items-center justify-between gap-3">
+        <UButton class="my-2" @click="reload">搜索</UButton>
+        <div class="inline-flex rounded-xl bg-gray-100 p-1 dark:bg-gray-800" role="group" aria-label="排列方式">
+          <button class="view-button" :class="{active:viewMode==='cards'}" @click="viewMode='cards'"><UIcon name="i-carbon-list"/>普通排列</button>
+          <button class="view-button" :class="{active:viewMode==='timeline'}" @click="viewMode='timeline'"><UIcon name="i-carbon-list-boxes"/>时间轴排列</button>
+        </div>
+      </div>
     </div>
 
-    <div class="flex flex-col divide-y divide-[#C0BEBF]/20 ">
+    <TimelineList v-if="viewMode === 'timeline'" :memos="memos"/>
+    <div v-else class="flex flex-col divide-y divide-[#C0BEBF]/20 ">
       <Memo v-bind:memo="m" v-for="m in memos" :key="m.id"/>
     </div>
     <div ref="loadMoreEle" class="text-xs text-center text-gray-500 py-2" @click="loadMore" v-if="hasNext">
@@ -76,6 +83,7 @@ const ranges = [
   {label: '近三年', duration: {years: 3}},
 ]
 const tags = ref<string[]>([])
+const viewMode = ref<'cards' | 'timeline'>('cards')
 const currentUser = useState<UserVO>('userinfo')
 const state = reactive({
   page: 1,
@@ -174,5 +182,9 @@ memoChangedEvent.on(async (id: number) => {
 </script>
 
 <style scoped>
-
+.view-button { display:inline-flex; min-height:36px; align-items:center; gap:5px; border-radius:9px; padding:0 10px; color:#71717a; font-size:.75rem; font-weight:650; transition:all 160ms ease; }
+.view-button.active { color:#3f4f2c; background:#fff; box-shadow:0 2px 8px rgba(24,24,27,.08); }
+:global(.dark) .view-button.active { color:#e4e4e7; background:#3f3f46; }
+.view-button:focus-visible { outline:2px solid #9fc84a; outline-offset:2px; }
+@media (max-width:420px) { .view-button { padding-inline:8px; } }
 </style>

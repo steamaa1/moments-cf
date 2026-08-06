@@ -1,41 +1,25 @@
 <template>
-  <UPopover :ui="{base:'w-[350px] min-h-[350px]'}" :popper="{ arrow: true }" mode="click">
+  <UPopover :ui="{base:'w-[360px]'}" :popper="{ arrow: true }" mode="click">
     <UIcon name="i-carbon-music" class="cursor-pointer w-6 h-6"/>
     <template #panel="{close}">
-      <div class="p-4 flex flex-col gap-2 max-h-[400px] overflow-auto">
-        <UTabs :items="items" class="w-full">
-          <template #musicID="{ item }">
-            <UFormGroup label="选择平台" :ui="{label:{base:'font-bold'}}">
-              <template #hint>
-                <div class="text-xs text-gray-400">
-                  <ULink class="underline" target="_blank" to="https://github.com/metowolf/MetingJS">MetingJS文档</ULink>
-                </div>
-              </template>
-              <USelectMenu v-model="server" :options="servers" value-attribute="value" option-attribute="label"
-                          placeholder="选择平台"></USelectMenu>
-            </UFormGroup>
-
-            <UFormGroup label="选择类型" :ui="{label:{base:'font-bold'}}">
-              <USelectMenu v-model="type" :options="types" value-attribute="value" option-attribute="label"
-                          placeholder="选择平台"></USelectMenu>
-            </UFormGroup>
-
-            <UFormGroup label="ID" :ui="{label:{base:'font-bold'}}">
-              <UInput v-model="id" placeholder="输入歌曲ID/播放列表ID/专辑ID"/>
-            </UFormGroup>
-          </template>
-          <template #musicAPI="{ item }">
-            <UFormGroup label="API接口地址" :ui="{label:{base:'font-bold'}}">
-              <UInput v-model="api"/>
-            </UFormGroup>
-          </template>
-        </UTabs>
-        <MusicPreview v-if="previewing" :id="id" :server="server" :type="type" :api="api"/>
-
-        <div class="flex gap-2">
-          <UButton color="indigo" variant="solid" @click="preview(close)" :disabled="previewLoading"
-                   :loading="previewLoading">预览
-          </UButton>
+      <div class="p-4 flex max-h-[520px] flex-col gap-3 overflow-auto">
+        <UFormGroup label="选择平台" :ui="{label:{base:'font-bold'}}">
+          <USelectMenu v-model="mode" :options="modes" value-attribute="value" option-attribute="label"/>
+        </UFormGroup>
+        <template v-if="mode === 'direct'">
+          <UFormGroup label="音频链接" :ui="{label:{base:'font-bold'}}"><UInput v-model="url" type="url" placeholder="https://example.com/music.mp3"/></UFormGroup>
+          <UFormGroup label="歌曲名" :ui="{label:{base:'font-bold'}}"><UInput v-model="name" placeholder="输入歌曲名称"/></UFormGroup>
+          <UFormGroup label="滚动歌词（LRC）" :ui="{label:{base:'font-bold'}}"><UTextarea v-model="lrc" :rows="7" placeholder="[00:00.00] 歌词&#10;[00:12.50] 第一行"/></UFormGroup>
+        </template>
+        <template v-else>
+          <UFormGroup label="音乐平台" :ui="{label:{base:'font-bold'}}"><USelectMenu v-model="server" :options="servers" value-attribute="value" option-attribute="label"/></UFormGroup>
+          <UFormGroup label="类型" :ui="{label:{base:'font-bold'}}"><USelectMenu v-model="type" :options="types" value-attribute="value" option-attribute="label"/></UFormGroup>
+          <UFormGroup label="ID" :ui="{label:{base:'font-bold'}}"><UInput v-model="id" placeholder="歌曲/播放列表/专辑 ID"/></UFormGroup>
+          <details class="rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-800/70"><summary class="cursor-pointer font-medium">自定义 Meting API</summary><UInput v-model="api" class="mt-2"/></details>
+        </template>
+        <MusicPreview v-if="previewing" v-bind="draft"/>
+        <div class="flex flex-wrap gap-2">
+          <UButton color="indigo" variant="soft" :loading="previewLoading" @click="preview">预览</UButton>
           <UButton @click="confirm(close)">确定</UButton>
           <UButton color="white" @click="reset(close)">清空</UButton>
         </div>
@@ -45,108 +29,22 @@
 </template>
 
 <script setup lang="ts">
-import type {MetingMusicServer, MetingMusicType, MusicDTO} from "@/types"
-import {toast} from "vue-sonner";
-
-const props = withDefaults(defineProps<MusicDTO>(), {
-  id: "",
-  server: "netease" as MetingMusicServer,
-  type: "song" as MetingMusicType,
-  api: "https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"
-})
-
-const id = ref<string>(props.id)
-const server = ref<MetingMusicServer>(props.server)
-const type = ref<MetingMusicType>(props.type)
-const api = ref<string>(props.api)
-const emit = defineEmits(['confirm'])
-const items = [{
-  slot: 'musicID',
-  label: '在线音乐'
-}, {
-  slot: 'musicAPI',
-  label: 'API接口'
-}]
-
-watch(props, () => {
-  id.value = props.id
-  server.value = props.server
-  type.value = props.type
-  api.value = props.api
-})
-
-const previewing = ref(false)
-const previewLoading = ref(false)
-const preview = (close: Function) => {
-  if (!server.value || !api.value || !id.value || !type.value) {
-    toast.error("请完整填写所需信息")
-    return
-  }
-  previewing.value = false
-  previewLoading.value = true
-  setTimeout(() => {
-    previewing.value = true
-    previewLoading.value = false
-  }, 500)
-}
-const confirm = (close: Function) => {
-  emit('confirm', {
-    id: id.value,
-    server: server.value,
-    type: type.value,
-    api: api.value
-  })
-  close()
-}
-const reset = (close: Function) => {
-  previewing.value = false
-  id.value = ""
-  server.value = "netease" as MetingMusicServer
-  type.value = "song" as MetingMusicType
-  api.value = "https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"
-  emit('confirm', {
-    id: id.value,
-    server: server.value,
-    type: type.value,
-    api: api.value
-  })
-  close()
-}
-const servers = ref([{
-  value: "netease",
-  label: "网易云音乐",
-}, {
-  value: "tencent",
-  label: "QQ音乐",
-}, {
-  value: "kugou",
-  label: "酷狗音乐",
-}, {
-  value: "xiami",
-  label: "虾米音乐",
-}, {
-  value: "baidu",
-  label: "百度音乐",
-},])
-
-const types = ref([{
-  value: "song",
-  label: "歌曲",
-}, {
-  value: "playlist",
-  label: "播放列表",
-}, {
-  value: "album",
-  label: "专辑",
-}, {
-  value: "search",
-  label: "搜索",
-}, {
-  value: "artist",
-  label: "艺术家",
-},])
+import type { MetingMusicServer, MetingMusicType, MusicDTO } from '@/types'
+import { toast } from 'vue-sonner'
+const defaultApi = 'https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r'
+const props = withDefaults(defineProps<MusicDTO>(), { mode: 'platform', id: '', url: '', name: '', lrc: '', server: 'netease', type: 'song', api: defaultApi })
+const emit = defineEmits<{ confirm: [music: MusicDTO] }>()
+const mode = ref<'platform' | 'direct'>(props.mode || (props.url ? 'direct' : 'platform'))
+const id = ref(props.id || ''), url = ref(props.url || ''), name = ref(props.name || ''), lrc = ref(props.lrc || '')
+const server = ref<MetingMusicServer>(props.server), type = ref<MetingMusicType>(props.type), api = ref(props.api || defaultApi)
+const modes = [{value:'platform',label:'在线音乐平台'},{value:'direct',label:'直链播放'}]
+const servers = [{value:'netease',label:'网易云音乐'},{value:'tencent',label:'QQ音乐'},{value:'kugou',label:'酷狗音乐'},{value:'xiami',label:'虾米音乐'},{value:'baidu',label:'百度音乐'}]
+const types = [{value:'song',label:'歌曲'},{value:'playlist',label:'播放列表'},{value:'album',label:'专辑'},{value:'search',label:'搜索'},{value:'artist',label:'艺术家'}]
+const draft = computed<MusicDTO>(() => mode.value === 'direct' ? { mode:'direct', url:url.value.trim(), name:name.value.trim(), lrc:lrc.value } : { mode:'platform', id:id.value.trim(), server:server.value, type:type.value, api:api.value.trim() })
+const valid = () => mode.value === 'direct' ? Boolean(url.value.trim() && name.value.trim()) : Boolean(id.value.trim() && server.value && type.value && api.value.trim())
+const previewing = ref(false), previewLoading = ref(false)
+const preview = () => { if(!valid()){toast.error('请完整填写所需信息');return} previewing.value=false;previewLoading.value=true;setTimeout(()=>{previewing.value=true;previewLoading.value=false},200) }
+const confirm = (close: Function) => { if(!valid()){toast.error('请完整填写所需信息');return} emit('confirm', draft.value); close() }
+const reset = (close: Function) => { previewing.value=false;mode.value='platform';id.value='';url.value='';name.value='';lrc.value='';server.value='netease';type.value='song';api.value=defaultApi;emit('confirm',{});close() }
+watch(() => props, value => { mode.value=value.mode || (value.url?'direct':'platform');id.value=value.id||'';url.value=value.url||'';name.value=value.name||'';lrc.value=value.lrc||'';server.value=value.server;type.value=value.type;api.value=value.api||defaultApi }, {deep:true})
 </script>
-
-<style scoped>
-
-</style>

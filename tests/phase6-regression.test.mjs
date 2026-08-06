@@ -3,8 +3,10 @@ import { readFile } from 'node:fs/promises';
 import worker, { parseDouban, parseDoubanMovieJson, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
 
 const userPage = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
-assert.match(userPage, /userId:\s*parseInt\(userId\)/);
-assert.match(userPage, /"\/memo\/list", state/);
+assert.match(userPage, /const userId = Number\(route\.params\.id\)/);
+assert.match(userPage, /reactive\(\{ page: 1, size: 10, userId \}\)/);
+assert.match(userPage, /['"]\/memo\/list['"], state/);
+assert.match(userPage, /ref<'timeline' \| 'cards'>\('timeline'\)/);
 
 const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');
 assert.doesNotMatch(settings, /是否启用S3存储|smtp服务器|smtp密码/);
@@ -13,6 +15,10 @@ assert.match(settings, /回收站/);
 assert.throws(() => sanitizeMemoExt({ video: { type: 'online', value: 'javascript:bad' } }), /视频地址/);
 assert.equal(sanitizeMemoExt({ video: { type: 'online', value: 'https://media.example/video.mp4' } }).video.value, 'https://media.example/video.mp4');
 assert.throws(() => sanitizeMemoExt({ music: { id: '1', server: 'unknown', type: 'song' } }), /音乐平台/);
+const directMusic = sanitizeMemoExt({ music: { mode: 'direct', url: 'https://media.example/song.mp3', name: '测试歌曲', lrc: '[00:01.00]第一句' } }).music;
+assert.deepEqual(directMusic, { mode: 'direct', url: 'https://media.example/song.mp3', name: '测试歌曲', lrc: '[00:01.00]第一句' });
+assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'javascript:alert(1)', name: '坏音乐' } }), /音乐直链/);
+assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'https://media.example/a.mp3', name: '' } }), /歌曲名/);
 
 const movieHtml = `<!doctype html><html><head>
 <meta property="og:title" content="测试电影"/><meta property="og:description" content="电影简介"/>
@@ -83,13 +89,17 @@ assert.equal(book.title, '测试图书');
 assert.equal(book.author, '作者甲');
 assert.equal(book.pubDate, '2025-08');
 
-const publicConfigDb = { prepare() { return { async first() { return { content: JSON.stringify({ title: '站点', smtpUsername: 'private@example.com', smtpHost: 'smtp.example.com', enableEmail: true }) }; } }; } };
+const publicConfigDb = { prepare() { return { async first() { return { content: JSON.stringify({ title: '站点', smtpUsername: 'private@example.com', smtpHost: 'smtp.example.com', enableEmail: true, enableAbout: true, aboutContent: '# 关于\n<p onclick="bad()">安全内容</p><script>bad()</script>' }) }; } }; } };
 const configResponse = await worker.fetch(new Request('https://moments.example/api/sysConfig/get', { method: 'POST' }), { DB: publicConfigDb });
 const configBody = await configResponse.json();
 assert.equal(configBody.data.title, '站点');
 assert.equal(configBody.data.smtpUsername, undefined);
 assert.equal(configBody.data.smtpHost, undefined);
 assert.equal(configBody.data.enableEmail, undefined);
+assert.equal(configBody.data.enableAbout, true);
+assert.match(configBody.data.aboutContent, /# 关于/);
+assert.match(configBody.data.aboutContent, /<p>安全内容<\/p>/);
+assert.doesNotMatch(configBody.data.aboutContent, /onclick|script/);
 
 const bytes = new TextEncoder().encode('0123456789');
 const r2Object = {

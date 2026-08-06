@@ -88,7 +88,7 @@
           />
 
           <music-preview
-            v-if="extJSON.music && extJSON.music.id"
+            v-if="extJSON.music && (extJSON.music.id || extJSON.music.url)"
             v-bind="extJSON.music"
           />
           <douban-book-preview

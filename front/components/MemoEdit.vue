@@ -85,8 +85,7 @@
     <div class="flex flex-col gap-2">
       <external-url-preview :favicon="state.externalFavicon" :title="state.externalTitle" :url="state.externalUrl"/>
       <upload-image-preview :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
-      <music-preview v-if="state.music && state.music.id && state.music.type && state.music.server"
-                     v-bind="state.music"/>
+      <music-preview v-if="state.music && (state.music.id || state.music.url)" v-bind="state.music"/>
       <douban-book-preview :book="doubanData" v-if="doubanType === 'book' && doubanData&& doubanData.title"/>
       <douban-movie-preview :movie="doubanData" v-if="doubanType === 'movie' && doubanData&& doubanData.title"/>
       <video-preview-iframe v-if="['bilibili', 'youtube'].includes(state.video.type) && state.video.value" :url="state.video.value"/>
@@ -132,7 +131,11 @@ const defaultState = {
   externalUrl: "",
   imgs: "",
   music: {
+    mode: 'platform' as const,
     id: '',
+    url: '',
+    name: '',
+    lrc: '',
     api: 'https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r',
     server: 'netease' as MetingMusicServer,
     type: 'song' as MetingMusicType
@@ -182,10 +185,11 @@ const handleDragImage = (imgs: string[]) => {
 }
 
 const updateMusic = (music: MusicDTO) => {
-  state.music.id = ""
-  setTimeout(() => {
-    Object.assign(state.music, music)
-  }, 500)
+  Object.assign(state.music, {
+    mode: 'platform', id: '', url: '', name: '', lrc: '',
+    server: 'netease', type: 'song',
+    api: 'https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r',
+  }, music)
 }
 
 const handleVideo = (video: Video) => {
@@ -255,7 +259,7 @@ onMounted(async () => {
     Object.assign(state, res)
     state.showType = res.showType === 1
     const ext = JSON.parse(res.ext) as ExtDTO
-    Object.assign(state.music, ext.music)
+    updateMusic(ext.music || {})
     Object.assign(state.video, ext.video)
     doubanType.value = ext.doubanBook && ext.doubanBook.title ? 'book' : 'movie'
     doubanData.value = doubanType.value === 'book' ? ext.doubanBook : ext.doubanMovie
@@ -278,7 +282,7 @@ const saveMemo = async () => {
     id: state.id,
     content: state.content,
     ext: {
-      music: state.music.id ? state.music : {},
+      music: state.music.id || state.music.url ? state.music : {},
       [doubanKey]: doubanData.value,
       video: state.video.value ? state.video : {},
     },

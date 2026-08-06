@@ -1,6 +1,6 @@
 const encoder = new TextEncoder();
-const SAFE_TAGS = new Set(['a', 'span', 'br', 'strong', 'em', 'img']);
-const VOID_TAGS = new Set(['br', 'img']);
+const SAFE_TAGS = new Set(['a', 'span', 'br', 'strong', 'em', 'img', 'p', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'hr']);
+const VOID_TAGS = new Set(['br', 'img', 'hr']);
 const BACKUP_PREFIX = 'backups/d1/';
 const BACKUP_RETENTION_DAYS = 90;
 const MAX_DIRECT_UPLOAD_BYTES = 500 * 1024 * 1024;
@@ -49,7 +49,7 @@ export function sanitizeSafeHtml(input) {
       else if (name === 'a' && key === 'rel') allowed.push('rel="noopener noreferrer"');
       else if (name === 'img' && key === 'src') { const src = safeUrl(value, { image: true }); if (src) allowed.push(`src="${escapeHtml(src)}"`); }
       else if (name === 'img' && ['alt', 'width', 'height'].includes(key)) allowed.push(`${key}="${escapeHtml(String(value).slice(0, 200))}"`);
-      else if (name === 'span' && key === 'class' && /^[a-zA-Z0-9 _-]{1,120}$/.test(value)) allowed.push(`class="${escapeHtml(value)}"`);
+      else if (['span', 'p', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre'].includes(name) && key === 'class' && /^[a-zA-Z0-9 _-]{1,120}$/.test(value)) allowed.push(`class="${escapeHtml(value)}"`);
     }
     if (name === 'a' && allowed.some(value => value.startsWith('target=')) && !allowed.some(value => value.startsWith('rel='))) allowed.push('rel="noopener noreferrer"');
     if (name === 'img' && !allowed.some(value => value.startsWith('src='))) continue;
@@ -280,7 +280,7 @@ export function renderRssDescription(memo, host) {
   if (memo.externalUrl) blocks.push(`<p><a href="${escapeHtml(memo.externalUrl)}">${escapeHtml(memo.externalTitle || memo.externalUrl)}</a></p>`);
   for (const image of String(memo.imgs || '').split(',').filter(Boolean)) blocks.push(`<p><img src="${escapeHtml(image.startsWith('/') ? host + image : image)}" alt="" /></p>`);
   let ext = {}; try { ext = JSON.parse(memo.ext || '{}'); } catch {}
-  const music = ext.music || {}; let musicUrl = '';
+  const music = ext.music || {}; let musicUrl = music.mode === 'direct' ? music.url || '' : '';
   if (music.server === 'netease') musicUrl = `https://music.163.com/#/${music.type || 'song'}?id=${encodeURIComponent(music.id || '')}`;
   if (music.server === 'tencent') musicUrl = `https://y.qq.com/n/ryqq/${music.type === 'playlist' ? 'playlist' : 'songDetail'}/${encodeURIComponent(music.id || '')}`;
   if (musicUrl) blocks.push(`<p><a href="${escapeHtml(musicUrl)}">在线音乐</a></p>`);

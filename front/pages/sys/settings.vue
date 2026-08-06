@@ -27,6 +27,12 @@
     <UFormGroup label="是否开启注册用户" name="enableRegister" :ui="{label:{base:'font-bold'}}">
       <UToggle v-model="state.enableRegister"/>
     </UFormGroup>
+    <div class="rounded-xl border border-gray-200 p-4 space-y-3 dark:border-gray-700">
+      <div class="flex items-center justify-between gap-4"><div><p class="font-semibold">关于页面</p><p class="text-xs text-gray-500">开启后导航中显示“关于”，内容支持 Markdown 与安全 HTML。</p></div><UToggle v-model="state.enableAbout"/></div>
+      <UFormGroup v-if="state.enableAbout" label="关于内容" name="aboutContent" :ui="{label:{base:'font-bold'}}">
+        <UTextarea v-model="state.aboutContent" :rows="12" placeholder="# 关于我&#10;&#10;支持 Markdown，也可使用安全 HTML。"/>
+      </UFormGroup>
+    </div>
     <UFormGroup label="备案信息" name="beiAnNo" :ui="{label:{base:'font-bold'}}">
       <UTextarea v-model="state.beiAnNo" :rows="3" placeholder='<a href="https://beian.miit.gov.cn/" target="_blank">京ICP备...</a>'/>
     </UFormGroup>
@@ -102,7 +108,7 @@
       <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">D1 生产备份</p><p class="mt-1 text-xs text-gray-500">每周日 03:00 UTC 自动备份，保留 90 天。恢复前会自动再创建一份安全备份。</p></div><UButton size="sm" icon="i-carbon-renew" :loading="backupLoading" @click="createBackup">立即备份</UButton></div>
       <UButton block color="gray" variant="soft" icon="i-carbon-data-backup" @click="openBackups">管理备份</UButton>
     </div>
-    <div class="flex gap-2"><UButton class="flex-1 justify-center min-h-11" @click="save">保存设置</UButton><a href="/docs" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-11 items-center gap-2 rounded-md bg-gray-100 px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-500 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"><UIcon name="i-carbon-api"/>API 文档</a></div>
+    <UButton block class="min-h-11 justify-center" @click="save">保存设置</UButton>
   </div>
 
   <UModal
@@ -185,6 +191,8 @@ const state = reactive({
   enableAutoLoadNextPage: true,
   enableComment: true,
   enableRegister: true,
+  enableAbout: false,
+  aboutContent: "",
   maxCommentLength: 120,
   memoMaxHeight: 300,
   commentOrder: 'desc',

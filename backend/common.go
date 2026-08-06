@@ -22,7 +22,6 @@ func handleEmptyConfig(log zerolog.Logger, cfg *vo.AppConfig) {
 		Str("JWT密钥[JWT_KEY]", cfg.JwtKey).
 		Str("上传目录[UPLOAD_DIR]", cfg.UploadDir).
 		Str("日志级别[LOG_LEVEL]", cfg.LogLevel).
-		Bool("是否启用Swagger文档[ENABLE_SWAGGER]", cfg.EnableSwagger).
 		Bool("是否输出SQL[ENABLE_SQL_OUTPUT]", cfg.EnableSQLOutput).
 		Msgf("基本信息")
 

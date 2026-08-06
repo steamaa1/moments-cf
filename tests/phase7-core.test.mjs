@@ -11,6 +11,10 @@ assert.match(safe, /rel="noopener noreferrer"/);
 assert.doesNotMatch(safe, /onclick|script|javascript/i);
 assert.match(safe, /<strong>粗体<\/strong>/);
 assert.equal(sanitizeSafeHtml('<img src="http://insecure.example/a.png">'), '');
+const aboutHtml = sanitizeSafeHtml('# 标题\n\n<p class="intro" onclick="bad()">关于 <em>内容</em></p><iframe src="https://evil.example"></iframe>');
+assert.match(aboutHtml, /# 标题/);
+assert.match(aboutHtml, /<p class="intro">关于 <em>内容<\/em><\/p>/);
+assert.doesNotMatch(aboutHtml, /onclick|iframe|evil\.example/);
 
 const presigned = await createR2PresignedPut({ accountId: 'abc123', bucket: 'media', key: 'media/a b.webp', accessKeyId: 'AKID', secretAccessKey: 'secret', contentType: 'image/webp', expires: 900, now: new Date('2026-08-06T12:00:00Z') });
 assert.match(presigned, /^https:\/\/abc123\.r2\.cloudflarestorage\.com\/media\/media\/a%20b\.webp\?/);

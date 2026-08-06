@@ -9,6 +9,5 @@ type AppConfig struct {
 	JwtKey          string `env:"JWT_KEY"`
 	UploadDir       string `env:"UPLOAD_DIR"`
 	LogLevel        string `env:"LOG_LEVEL" env-default:"INFO"`
-	EnableSwagger   bool   `env:"ENABLE_SWAGGER" env-default:"false"`
 	EnableSQLOutput bool   `env:"ENABLE_SQL_OUTPUT" env-default:"false"`
 }

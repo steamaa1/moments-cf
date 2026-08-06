@@ -6,7 +6,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/samber/do/v2"
-	echoSwagger "github.com/swaggo/echo-swagger"
 )
 
 func setupRouter(injector do.Injector) {
@@ -74,9 +73,5 @@ func setupRouter(injector do.Injector) {
 	friendGroup.POST("/list", friendHandler.GetFriendList)
 	friendGroup.POST("/add", friendHandler.AddFriend)
 	friendGroup.POST("/delete", friendHandler.DeleteFriend)
-
-	if cfg.EnableSwagger {
-		e.GET("/swagger/*", echoSwagger.WrapHandler)
-	}
 
 }

@@ -38,11 +38,13 @@ R2: 图片和视频对象
 - SHA-256 秒传
 - 最大 500MB 的 R2 SigV4 预签名直传
 - D1 每周备份到 R2、90 天保留、后台下载与双重确认恢复
-- OpenAPI 3.1：`/openapi.json`，文档页：`/docs`
 - RSS 扩展内容等价输出
 - Cloudflare Turnstile 人机验证（评论/点赞，启用时优先于 Google reCAPTCHA）
 - 备案信息 HTML 与服务端安全过滤
-- 豆瓣电影 JSON-LD 解析兜底与同域封面代理
+- 豆瓣电影 JSON 接口优先、HTML/JSON-LD 回退与同域封面代理
+- 音乐平台与音频直链播放，支持歌曲名和 LRC 滚动歌词
+- 可关闭的“关于”页面，支持 Markdown 与安全 HTML
+- 用户空间默认朋友圈式时间轴，日历检索结果可切换时间轴排列
 
 ## Cloudflare 资源
 
@@ -149,3 +151,49 @@ node scripts/release/smoke-test.mjs
 
 - 上游仓库：https://github.com/kingwrcy/moments
 - 当前 Cloudflare Worker 说明：[`worker/README.md`](worker/README.md)
+
+## API 使用说明
+
+网站前端通过同域 `/api/*` 调用 Worker。接口统一返回：
+
+```json
+{"code": 0, "data": {}}
+```
+
+失败时 `code` 非 0，并可能包含 `message`。需要登录的接口使用请求头：
+
+```http
+x-api-token: <登录返回的 token>
+```
+
+主要接口：
+
+| 方法 | 路径 | 认证 | 用途 |
+|---|---|---:|---|
+| GET | `/api/health` | 否 | 检查 Worker、D1、R2 状态 |
+| POST | `/api/user/login` | 否 | 用户登录 |
+| POST | `/api/user/profile` | 可选 | 当前公开资料或登录用户资料 |
+| POST | `/api/memo/list` | 可选 | 动态分页、用户、日期、内容和标签筛选 |
+| POST | `/api/memo/get?id=<id>` | 可选 | 获取动态详情 |
+| POST | `/api/memo/save` | 是 | 新建或修改动态 |
+| POST | `/api/memo/like?id=<id>` | 否 | 点赞；启用人机验证时附带 `token` |
+| POST | `/api/comment/add` | 可选 | 添加评论 |
+| POST | `/api/file/upload` | 是 | 小文件上传至 R2 |
+| POST | `/api/file/direct/init` | 是 | 初始化 20MB–500MB R2 直传 |
+| POST | `/api/file/direct/complete` | 是 | 校验并完成 R2 直传 |
+| POST | `/api/sysConfig/get` | 否 | 获取公开系统设置 |
+| POST | `/api/sysConfig/getFull` | 管理员 | 获取完整系统设置（敏感值不回传） |
+| POST | `/api/sysConfig/save` | 管理员 | 保存系统设置 |
+| POST | `/api/admin/backup/list` | 管理员 | 查询 D1 备份 |
+| POST | `/api/admin/backup/create` | 管理员 | 立即创建 D1 备份 |
+| GET | `/rss` | 否 | RSS 订阅 |
+
+示例：
+
+```bash
+curl -X POST https://your-worker.example/api/memo/list \
+  -H 'content-type: application/json' \
+  -d '{"page":1,"size":10}'
+```
+
+接口以当前 `cf` 分支实现为准。网站不提供公开 Swagger/OpenAPI 页面；如用于第三方客户端，请先核对 Worker 路由和权限逻辑。

@@ -86,7 +86,9 @@ export type SysConfigVO = {
     smtpPort: '465' | '587',
     smtpUsername: string,
     smtpPassword?: string,
-    smtpPasswordConfigured: boolean
+    smtpPasswordConfigured: boolean,
+    enableAbout: boolean,
+    aboutContent: string
 }
 
 
@@ -109,10 +111,14 @@ export type ExtDTO = {
 }
 
 export type MusicDTO = {
+    mode?: 'platform' | 'direct',
     id?: string,
     server?: MetingMusicServer,
     type?: MetingMusicType,
-    api?: string
+    api?: string,
+    url?: string,
+    name?: string,
+    lrc?: string
 }
 
 export type DoubanBook = {

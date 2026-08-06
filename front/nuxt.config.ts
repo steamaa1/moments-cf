@@ -55,9 +55,6 @@ export default defineNuxtConfig({
                 "/rss": {
                     target: "http://localhost:37892",
                 },
-                "/swagger": {
-                    target: "http://localhost:37892",
-                },
             },
         },
         build: {

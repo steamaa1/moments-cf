@@ -21,6 +21,7 @@
           {{ route.params.tag || "话题专栏" }}
         </span>
         <span v-else-if="$route.path === '/friend'">友情链接</span>
+        <span v-else-if="$route.path === '/about'">关于</span>
         <span v-else>
           <span v-if="!global.userinfo.token && $route.path === '/user/login'">
             登录
@@ -116,6 +117,9 @@
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
       </NuxtLink>
+      <NuxtLink v-if="sysConfig.enableAbout && $route.path !== '/about'" to="/about" title="关于">
+        <UIcon name="i-carbon-information" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
+      </NuxtLink>
       <NuxtLink v-if="$route.path === '/'" to="/friend" title="友情链接">
         <UIcon
           name="i-carbon-friendship"
@@ -157,10 +161,9 @@
           <div class="username text-lg font-bold text-white">
             {{ props.user.nickname }}
           </div>
-          <img
-            :src="props.user.avatarUrl"
-            class="avatar w-[70px] h-[70px] rounded-xl"
-          />
+          <NuxtLink :to="`/user/${props.user.id}`" :aria-label="`查看${props.user.nickname}的时间轴`">
+            <img :src="props.user.avatarUrl" class="avatar w-[70px] h-[70px] rounded-xl" alt="用户头像"/>
+          </NuxtLink>
         </div>
         <div class="slogon text-gray truncate w-full text-end text-xs mt-2">
           {{ props.user.slogan }}
@@ -171,11 +174,12 @@
 </template>
 <script setup lang="ts">
 import { toast } from "vue-sonner";
-import type { UserVO } from "~/types";
+import type { SysConfigVO, UserVO } from "~/types";
 import { useGlobalState } from "~/store";
 
 const global = useGlobalState();
 const route = useRoute();
+const sysConfig = useState<SysConfigVO>('sysConfig');
 
 const props = defineProps<{ user: UserVO }>();
 const mode = useColorMode();

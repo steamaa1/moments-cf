@@ -93,6 +93,10 @@
         </span>
         <span class="text-sm mt-1">检索</span>
       </div>
+      <div v-if="sysConfig.enableAbout && $route.path !== '/about'" class="flex flex-col items-center" @click="navigate('/about')" title="关于">
+        <span class="flex items-center bg-gray-200/75 dark:bg-gray-800/75 p-3 rounded-full"><UIcon name="i-carbon-information" class="w-6 h-6 cursor-pointer"/></span>
+        <span class="text-sm mt-1">关于</span>
+      </div>
       <div
         v-if="$route.path == '/'"
         class="flex flex-col items-center"

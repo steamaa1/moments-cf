@@ -42,7 +42,7 @@ Cloudflare Workers Builds：
 - `SMTP_PASSWORD`：SMTP 465/587 密码/授权码
 - `RESEND_API_KEY`：SMTP 不可用时回退 Resend
 
-Host、端口、用户名和发件地址在管理员设置页保存；密码/API Key 不进入 D1。
+Host、端口、用户名和发件地址在管理员设置页保存；密码/授权码或 Resend API Key 经 AES-GCM 加密后存入 D1，不会明文回传。
 
 ## Phase 7 功能
 
@@ -51,11 +51,10 @@ Host、端口、用户名和发件地址在管理员设置页保存；密码/API
 - 小文件经 Worker；20MB～500MB 使用 SigV4 预签名 PUT 直传 R2
 - SMTP 465 隐式 TLS、587 STARTTLS；后台密码/授权码经 JWT_SECRET 派生 AES-GCM 密钥加密存 D1；`re_` 开头凭据使用 Resend
 - Cloudflare Turnstile 评论/点赞验证，启用时优先于 Google reCAPTCHA
-- 备案信息支持 `a/span/br/strong/em/img` HTML 并由服务端过滤危险内容
+- 备案信息及“关于”内容支持常用 HTML 并由服务端过滤脚本、事件属性和危险链接
 - 豆瓣 JSON-LD 解析兜底和严格同域封面代理
 - D1 每周导出 SQL 到私有 R2，保留 90 天；管理员可列表、下载、恢复
 - 恢复要求当前管理员密码和完整备份名称，并在覆盖前自动再备份
-- `/openapi.json` 与 `/docs`
 - RSS 包含 Markdown、外链、图片、音乐、视频和豆瓣卡片链接
 
 ## Migration

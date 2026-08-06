@@ -3,8 +3,6 @@ import {
   sendNotification, createD1Backup, listBackups, restoreD1Backup, renderRssDescription,
   encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
 } from './phase7.js';
-import { openApiDocument, openApiHtml } from './openapi.js';
-
 /**
  * Moments Cloudflare Worker.
  * Phase 2: D1-backed bootstrap/auth/profile/config and authenticated R2 upload.
@@ -29,6 +27,8 @@ const DEFAULT_CONFIG = {
   enableTurnstile: false,
   turnstileSiteKey: '',
   turnstileSecretKey: '',
+  enableAbout: false,
+  aboutContent: '',
   enableComment: true,
   maxCommentLength: 300,
   memoMaxHeight: 0,
@@ -51,7 +51,7 @@ const DIRECT_UPLOAD_THRESHOLD = 20 * 1024 * 1024;
 const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
-  'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableComment', 'maxCommentLength',
+  'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength',
   'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
@@ -266,6 +266,7 @@ async function getConfig(request, env, headers, full = false) {
   // Never let legacy S3 settings switch the frontend to an unsupported pre-signed endpoint.
   config.enableS3 = false;
   config.beiAnNo = sanitizeSafeHtml(config.beiAnNo);
+  config.aboutContent = sanitizeSafeHtml(config.aboutContent);
   if (full) {
     delete config.enableS3;
     delete config.s3;
@@ -288,6 +289,8 @@ async function saveConfig(request, env, headers) {
   const previousConfig = parseConfig(old?.content);
   const config = { ...previousConfig, ...body, adminUserName: String(body.adminUserName || access.user.username).trim() };
   config.beiAnNo = sanitizeSafeHtml(body.beiAnNo);
+  config.enableAbout = Boolean(body.enableAbout);
+  config.aboutContent = sanitizeSafeHtml(String(body.aboutContent || '').slice(0, 50000));
   config.enableEmail = Boolean(body.enableEmail);
   config.smtpHost = String(body.smtpHost || '').trim().slice(0, 253);
   config.smtpPort = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : '465';
@@ -764,7 +767,12 @@ function safeSiteAssetHref(value, label) {
 function sanitizeMemoExt(input) {
   const ext = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const output = { music: {}, video: {}, doubanBook: {}, doubanMovie: {} };
-  if (ext.music?.id) {
+  if (ext.music?.url || ext.music?.mode === 'direct') {
+    const url = safeHttpHref(ext.music.url, '音乐直链');
+    const name = String(ext.music.name || '').trim().slice(0, 200);
+    if (!url || !name) throw new Error('直链音乐需要音频链接和歌曲名');
+    output.music = { mode: 'direct', url, name, lrc: String(ext.music.lrc || '').slice(0, 30000) };
+  } else if (ext.music?.id) {
     const servers = new Set(['netease', 'tencent', 'kugou', 'xiami', 'baidu']);
     const types = new Set(['song', 'playlist', 'album', 'search', 'artist']);
     const server = String(ext.music.server || '');
@@ -772,7 +780,7 @@ function sanitizeMemoExt(input) {
     if (!servers.has(server)) throw new Error('不支持的音乐平台');
     if (!types.has(type)) throw new Error('不支持的音乐类型');
     output.music = {
-      id: String(ext.music.id).slice(0, 200), server, type,
+      mode: 'platform', id: String(ext.music.id).slice(0, 200), server, type,
       api: safeHttpHref(ext.music.api, '音乐 API'),
     };
   }
@@ -1152,8 +1160,6 @@ async function serveMedia(request, env, key) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === '/openapi.json') return json(openApiDocument(url.origin));
-    if (url.pathname === '/docs') return new Response(openApiHtml(), { headers: { 'content-type': 'text/html; charset=UTF-8' } });
     if (url.pathname === '/douban-cover') return serveDoubanCover(request);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env, ctx);
     if (url.pathname.startsWith('/upload/')) {

@@ -9,7 +9,6 @@ import (
 	"github.com/ilyakaznacheev/cleanenv"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/kingwrcy/moments/db"
-	_ "github.com/kingwrcy/moments/docs"
 	"github.com/kingwrcy/moments/handler"
 	"github.com/kingwrcy/moments/log"
 	myMiddleware "github.com/kingwrcy/moments/middleware"
@@ -18,7 +17,6 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
 	"github.com/samber/do/v2"
-	_ "github.com/swaggo/echo-swagger"
 	"gorm.io/gorm"
 )
 
@@ -84,9 +82,7 @@ func main() {
 			IgnoreBase: false,
 			Browse:     false,
 			Filesystem: http.FS(staticFiles),
-			Skipper: func(c echo.Context) bool {
-				return strings.HasPrefix(c.Request().URL.Path, "/swagger/")
-			},
+
 		}))
 	}
 
