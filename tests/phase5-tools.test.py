@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Functional tests for SQL migrations through Phase 6 and read-only migration helpers."""
+"""Functional tests for SQL migrations through Phase 7 and read-only migration helpers."""
 from __future__ import annotations
 
 import hashlib
@@ -100,6 +100,23 @@ def test_phase6_comment_triggers_and_trash(database: Path) -> None:
         connection.close()
 
 
+def test_phase7_media_schema(database: Path) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        apply_sql(connection, "0006_phase7_media.sql")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(media)")}
+        required = {"sha256", "thumbnail_key", "upload_state"}
+        if not required.issubset(columns):
+            raise AssertionError(f"Phase 7 media columns missing: {required - columns}")
+        connection.execute("UPDATE media SET sha256=?, thumbnail_key=?, upload_state='ready' WHERE id=1", ("a" * 64, "thumbs/a.webp"))
+        row = connection.execute("SELECT sha256, thumbnail_key, upload_state FROM media WHERE id=1").fetchone()
+        if row != ("a" * 64, "thumbs/a.webp", "ready"):
+            raise AssertionError(f"Phase 7 media metadata mismatch: {row}")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_export_helpers(database: Path, temporary: Path) -> None:
     export_dir = temporary / "export"
     run("scripts/migrate/export-sqlite.py", str(database), "--output", str(export_dir))
@@ -142,8 +159,9 @@ def main() -> None:
         prepare_database(database)
         test_like_counter_triggers(database)
         test_phase6_comment_triggers_and_trash(database)
+        test_phase7_media_schema(database)
         test_export_helpers(database, temporary)
-    print("Phase 6 migration and release tool functional tests: PASS")
+    print("Phase 7 migration and release tool functional tests: PASS")
 
 
 if __name__ == "__main__":

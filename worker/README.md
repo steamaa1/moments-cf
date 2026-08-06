@@ -1,65 +1,62 @@
-# Moments Cloudflare Worker — Phase 6
+# Moments Cloudflare Worker — Phase 7
 
-Cloudflare 版使用单个 Worker 提供 API、Nuxt Workers Assets、RSS 和私有 R2 媒体代理；D1 保存结构化数据。
+单个 Worker 提供 API、Nuxt Workers Assets、RSS、OpenAPI 和私有 R2 媒体代理；D1 保存结构化数据。
 
-## 资源绑定
+## 部署
 
-| Binding | Cloudflare 资源 |
-| --- | --- |
-| `DB` | D1：`moments-db` |
-| `MEDIA` | R2：`moments-media` |
-| `ASSETS` | `../front/.output/public` |
-
-## Workers Builds
+Cloudflare Workers Builds：
 
 | 项目 | 值 |
 | --- | --- |
-| 路径 | `worker` |
-| 构建命令 | `npm run build:cf` |
-| 部署命令 | `npm run deploy:cf` |
+| Root directory | `worker` |
+| Build command | `npm run build:cf` |
+| Deploy command | `npm run deploy:cf` |
 
-`deploy:cf` 会通过 API Token 按名称查询 D1 UUID，生成被忽略的 `wrangler.build.toml`，应用未执行的 Migration 后部署。无需设置 `D1_DATABASE_ID` Build Variable。
+部署脚本会按名称查询 `moments-db`，应用 `0001`～`0006` Migration，设置 R2 CORS，再部署 Worker。计划任务为每周日 `03:00 UTC`。
 
-## Secrets
+## Bindings 与 Variables
+
+- `DB`：D1 `moments-db`
+- `MEDIA`：私有 R2 `moments-media`
+- `ASSETS`：`../front/.output/public`
+- `CLOUDFLARE_ACCOUNT_ID`、`D1_DATABASE_ID`、`R2_BUCKET_NAME`：部署脚本写入生成配置
+
+## 必需 Secrets
+
+基础功能：
 
 - `JWT_SECRET`：至少 32 字符
 - `INIT_SECRET`：至少 24 字符
-- 可选 `PBKDF2_ITERATIONS`：默认/最大 `100000`
 
-Secret 只能保存在 Cloudflare 加密变量中。
+500MB R2 预签名直传：
 
-## Phase 6 重点
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
 
-- 外部链接、图片、音乐、视频和豆瓣扩展字段服务端白名单
-- reCAPTCHA action、hostname 和 score 校验
-- 评论计数 Trigger 及历史计数修正
-- 每条动态最多读取 5 条评论，恢复 `latest=1`
-- R2 媒体 Range、HEAD、ETag/304
-- 豆瓣图书/电影元数据抓取；封面保留原始 HTTPS URL
-- 未引用媒体进入 7 天逻辑回收站，可恢复或立即永久删除
-- 公开配置使用白名单，不返回 SMTP/S3 遗留字段
+每周 D1→R2 备份与恢复：
 
-## API 补充
+- `D1_BACKUP_API_TOKEN`：仅授予目标账户 D1 Read/Write 权限
 
-所有 API 使用 `{ code, message?, data }` 格式；登录请求兼容 `x-api-token`。
+邮件通知（可二选一或同时配置）：
 
-| 路径 | 说明 |
-| --- | --- |
-| `GET /api/health` | Worker 和 Binding 状态，当前 `phase: 6` |
-| `POST /api/admin/initialize` | 首次管理员初始化，需 `x-init-secret` |
-| `POST /api/memo/getDoubanBookInfo?id=` | 登录后抓取豆瓣图书元数据 |
-| `POST /api/memo/getDoubanMovieInfo?id=` | 登录后抓取豆瓣电影元数据 |
-| `POST /api/file/clean` | 扫描未引用媒体并移入回收站，同时清理超过 7 天的对象 |
-| `POST /api/file/trash/list` | 当前用户回收站列表 |
-| `POST /api/file/trash/restore?id=` | 恢复媒体记录 |
-| `POST /api/file/trash/purge?id=` | 立即永久删除 R2 对象和 D1 记录 |
-| `GET/HEAD /upload/*` | 私有 R2 同域代理，支持 Range 与条件缓存 |
+- `SMTP_PASSWORD`：SMTP 465/587 密码/授权码
+- `RESEND_API_KEY`：SMTP 不可用时回退 Resend
 
-其他用户、动态、评论、点赞、标签、友链、配置和 RSS API 与原前端路径保持兼容。
+Host、端口、用户名和发件地址在管理员设置页保存；密码/API Key 不进入 D1。
 
-## D1 Migration
+## Phase 7 功能
 
-按顺序维护：
+- 浏览器分块计算 SHA-256，重复文件秒传
+- 浏览器生成最大边 640px、质量 0.78 的 WebP 缩略图并存 R2
+- 小文件经 Worker；20MB～500MB 使用 SigV4 预签名 PUT 直传 R2
+- SMTP 465 隐式 TLS、587 STARTTLS；失败回退 Resend
+- 备案信息支持 `a/span/br/strong/em/img` 安全 HTML 白名单
+- D1 每周导出 SQL 到私有 R2，保留 90 天；管理员可列表、下载、恢复
+- 恢复要求当前管理员密码和完整备份名称，并在覆盖前自动再备份
+- `/openapi.json` 与 `/docs`
+- RSS 包含 Markdown、外链、图片、音乐、视频和豆瓣卡片链接
+
+## Migration
 
 ```text
 0001_schema.sql
@@ -67,15 +64,10 @@ Secret 只能保存在 Cloudflare 加密变量中。
 0003_comments_friends.sql
 0004_like_counters.sql
 0005_phase6_consistency_trash.sql
+0006_phase7_media.sql
 ```
 
-`0005` 会：
-
-1. 根据真实评论修正 `comment_count`
-2. 建立评论新增/删除 Trigger
-3. 为媒体表增加 `trashed_at` 和回收站索引
-
-正常使用 `npm run deploy:cf` 时 Migration 会自动应用。
+`0006` 增加 `sha256`、`thumbnail_key`、`upload_state` 及索引。
 
 ## 检查
 
@@ -83,5 +75,3 @@ Secret 只能保存在 Cloudflare 加密变量中。
 cd worker
 npm run check
 ```
-
-检查包含 Worker/API 回归、安全和隐私、豆瓣解析、R2 Range/HEAD、真实 SQLite Migration、迁移工具和部署前检查。

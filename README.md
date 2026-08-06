@@ -31,16 +31,16 @@ R2: 图片和视频对象
 - 未引用媒体 7 天回收站、恢复和立即永久删除
 - D1 Migration、部署前检查、线上只读冒烟检查
 
-## 暂未迁移
+## Phase 7 新增
 
-以下能力仍留待后续版本：
-
-- 评论邮件通知
-- 图片缩略图/压缩
+- 评论邮件通知：SMTP 465/587，失败自动回退 Resend
+- 浏览器生成 WebP 缩略图，原图与缩略图写入私有 R2
 - SHA-256 秒传
-- 大文件浏览器直传 R2
-- 生产 D1/R2 备份与一键恢复
-- OpenAPI/Swagger
+- 最大 500MB 的 R2 SigV4 预签名直传
+- D1 每周备份到 R2、90 天保留、后台下载与双重确认恢复
+- OpenAPI 3.1：`/openapi.json`，文档页：`/docs`
+- RSS 扩展内容等价输出
+- 备案信息安全 HTML 白名单
 
 ## Cloudflare 资源
 
@@ -81,6 +81,11 @@ Workers Builds 使用的 Cloudflare API Token 至少需要：
 | --- | --- |
 | `JWT_SECRET` | 至少 32 字符随机值，用于 JWT 和匿名身份签名 |
 | `INIT_SECRET` | 至少 24 字符随机值，仅用于首次管理员初始化 |
+| `R2_ACCESS_KEY_ID` | R2 S3 API Access Key，用于最大500MB直传签名 |
+| `R2_SECRET_ACCESS_KEY` | R2 S3 API Secret Key |
+| `D1_BACKUP_API_TOKEN` | 目标账户 D1 Read/Write，用于导出与恢复 |
+| `SMTP_PASSWORD` | 可选，SMTP密码/授权码 |
+| `RESEND_API_KEY` | 可选，SMTP失败时的Resend回退 |
 
 可选变量：
 

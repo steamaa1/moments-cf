@@ -27,8 +27,9 @@
     <UFormGroup label="是否开启注册用户" name="enableRegister" :ui="{label:{base:'font-bold'}}">
       <UToggle v-model="state.enableRegister"/>
     </UFormGroup>
-    <UFormGroup label="备案号" name="beiAnNo" :ui="{label:{base:'font-bold'}}">
-      <UInput v-model="state.beiAnNo" placeholder="没有可以不填写"/>
+    <UFormGroup label="备案信息（安全 HTML）" name="beiAnNo" :ui="{label:{base:'font-bold'}}">
+      <UTextarea v-model="state.beiAnNo" :rows="3" placeholder='<a href="https://beian.miit.gov.cn/" target="_blank">京ICP备...</a>'/>
+      <p class="mt-1 text-xs text-gray-500">允许 a、span、br、strong、em、img；服务端会移除脚本、事件属性和危险链接。</p>
     </UFormGroup>
     <UFormGroup label="自定义CSS" name="css" :ui="{label:{base:'font-bold'}}">
       <UTextarea v-model="state.css" :rows="5"/>
@@ -66,6 +67,14 @@
           <UInput v-model="state.googleSecretKey" type="password" autocomplete="off"/>
         </UFormGroup>
       </template>
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div class="flex items-center justify-between"><div><p class="font-semibold">评论邮件通知</p><p class="text-xs text-gray-500">SMTP 失败后自动回退 Resend；密码与 API Key 在 Cloudflare Secrets 配置。</p></div><UToggle v-model="state.enableEmail"/></div>
+      <template v-if="state.enableEmail">
+        <UFormGroup label="发件邮箱"><UInput v-model="state.emailFrom" type="email" placeholder="noreply@example.com"/></UFormGroup>
+        <UFormGroup label="SMTP 主机"><UInput v-model="state.smtpHost" placeholder="smtp.example.com"/></UFormGroup>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3"><UFormGroup label="SMTP 端口"><USelectMenu v-model="state.smtpPort" :options="['465','587']"/></UFormGroup><UFormGroup label="SMTP 用户名"><UInput v-model="state.smtpUsername"/></UFormGroup></div>
+      </template>
+    </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-neutral-900/40 p-4 space-y-3">
       <div class="flex items-start gap-3">
         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
@@ -81,7 +90,11 @@
         <UButton block color="gray" variant="soft" icon="i-carbon-trash-can" @click="openTrash">查看回收站</UButton>
       </div>
     </div>
-    <UButton class="justify-center min-h-11" @click="save">保存设置</UButton>
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">D1 生产备份</p><p class="mt-1 text-xs text-gray-500">每周日 03:00 UTC 自动备份，保留 90 天。恢复前会自动再创建一份安全备份。</p></div><UButton size="sm" icon="i-carbon-renew" :loading="backupLoading" @click="createBackup">立即备份</UButton></div>
+      <UButton block color="gray" variant="soft" icon="i-carbon-data-backup" @click="openBackups">管理备份</UButton>
+    </div>
+    <div class="flex gap-2"><UButton class="flex-1 justify-center min-h-11" @click="save">保存设置</UButton><UButton color="gray" variant="soft" to="/docs" target="_blank" icon="i-carbon-api">API 文档</UButton></div>
   </div>
 
   <UModal
@@ -99,6 +112,16 @@
         <UButton @click="cleanFile">确认清理</UButton>
       </div>
         </div>
+  </UModal>
+
+  <UModal v-model="showBackupModal" :ui="{container:'flex justify-center items-center backdrop-blur'}">
+    <div class="max-h-[85vh] overflow-auto rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-800">
+      <div class="mb-4 flex items-start justify-between"><div><h2 class="text-lg font-semibold">D1 备份</h2><p class="text-sm text-gray-500">恢复会覆盖当前数据库，需管理员密码和完整备份名称。</p></div><UButton color="gray" variant="ghost" icon="i-carbon-close" @click="showBackupModal=false"/></div>
+      <div v-if="backupLoading" class="py-10 text-center text-sm text-gray-500">正在处理备份…</div>
+      <div v-else-if="backups.length===0" class="rounded-lg border border-dashed p-8 text-center text-sm text-gray-500">暂无备份</div>
+      <div v-else class="space-y-3"><div v-for="backup in backups" :key="backup.key" class="rounded-lg border border-gray-200 p-3 dark:border-gray-700"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><p class="truncate text-sm font-medium">{{ backup.name }}</p><p class="mt-1 text-xs text-gray-500">{{ formatBytes(backup.size) }} · {{ $dayjs(backup.uploaded).format('YYYY-MM-DD HH:mm') }}</p></div><div class="flex gap-1"><UButton size="xs" color="gray" variant="soft" @click="downloadBackup(backup.key)">下载</UButton><UButton size="xs" color="red" variant="soft" @click="selectRestore(backup)">恢复</UButton></div></div></div></div>
+      <div v-if="restoreBackup" class="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/20"><p class="font-semibold text-red-700 dark:text-red-300">恢复 {{ restoreBackup.name }}</p><UInput v-model="restoreConfirmName" class="mt-3" placeholder="输入完整备份名称"/><UInput v-model="restorePassword" class="mt-2" type="password" placeholder="当前管理员密码"/><div class="mt-3 flex justify-end gap-2"><UButton color="gray" variant="soft" @click="restoreBackup=null">取消</UButton><UButton color="red" :loading="backupLoading" @click="confirmRestore">确认覆盖恢复</UButton></div></div>
+    </div>
   </UModal>
 
   <UModal v-model="showTrashModal" :ui="{container:'flex justify-center items-center backdrop-blur'}">
@@ -137,6 +160,7 @@
 import type {SysConfigVO, UserVO} from "~/types";
 import {toast} from "vue-sonner";
 import {useUpload} from "~/utils";
+import {useGlobalState} from "~/store";
 
 const currentUser = useState<UserVO>('userinfo')
 const version = ref('')
@@ -159,9 +183,21 @@ const state = reactive({
   css: "",
   js: "",
   rss: "",
+  enableEmail: false,
+  smtpHost: "",
+  smtpPort: "465" as '465' | '587',
+  smtpUsername: "",
+  emailFrom: "",
 })
 
 type TrashFile = { id: number; path: string; filename: string; contentType: string; size: number; trashedAt: string }
+type BackupFile = { key: string; name: string; size: number; uploaded: string }
+const showBackupModal = ref(false)
+const backupLoading = ref(false)
+const backups = ref<BackupFile[]>([])
+const restoreBackup = ref<BackupFile | null>(null)
+const restoreConfirmName = ref('')
+const restorePassword = ref('')
 const showCleanFileModal = ref(false)
 const showTrashModal = ref(false)
 const trashLoading = ref(false)
@@ -195,6 +231,27 @@ const uploadFavicon = async (files: FileList) => {
     toast.success("上传成功")
     state.favicon = result[0]
   }
+}
+
+const loadBackups = async () => {
+  backupLoading.value = true
+  try { backups.value = (await useMyFetch<{list: BackupFile[]}>('/admin/backup/list')).list || [] }
+  finally { backupLoading.value = false }
+}
+const openBackups = async () => { showBackupModal.value = true; await loadBackups() }
+const createBackup = async () => { backupLoading.value = true; try { await useMyFetch('/admin/backup/create'); toast.success('备份已创建'); if(showBackupModal.value) await loadBackups() } finally { backupLoading.value = false } }
+const downloadBackup = async (key: string) => {
+  const token = useGlobalState().value.userinfo.token
+  const response = await fetch(`/api/admin/backup/download?key=${encodeURIComponent(key)}`, {method:'POST',headers:{'x-api-token':token}})
+  if(!response.ok) { toast.error('备份下载失败'); return }
+  const blob = await response.blob(); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=key.split('/').pop() || 'backup.sql'; link.click(); URL.revokeObjectURL(link.href)
+}
+const selectRestore = (backup: BackupFile) => { restoreBackup.value=backup; restoreConfirmName.value=''; restorePassword.value='' }
+const confirmRestore = async () => {
+  if(!restoreBackup.value) return
+  backupLoading.value=true
+  try { await useMyFetch('/admin/backup/restore',{key:restoreBackup.value.key,confirmName:restoreConfirmName.value,password:restorePassword.value}); toast.success('数据库恢复完成，请重新登录'); location.href='/' }
+  finally { backupLoading.value=false }
 }
 
 const cleanFile = async () => {

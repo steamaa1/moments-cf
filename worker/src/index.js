@@ -1,3 +1,10 @@
+import {
+  sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
+  sendNotification, createD1Backup, listBackups, restoreD1Backup, renderRssDescription,
+  BACKUP_PREFIX,
+} from './phase7.js';
+import { openApiDocument, openApiHtml } from './openapi.js';
+
 /**
  * Moments Cloudflare Worker.
  * Phase 2: D1-backed bootstrap/auth/profile/config and authenticated R2 upload.
@@ -27,9 +34,9 @@ const DEFAULT_CONFIG = {
   enableRegister: false,
   enableEmail: false,
   smtpHost: '',
-  smtpPort: '',
+  smtpPort: '465',
   smtpUsername: '',
-  smtpPassword: '',
+  emailFrom: '',
   s3: { thumbnailSuffix: '' },
 };
 const ALLOWED_MEDIA_TYPES = new Set([
@@ -37,6 +44,7 @@ const ALLOWED_MEDIA_TYPES = new Set([
   'video/mp4', 'video/webm', 'video/quicktime',
 ]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const DIRECT_UPLOAD_THRESHOLD = 20 * 1024 * 1024;
 const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
@@ -254,12 +262,11 @@ async function getConfig(request, env, headers, full = false) {
   // Cloudflare edition always uses the authenticated /api/file/upload -> R2 path.
   // Never let legacy S3 settings switch the frontend to an unsupported pre-signed endpoint.
   config.enableS3 = false;
-  config.enableEmail = false;
+  config.beiAnNo = sanitizeSafeHtml(config.beiAnNo);
   if (full) {
     delete config.enableS3;
     delete config.s3;
-    delete config.enableEmail;
-    for (const key of ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword']) delete config[key];
+    delete config.smtpPassword;
   }
   return json(ok(full ? config : publicConfig(config)), 200, headers);
 }
@@ -270,13 +277,18 @@ async function saveConfig(request, env, headers) {
   if (!body || typeof body !== 'object') return json(fail('参数错误'), 400, headers);
   const old = await env.DB.prepare('SELECT content FROM sys_config WHERE id = 1').first();
   const config = { ...parseConfig(old?.content), ...body, adminUserName: String(body.adminUserName || access.user.username).trim() };
+  config.beiAnNo = sanitizeSafeHtml(body.beiAnNo);
+  config.enableEmail = Boolean(body.enableEmail);
+  config.smtpHost = String(body.smtpHost || '').trim().slice(0, 253);
+  config.smtpPort = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : '465';
+  config.smtpUsername = String(body.smtpUsername || '').trim().slice(0, 254);
+  config.emailFrom = String(body.emailFrom || '').trim().slice(0, 254);
   delete config.version;
   delete config.commitId;
   // Unsupported legacy credentials must never be persisted by the Cloudflare edition.
   config.enableS3 = false;
-  config.enableEmail = false;
   config.s3 = { thumbnailSuffix: '' };
-  for (const key of ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword']) delete config[key];
+  delete config.smtpPassword;
   await env.DB.batch([
     env.DB.prepare('INSERT INTO sys_config (id, content, updated_at) VALUES (1, ?, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=CURRENT_TIMESTAMP').bind(JSON.stringify(config)),
     env.DB.prepare('UPDATE users SET username=?, updated_at=CURRENT_TIMESTAMP WHERE id=1').bind(config.adminUserName),
@@ -293,19 +305,27 @@ async function upload(request, env, headers) {
   try { form = await request.formData(); } catch { return json(fail('文件表单错误'), 400, headers); }
   const files = form.getAll('files').filter(value => value instanceof File);
   if (!files.length) return json(fail('没有选择文件'), 400, headers);
+  const hashes = form.getAll('sha256').map(value => String(value).toLowerCase());
   const urls = [];
-  for (const file of files) {
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index]; const sha = hashes[index] || '';
     if (!ALLOWED_MEDIA_TYPES.has(file.type)) return json(fail(`不支持的文件类型：${file.type || '未知'}`), 415, headers);
     if (file.size > MAX_UPLOAD_BYTES) return json(fail('文件不能超过 25MB'), 413, headers);
-    const extension = file.name.includes('.') ? file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') : '';
-    const key = `media/${new Date().toISOString().slice(0, 10).replaceAll('-', '/')}/${randomToken(18)}${extension ? `.${extension}` : ''}`;
+    if (!/^[a-f0-9]{64}$/.test(sha)) return json(fail('SHA-256 格式错误'), 400, headers);
+    const duplicate = await env.DB.prepare("SELECT r2_key FROM media WHERE owner_id=? AND sha256=? AND trashed_at IS NULL AND upload_state='ready' LIMIT 1").bind(access.user.id, sha).first();
+    if (duplicate) { urls.push(`/upload/${duplicate.r2_key}`); continue; }
+    const extension = mediaExtension(file.name);
+    const key = `media/${new Date().toISOString().slice(0, 10).replaceAll('-', '/')}/${sha}${extension ? `.${extension}` : ''}`;
+    const thumbnailCandidate = form.get(`thumbnail_${index}`);
+    const thumbnail = file.type.startsWith('image/') && thumbnailCandidate instanceof File ? thumbnailCandidate : null;
+    const thumbnailKey = thumbnail ? `thumbs/${sha}.webp` : null;
     try {
-      await env.MEDIA.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { ownerId: String(access.user.id), originalFilename: file.name.slice(0, 255) } });
-      await env.DB.prepare('INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes) VALUES (?, ?, ?, ?, ?)')
-        .bind(access.user.id, key, file.name.slice(0, 255), file.type, file.size).run();
+      await env.MEDIA.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { ownerId: String(access.user.id), originalFilename: file.name.slice(0, 255), sha256: sha } });
+      if (thumbnail) await env.MEDIA.put(thumbnailKey, thumbnail.stream(), { httpMetadata: { contentType: 'image/webp' }, customMetadata: { ownerId: String(access.user.id), sourceKey: key } });
+      await env.DB.prepare("INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes, sha256, thumbnail_key, upload_state) VALUES (?, ?, ?, ?, ?, ?, ?, 'ready')")
+        .bind(access.user.id, key, file.name.slice(0, 255), file.type, file.size, sha, thumbnailKey).run();
     } catch (error) {
-      // Avoid leaving an unregistered R2 object if the D1 insert fails.
-      await env.MEDIA.delete(key).catch(() => {});
+      await Promise.all([env.MEDIA.delete(key).catch(() => {}), thumbnailKey ? env.MEDIA.delete(thumbnailKey).catch(() => {}) : Promise.resolve()]);
       throw error;
     }
     urls.push(`/upload/${key}`);
@@ -337,21 +357,63 @@ async function register(request, env, headers) {
 async function fileExists(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
-  const filename = new URL(request.url).searchParams.get('filename');
-  if (!filename) return json(fail('filename 不能为空'), 400, headers);
-  const row = await env.DB.prepare('SELECT r2_key FROM media WHERE owner_id=? AND trashed_at IS NULL AND (r2_key=? OR original_filename=?) LIMIT 1').bind(access.user.id, filename, filename).first();
-  return json(ok({ exist: Boolean(row), path: row ? `/upload/${row.r2_key}` : '' }), 200, headers);
+  const url = new URL(request.url);
+  const sha = String(url.searchParams.get('sha256') || url.searchParams.get('filename') || '').toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(sha)) return json(fail('sha256 格式错误'), 400, headers);
+  const row = await env.DB.prepare("SELECT r2_key, thumbnail_key FROM media WHERE owner_id=? AND sha256=? AND trashed_at IS NULL AND upload_state='ready' LIMIT 1").bind(access.user.id, sha).first();
+  return json(ok({ exist: Boolean(row), path: row ? `/upload/${row.r2_key}` : '', thumbPath: row?.thumbnail_key ? `/upload/${row.thumbnail_key}` : '' }), 200, headers);
+}
+function mediaExtension(filename) { return filename.includes('.') ? filename.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') : ''; }
+async function directUploadInit(request, env, headers) {
+  const access = await requireUser(request, env, headers); if (access.response) return access.response;
+  const body = await readJson(request); let file;
+  try { file = validateDirectUpload(body, ALLOWED_MEDIA_TYPES); } catch (error) { return json(fail(error.message), 400, headers); }
+  const duplicate = await env.DB.prepare("SELECT r2_key, thumbnail_key FROM media WHERE owner_id=? AND sha256=? AND trashed_at IS NULL AND upload_state='ready' LIMIT 1").bind(access.user.id, file.sha256).first();
+  if (duplicate) return json(ok({ exists: true, path: `/upload/${duplicate.r2_key}`, thumbPath: duplicate.thumbnail_key ? `/upload/${duplicate.thumbnail_key}` : '' }), 200, headers);
+  const signing = { accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: env.R2_BUCKET_NAME || 'moments-media', accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY };
+  if (!signing.accountId || !signing.accessKeyId || !signing.secretAccessKey) return json(fail('R2 直传尚未配置，请在 Worker Secrets 设置 R2_ACCESS_KEY_ID 和 R2_SECRET_ACCESS_KEY'), 503, headers);
+  const extension = mediaExtension(file.filename);
+  const key = `media/${new Date().toISOString().slice(0,10).replaceAll('-','/')}/${file.sha256}${extension ? `.${extension}` : ''}`;
+  const old = await env.DB.prepare('SELECT id FROM media WHERE owner_id=? AND r2_key=? LIMIT 1').bind(access.user.id, key).first();
+  if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, old.id).run();
+  else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,upload_state) VALUES (?,?,?,?,?,?,'pending')").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256).run();
+  const uploadUrl = await createR2PresignedPut({ ...signing, key, contentType: file.contentType });
+  const thumbnailKey = file.contentType.startsWith('image/') ? `thumbs/${file.sha256}.webp` : '';
+  const thumbnailUploadUrl = thumbnailKey ? await createR2PresignedPut({ ...signing, key: thumbnailKey, contentType: 'image/webp' }) : '';
+  return json(ok({ exists: false, uploadUrl, key, path: `/upload/${key}`, contentType: file.contentType, direct: file.size >= DIRECT_UPLOAD_THRESHOLD, thumbnailKey, thumbnailUploadUrl }), 200, headers);
+}
+async function directUploadComplete(request, env, headers) {
+  const access = await requireUser(request, env, headers); if (access.response) return access.response;
+  const body = await readJson(request); const key = String(body?.key || '');
+  const media = await env.DB.prepare("SELECT * FROM media WHERE owner_id=? AND r2_key=? AND upload_state='pending'").bind(access.user.id,key).first();
+  if (!media) return json(fail('待确认上传不存在'),404,headers);
+  const object = await env.MEDIA.head(key); if (!object || Number(object.size)!==Number(media.size_bytes)) return json(fail('R2 文件不存在或大小不一致'),409,headers);
+  let thumbnailKey = null;
+  if (body.thumbnailKey) {
+    thumbnailKey = String(body.thumbnailKey);
+    const thumb = await env.MEDIA.head(thumbnailKey); if (!thumb || !String(thumb.httpMetadata?.contentType || '').startsWith('image/')) return json(fail('缩略图不存在'),409,headers);
+  }
+  await env.DB.prepare("UPDATE media SET upload_state='ready', thumbnail_key=? WHERE id=?").bind(thumbnailKey,media.id).run();
+  return json(ok({ path:`/upload/${key}`, thumbPath:thumbnailKey?`/upload/${thumbnailKey}`:'' }),200,headers);
 }
 function collectUploadKeys(value, target) {
   const pattern = /\/upload\/([^\s"'<>),]+)/g;
   for (const match of String(value || '').matchAll(pattern)) target.add(decodeURIComponent(match[1]));
 }
+async function purgeStalePendingUploads(userId, env) {
+  const stale = await env.DB.prepare("SELECT id, r2_key, thumbnail_key FROM media WHERE owner_id=? AND upload_state='pending' AND created_at <= datetime('now','-1 day')").bind(userId).all();
+  for (const item of stale.results || []) {
+    await Promise.all([env.MEDIA.delete(item.r2_key).catch(() => {}), item.thumbnail_key ? env.MEDIA.delete(item.thumbnail_key).catch(() => {}) : Promise.resolve()]);
+    await env.DB.prepare("DELETE FROM media WHERE id=? AND owner_id=? AND upload_state='pending'").bind(item.id,userId).run();
+  }
+  return (stale.results || []).length;
+}
 async function purgeExpiredTrash(userId, env) {
-  const expired = await env.DB.prepare("SELECT id, r2_key FROM media WHERE owner_id=? AND trashed_at IS NOT NULL AND trashed_at <= datetime('now', ?)")
+  const expired = await env.DB.prepare("SELECT id, r2_key, thumbnail_key FROM media WHERE owner_id=? AND trashed_at IS NOT NULL AND trashed_at <= datetime('now', ?)")
     .bind(userId, `-${TRASH_RETENTION_DAYS} days`).all();
   let purged = 0;
   for (const media of expired.results || []) {
-    await env.MEDIA.delete(media.r2_key);
+    await Promise.all([env.MEDIA.delete(media.r2_key), media.thumbnail_key ? env.MEDIA.delete(media.thumbnail_key) : Promise.resolve()]);
     await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(media.id, userId).run();
     purged += 1;
   }
@@ -377,8 +439,8 @@ async function cleanFiles(request, env, headers) {
     await env.DB.prepare('UPDATE media SET trashed_at=CURRENT_TIMESTAMP WHERE id=? AND owner_id=? AND trashed_at IS NULL').bind(media.id, access.user.id).run();
     num += 1;
   }
-  const purged = await purgeExpiredTrash(access.user.id, env);
-  return json(ok({ num, purged, retentionDays: TRASH_RETENTION_DAYS }), 200, headers);
+  const [purged, pendingPurged] = await Promise.all([purgeExpiredTrash(access.user.id, env), purgeStalePendingUploads(access.user.id, env)]);
+  return json(ok({ num, purged, pendingPurged, retentionDays: TRASH_RETENTION_DAYS }), 200, headers);
 }
 async function listTrash(request, env, headers) {
   const access = await requireUser(request, env, headers);
@@ -402,9 +464,9 @@ async function purgeTrash(request, env, headers) {
   if (access.response) return access.response;
   if (!env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
   const id = intParam(new URL(request.url).searchParams.get('id'));
-  const media = await env.DB.prepare('SELECT id, r2_key FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).first();
+  const media = await env.DB.prepare('SELECT id, r2_key, thumbnail_key FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).first();
   if (!media) return json(fail('回收站文件不存在'), 404, headers);
-  await env.MEDIA.delete(media.r2_key);
+  await Promise.all([env.MEDIA.delete(media.r2_key), media.thumbnail_key ? env.MEDIA.delete(media.thumbnail_key) : Promise.resolve()]);
   await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).run();
   return json(ok({}), 200, headers);
 }
@@ -418,8 +480,11 @@ function tagsString(tags) {
   const unique = [...new Set(tags.map(tag => String(tag).trim().replaceAll(',', '').slice(0, 40)).filter(Boolean))];
   return unique.length ? `${unique.join(',')},` : '';
 }
-function imgConfigs(imgs) {
-  return String(imgs || '').split(',').filter(Boolean).map(url => ({ url, thumbUrl: url }));
+function imgConfigs(imgs, thumbnails = new Map()) {
+  return String(imgs || '').split(',').filter(Boolean).map(url => {
+    const key = url.startsWith('/upload/') ? url.slice('/upload/'.length) : '';
+    return { url, thumbUrl: thumbnails.get(key) || url };
+  });
 }
 function memoView(row) {
   if (!row) return null;
@@ -505,8 +570,16 @@ async function listMemos(request, env, headers) {
       console.warn('Comments are temporarily unavailable for memo list', error);
     }
   }
+  const allKeys = rows.flatMap(row => String(row.imgs || '').split(',').filter(value => value.startsWith('/upload/')).map(value => value.slice('/upload/'.length)));
+  const thumbnails = new Map();
+  if (allKeys.length) {
+    const placeholders = allKeys.map(() => '?').join(',');
+    const media = await env.DB.prepare(`SELECT r2_key, thumbnail_key FROM media WHERE r2_key IN (${placeholders}) AND trashed_at IS NULL`).bind(...allKeys).all();
+    for (const item of media.results || []) if (item.thumbnail_key) thumbnails.set(item.r2_key, `/upload/${item.thumbnail_key}`);
+  }
   const list = rows.map(row => {
     const view = memoView(row);
+    view.imgConfigs = imgConfigs(row.imgs, thumbnails);
     view.comments = commentsByMemo.get(Number(row.id)) || [];
     return view;
   });
@@ -526,6 +599,12 @@ async function getMemo(request, env, headers) {
     const latest = url.searchParams.get('latest');
     const comments = await env.DB.prepare(`SELECT * FROM comments WHERE memo_id=? ORDER BY created_at ${order}, id ${order}${latest ? ' LIMIT 5' : ''}`).bind(id).all();
     view.comments = (comments.results || []).map(commentView);
+    const keys = String(memo.imgs || '').split(',').filter(value => value.startsWith('/upload/')).map(value => value.slice('/upload/'.length));
+    if (keys.length) {
+      const media = await env.DB.prepare(`SELECT r2_key, thumbnail_key FROM media WHERE r2_key IN (${keys.map(() => '?').join(',')}) AND trashed_at IS NULL`).bind(...keys).all();
+      const thumbnails = new Map((media.results || []).filter(item => item.thumbnail_key).map(item => [item.r2_key, `/upload/${item.thumbnail_key}`]));
+      view.imgConfigs = imgConfigs(memo.imgs, thumbnails);
+    }
   } catch (error) {
     console.warn('Comments are temporarily unavailable for memo detail', error);
     view.comments = [];
@@ -636,8 +715,8 @@ async function rss(request, env) {
     const memo = memoView(row);
     const titleBase = rssText(memo.content).split('\n')[0] || `Memo #${memo.id}`;
     const title = `${memo.tags ? memo.tags.split(',').filter(Boolean).map(tag => `[${tag}]`).join('') : ''}${titleBase.slice(0, 20)}${titleBase.length > 20 ? '...' : ''}`;
-    const media = memo.imgs.split(',').filter(Boolean).map(image => `<p><img src="${escapeXml(image.startsWith('/') ? host + image : image)}" /></p>`).join('');
-    return `<item><guid>${host}/memo/${memo.id}</guid><title>${escapeXml(title)}</title><link>${host}/memo/${memo.id}</link><description><![CDATA[${rssText(memo.content)}${media}]]></description><pubDate>${new Date(memo.createdAt).toUTCString()}</pubDate></item>`;
+    const description = renderRssDescription(memo, host).replaceAll(']]>', ']]&gt;');
+    return `<item><guid>${host}/memo/${memo.id}</guid><title>${escapeXml(title)}</title><link>${host}/memo/${memo.id}</link><description><![CDATA[${description}]]></description><pubDate>${new Date(memo.createdAt).toUTCString()}</pubDate></item>`;
   }).join('');
   const feed = `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${escapeXml(config.title)}</title><link>${host}</link><description>${escapeXml(admin?.slogan || '')}</description><lastBuildDate>${new Date().toUTCString()}</lastBuildDate>${items}</channel></rss>`;
   return new Response(feed, { headers: { 'content-type': 'application/rss+xml; charset=UTF-8', 'cache-control': 'public, max-age=300' } });
@@ -733,7 +812,7 @@ async function commentIdentity(request, env) {
   if (!existing) headers.append('set-cookie', `moments_comment_id=${identity}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`);
   return { hash, headers };
 }
-async function addComment(request, env, headers) {
+async function addComment(request, env, headers, ctx) {
   const body = await readJson(request); if (!body?.memoId || !String(body.content || '').trim()) return json(fail('评论内容不能为空'), 400, headers);
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   if (!config.enableComment) return json(fail('评论未开启'), 403, headers);
@@ -752,8 +831,19 @@ async function addComment(request, env, headers) {
   const website = body.website ? validHttpUrl(String(body.website)) : null;
   if (body.website && !website) return json(fail('网站地址格式错误'), 400, headers);
   const username = user ? user.nickname : String(body.username || `匿名用户_${randomToken(2)}`).trim().slice(0, 80);
+  const replyTo = String(body.replyTo || '').slice(0, 80); const replyEmail = String(body.replyEmail || '').slice(0, 254);
   await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(content, String(body.replyTo || '').slice(0, 80), String(body.replyEmail || '').slice(0, 254), username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash).run();
+    .bind(content, replyTo, replyEmail, username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash).run();
+  if (config.enableEmail) {
+    const owner = await env.DB.prepare('SELECT nickname,email FROM users WHERE id=?').bind(memo.user_id).first();
+    const target = replyTo ? replyEmail : owner?.email;
+    if (target && config.emailFrom) {
+      const email = buildCommentEmail({ title: config.title, host: new URL(request.url).origin, poster: replyTo || owner.nickname, commenter: username || '匿名用户', content, memoId: memo.id, createdAt: new Date().toISOString().slice(0,19).replace('T',' ') });
+      const message = { from: config.emailFrom, to: target, ...email };
+      const task = sendNotification(env, config, message).catch(error => console.error('Email notification failed', error));
+      if (ctx?.waitUntil) ctx.waitUntil(task); else await task;
+    }
+  }
   // D1 trigger trg_comments_insert updates comment_count atomically.
   return json(ok({}), 200, { ...headers, ...Object.fromEntries(identity.headers) });
 }
@@ -837,12 +927,21 @@ async function externalInfo(request, env, headers) {
   return json(ok({ title, favicon }), 200, headers);
 }
 
-async function handleApi(request, env) {
+function requireBackupConfig(env, headers) {
+  const missing = ['CLOUDFLARE_ACCOUNT_ID','D1_DATABASE_ID','D1_BACKUP_API_TOKEN'].filter(key => !env[key]);
+  return missing.length ? json(fail(`备份功能未配置：${missing.join(', ')}`),503,headers) : null;
+}
+async function backupList(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; return json(ok({list:await listBackups(env),retentionDays:90}),200,headers); }
+async function backupCreate(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; return json(ok(await createD1Backup(env)),200,headers); }
+async function backupDownload(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const key=String(new URL(request.url).searchParams.get('key')||''); if(!key.startsWith(BACKUP_PREFIX)||key.includes('..'))return json(fail('备份名称无效'),400,headers); const object=await env.MEDIA.get(key); if(!object)return json(fail('备份不存在'),404,headers); return new Response(object.body,{headers:{'content-type':'application/sql','content-disposition':`attachment; filename="${key.split('/').pop()}"`}}); }
+async function backupRestore(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const body=await readJson(request); const key=String(body?.key||''); if(body?.confirmName!==key.split('/').pop())return json(fail('请输入完整备份名称确认'),400,headers); if(!(await passwordMatches(String(body?.password||''),access.user.password_hash)))return json(fail('管理员密码错误'),403,headers); await createD1Backup(env); return json(ok(await restoreD1Backup(env,key)),200,headers); }
+
+async function handleApi(request, env, ctx) {
   const url = new URL(request.url);
   const headers = corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   try {
-    if (url.pathname === '/api/health') return json(ok({ ok: true, service: 'moments-cf', phase: 6, database: Boolean(env.DB), media: Boolean(env.MEDIA) }), 200, headers);
+    if (url.pathname === '/api/health') return json(ok({ ok: true, service: 'moments-cf', phase: 7, database: Boolean(env.DB), media: Boolean(env.MEDIA) }), 200, headers);
     if (request.method !== 'POST') return json(fail('仅支持 POST'), 405, headers);
     if (url.pathname === '/api/admin/initialize') return await initialize(request, env, headers);
     if (url.pathname === '/api/user/login') return await login(request, env, headers);
@@ -855,6 +954,8 @@ async function handleApi(request, env) {
     if (url.pathname === '/api/sysConfig/save') return await saveConfig(request, env, headers);
     if (url.pathname === '/api/file/upload') return await upload(request, env, headers);
     if (url.pathname === '/api/file/exist') return await fileExists(request, env, headers);
+    if (url.pathname === '/api/file/direct/init') return await directUploadInit(request, env, headers);
+    if (url.pathname === '/api/file/direct/complete') return await directUploadComplete(request, env, headers);
     if (url.pathname === '/api/file/clean') return await cleanFiles(request, env, headers);
     if (url.pathname === '/api/file/trash/list') return await listTrash(request, env, headers);
     if (url.pathname === '/api/file/trash/restore') return await restoreTrash(request, env, headers);
@@ -867,7 +968,7 @@ async function handleApi(request, env) {
     if (url.pathname === '/api/memo/setPinned') return await setPinned(request, env, headers);
     if (url.pathname === '/api/memo/like') return await likeMemo(request, env, headers);
     if (url.pathname === '/api/tag/list') return await listTags(request, env, headers);
-    if (url.pathname === '/api/comment/add') return await addComment(request, env, headers);
+    if (url.pathname === '/api/comment/add') return await addComment(request, env, headers, ctx);
     if (url.pathname === '/api/comment/remove') return await removeComment(request, env, headers);
     if (url.pathname === '/api/friend/list') return await listFriends(request, env, headers);
     if (url.pathname === '/api/friend/add') return await addFriend(request, env, headers);
@@ -875,6 +976,10 @@ async function handleApi(request, env) {
     if (url.pathname === '/api/memo/getFaviconAndTitle') return await externalInfo(request, env, headers);
     if (url.pathname === '/api/memo/getDoubanBookInfo') return await doubanInfo(request, env, headers, 'book');
     if (url.pathname === '/api/memo/getDoubanMovieInfo') return await doubanInfo(request, env, headers, 'movie');
+    if (url.pathname === '/api/admin/backup/list') return await backupList(request, env, headers);
+    if (url.pathname === '/api/admin/backup/create') return await backupCreate(request, env, headers);
+    if (url.pathname === '/api/admin/backup/download') return await backupDownload(request, env, headers);
+    if (url.pathname === '/api/admin/backup/restore') return await backupRestore(request, env, headers);
 
     return json(fail('Cloudflare API migration endpoint not implemented yet', 404), 404, headers);
   } catch (error) {
@@ -906,7 +1011,7 @@ function parseRangeHeader(header, size) {
 async function serveMedia(request, env, key) {
   if (!env.MEDIA) return new Response('R2 binding is not configured', { status: 503 });
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
-  const media = await env.DB.prepare('SELECT id FROM media WHERE r2_key=? AND trashed_at IS NULL').bind(key).first();
+  const media = await env.DB.prepare("SELECT id FROM media WHERE (r2_key=? OR thumbnail_key=?) AND trashed_at IS NULL AND upload_state='ready'").bind(key, key).first();
   if (!media) return new Response('Not Found', { status: 404 });
   const head = await env.MEDIA.head(key);
   if (!head) return new Response('Not Found', { status: 404 });
@@ -938,9 +1043,11 @@ async function serveMedia(request, env, key) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname.startsWith('/api/')) return handleApi(request, env);
+    if (url.pathname === '/openapi.json') return json(openApiDocument(url.origin));
+    if (url.pathname === '/docs') return new Response(openApiHtml(), { headers: { 'content-type': 'text/html; charset=UTF-8' } });
+    if (url.pathname.startsWith('/api/')) return handleApi(request, env, ctx);
     if (url.pathname.startsWith('/upload/')) {
       const key = url.pathname.slice('/upload/'.length);
       return serveMedia(request, env, key);
@@ -949,4 +1056,5 @@ export default {
     if (!env.ASSETS) return new Response('Workers Assets binding is not configured', { status: 503 });
     return env.ASSETS.fetch(request);
   },
+  async scheduled(_controller, env, ctx) { ctx.waitUntil(createD1Backup(env).catch(error => console.error('Scheduled D1 backup failed', error))); },
 };

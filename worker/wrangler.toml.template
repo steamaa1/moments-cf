@@ -12,11 +12,17 @@ database_name = "__D1_DATABASE_NAME__"
 database_id = "__D1_DATABASE_ID__"
 migrations_dir = "migrations"
 
+[triggers]
+crons = ["0 3 * * 0"]
+
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "__R2_BUCKET_NAME__"
 
 [vars]
 CORS_ORIGIN = "*"
+CLOUDFLARE_ACCOUNT_ID = "__CLOUDFLARE_ACCOUNT_ID__"
+D1_DATABASE_ID = "__D1_DATABASE_ID__"
+R2_BUCKET_NAME = "__R2_BUCKET_NAME__"
 # Configure JWT_SECRET and INIT_SECRET as encrypted Worker Secrets.
 # Optional: PBKDF2_ITERATIONS (default 100000)

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Syntax-check the migration and release tools through Phase 6. */
+/** Syntax-check the migration and release tools through Phase 7. */
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,4 +25,4 @@ if (!python.error && python.status === 0) {
 }
 run(process.execPath, ['--check', 'scripts/release/preflight.mjs']);
 run(process.execPath, ['--check', 'scripts/release/smoke-test.mjs']);
-console.log('Phase 6 tooling syntax checks: PASS');
+console.log('Phase 7 tooling syntax checks: PASS');

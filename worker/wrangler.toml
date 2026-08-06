@@ -8,6 +8,9 @@ compatibility_date = "2026-08-06"
 directory = "../front/.output/public"
 not_found_handling = "single-page-application"
 
+[triggers]
+crons = ["0 3 * * 0"]
+
 [vars]
 CORS_ORIGIN = "*"
 # JWT_SECRET and INIT_SECRET are encrypted Worker secrets, set in the Dashboard.

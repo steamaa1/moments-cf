@@ -13,14 +13,11 @@
           @error="onStarsLoadFailed"
         />
       </NuxtLink>
-      <a
+      <div
         v-if="sysConfig.beiAnNo"
-        class="my-2 text-gray-500"
-        href="https://beian.miit.gov.cn/"
-        target="_blank"
-      >
-        {{ sysConfig.beiAnNo }}
-      </a>
+        class="beian-html my-2 text-gray-500 text-center"
+        v-html="sysConfig.beiAnNo"
+      />
     </div>
   </div>
 </template>
@@ -36,4 +33,7 @@ const onStarsLoadFailed = () => {
 };
 </script>
 
-<style scoped></style>
+<style scoped>
+.beian-html :deep(a) { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.beian-html :deep(img) { display: inline-block; max-height: 20px; width: auto; vertical-align: middle; }
+</style>

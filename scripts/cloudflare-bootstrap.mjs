@@ -126,6 +126,7 @@ export function renderConfig(template, values) {
     '__D1_DATABASE_NAME__': values.d1Name,
     '__D1_DATABASE_ID__': values.d1Id,
     '__R2_BUCKET_NAME__': values.r2Name,
+    '__CLOUDFLARE_ACCOUNT_ID__': values.accountId || 'set-as-worker-variable',
   };
   let result = template;
   for (const [placeholder, value] of Object.entries(replacements)) result = result.replaceAll(placeholder, value);
@@ -165,7 +166,7 @@ export async function bootstrap({ options, env = process.env, fetchImpl = fetch,
   ]);
   const d1Id = d1.database.uuid || d1.database.id;
   if (!d1Id) throw new Error('Cloudflare did not return a D1 database ID.');
-  const config = renderConfig(template, { workerName: options.workerName, d1Name: options.d1Name, d1Id, r2Name: options.r2Name });
+  const config = renderConfig(template, { workerName: options.workerName, d1Name: options.d1Name, d1Id, r2Name: options.r2Name, accountId });
   await mkdir(dirname(targetConfig), { recursive: true });
   await writeFile(targetConfig, config, 'utf8');
   await writeFile(targetState, JSON.stringify({ version: 1, workerName: options.workerName, d1: { name: options.d1Name, id: d1Id, created: d1.created }, r2: { name: options.r2Name, created: r2.created }, createdAt: new Date().toISOString() }, null, 2) + '\n', 'utf8');

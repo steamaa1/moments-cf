@@ -75,7 +75,12 @@ export type SysConfigVO = {
     maxCommentLength: number,
     memoMaxHeight: number,
     commentOrder: 'desc' | 'asc',
-    timeFormat: 'timeAgo' | 'time'
+    timeFormat: 'timeAgo' | 'time',
+    enableEmail: boolean,
+    smtpHost: string,
+    smtpPort: '465' | '587',
+    smtpUsername: string,
+    emailFrom: string
 }
 
 

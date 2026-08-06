@@ -7,7 +7,7 @@ import { bootstrap, parseArgs, renderConfig } from '../scripts/cloudflare-bootst
 assert.equal(parseArgs([]).deploy, false);
 assert.equal(parseArgs(['--deploy', '--d1-name', 'demo-db']).d1Name, 'demo-db');
 assert.throws(() => parseArgs(['--unknown']), /Unknown option/);
-assert.match(renderConfig('id=__D1_DATABASE_ID__', { workerName: 'x', d1Name: 'x', d1Id: 'abc', r2Name: 'x' }), /abc/);
+assert.match(renderConfig('id=__D1_DATABASE_ID__ account=__CLOUDFLARE_ACCOUNT_ID__', { workerName: 'x', d1Name: 'x', d1Id: 'abc', r2Name: 'x', accountId: 'account' }), /abc account=account/);
 
 const calls = [];
 const fetchImpl = async (url, init = {}) => {

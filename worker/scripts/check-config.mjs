@@ -6,6 +6,7 @@ const memoSchema = await readFile(new URL('../migrations/0002_memos.sql', import
 const phase4Schema = await readFile(new URL('../migrations/0003_comments_friends.sql', import.meta.url), 'utf8');
 const phase5Schema = await readFile(new URL('../migrations/0004_like_counters.sql', import.meta.url), 'utf8');
 const phase6Schema = await readFile(new URL('../migrations/0005_phase6_consistency_trash.sql', import.meta.url), 'utf8');
+const phase7Schema = await readFile(new URL('../migrations/0006_phase7_media.sql', import.meta.url), 'utf8');
 const template = await readFile(new URL('../wrangler.toml.template', import.meta.url), 'utf8');
 const required = [
   'name = "moments-cf"',
@@ -41,4 +42,10 @@ for (const statement of ['UPDATE memos', 'CREATE TRIGGER IF NOT EXISTS trg_memo_
 for (const statement of ['CREATE TRIGGER IF NOT EXISTS trg_comments_insert', 'CREATE TRIGGER IF NOT EXISTS trg_comments_delete', 'ALTER TABLE media ADD COLUMN trashed_at']) {
   if (!phase6Schema.includes(statement)) throw new Error(`Phase 6 schema is missing: ${statement}`);
 }
-console.log('Phase 6 Worker configuration guard: PASS');
+for (const statement of ['ALTER TABLE media ADD COLUMN sha256', 'ALTER TABLE media ADD COLUMN thumbnail_key', 'ALTER TABLE media ADD COLUMN upload_state']) {
+  if (!phase7Schema.includes(statement)) throw new Error(`Phase 7 schema is missing: ${statement}`);
+}
+for (const value of ['crons = ["0 3 * * 0"]', 'CLOUDFLARE_ACCOUNT_ID = "__CLOUDFLARE_ACCOUNT_ID__"', 'R2_BUCKET_NAME = "__R2_BUCKET_NAME__"']) {
+  if (!template.includes(value)) throw new Error(`Phase 7 Wrangler template is missing: ${value}`);
+}
+console.log('Phase 7 Worker configuration guard: PASS');

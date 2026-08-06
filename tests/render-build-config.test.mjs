@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 
 const workerDir = new URL('../worker/', import.meta.url);
 const output = new URL('../worker/wrangler.build.toml', import.meta.url);
-const env = { ...process.env, MOMENTS_WORKER_NAME: 'test-worker', MOMENTS_D1_NAME: 'test-db', MOMENTS_R2_BUCKET: 'test-media' };
+const env = { ...process.env, MOMENTS_WORKER_NAME: 'test-worker', MOMENTS_D1_NAME: 'test-db', MOMENTS_R2_BUCKET: 'test-media', CLOUDFLARE_ACCOUNT_ID: 'test-account' };
 const processResult = spawn(process.execPath, ['scripts/render-build-config.mjs', 'test-d1-id'], { cwd: workerDir, env });
 let stderr = '';
 processResult.stderr.on('data', value => { stderr += value; });
@@ -14,5 +14,7 @@ const config = await readFile(output, 'utf8');
 assert.match(config, /name = "test-worker"/);
 assert.match(config, /database_id = "test-d1-id"/);
 assert.match(config, /bucket_name = "test-media"/);
+assert.match(config, /CLOUDFLARE_ACCOUNT_ID = "test-account"/);
+assert.match(config, /crons = \["0 3 \* \* 0"\]/);
 await rm(output);
 console.log('Cloudflare Builds renderer tests: PASS');

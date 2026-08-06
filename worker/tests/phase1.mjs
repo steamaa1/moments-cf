@@ -12,7 +12,7 @@ const health = await worker.fetch(new Request('https://moments.example.com/api/h
 }), baseEnv);
 expect(health.status === 200, 'health endpoint must return 200');
 const healthData = await health.json();
-expect(healthData.code === 0 && healthData.data.phase === 6, 'health must report Phase 6');
+expect(healthData.code === 0 && healthData.data.phase === 7, 'health must report Phase 7');
 expect(health.headers.get('access-control-allow-origin') === 'https://moments.example.com', 'health CORS origin mismatch');
 
 const options = await worker.fetch(new Request('https://moments.example.com/api/health', { method: 'OPTIONS' }), baseEnv);
@@ -67,7 +67,7 @@ function makeStatement(sql, values = []) {
         const user = state.users.find(item => item.id === Number(values[7]));
         Object.assign(user, { nickname: values[0], avatar_url: values[1], slogan: values[2], cover_url: values[3], email: values[4], password_hash: values[5], token_version: values[6] });
       } else if (sql.startsWith('INSERT INTO media')) {
-        state.media.push({ owner_id: values[0], r2_key: values[1], original_filename: values[2], content_type: values[3], size_bytes: values[4] });
+        state.media.push({ owner_id: values[0], r2_key: values[1], original_filename: values[2], content_type: values[3], size_bytes: values[4], sha256: values[5], thumbnail_key: values[6], upload_state: 'ready' });
       }
       return { success: true };
     },
@@ -142,6 +142,7 @@ expect(publicConfigBody.data.title === '云梦川的朋友圈', 'public config m
 
 const form = new FormData();
 form.append('files', new File(['image-bytes'], 'avatar.webp', { type: 'image/webp' }));
+form.append('sha256', 'a'.repeat(64));
 const upload = await worker.fetch(new Request('https://moments.example.com/api/file/upload', { method: 'POST', headers: { 'x-api-token': loginBody.data.token }, body: form }), integrationEnv);
 const uploadBody = await upload.json();
 expect(upload.status === 200 && uploadBody.data.length === 1, 'authenticated upload must succeed');
