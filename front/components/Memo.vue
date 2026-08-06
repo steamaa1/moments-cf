@@ -59,7 +59,7 @@
             class="text-[#576b95] text-sm my-1 cursor-pointer"
             @click="doShowMore"
           >
-            {{ getMemoMaxHeightStyle() === "" ? "收起" : "全文" }}
+            {{ showMoreClicked ? "收起" : "全文" }}
           </div>
           <div v-if="tags.length > 0" class="flex gap-2 mt-2">
             <span v-for="(tag, index) in tags" :key="`tag-${index}`">
@@ -430,20 +430,53 @@ const likeMemo = async (id: number) => {
   }
 };
 
+const updateCollapseState = async () => {
+  await nextTick();
+
+  const maxHeight = Number(sysConfig.value.memoMaxHeight || 0);
+  const element = contentRef.value;
+  if (isDetailPage.value || !element || maxHeight <= 0) {
+    showMore.value = false;
+    showMoreClicked.value = false;
+    return;
+  }
+
+  // scrollHeight 是内容真实高度；clientHeight/offsetHeight 会受 max-height 裁剪影响。
+  showMore.value = element.scrollHeight > maxHeight + 1;
+  if (!showMore.value) {
+    showMoreClicked.value = false;
+  }
+};
+
+const onContentImageLoad = () => {
+  // 图片异步加载后高度可能变化，重新判断是否真正溢出。
+  void updateCollapseState();
+};
+
+let resizeObserver: ResizeObserver | undefined;
 onMounted(() => {
   const likes = JSON.parse(
     localStorage.getItem("likeMemos") || "[]"
   ) as Array<number>;
-  liked.value = likes.findIndex((r) => r === item.value.id) >= 0;
-  if (!isDetailPage.value) {
-    setTimeout(() => {
-      const { height } = useElementSize(contentRef.value);
-      if (height.value > sysConfig.value.memoMaxHeight) {
-        showMore.value = true;
-      }
-    }, 20);
+  liked.value = likes.includes(item.value.id);
+
+  void updateCollapseState();
+  if (contentRef.value && typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(() => void updateCollapseState());
+    resizeObserver.observe(contentRef.value);
+    contentRef.value.querySelectorAll("img").forEach((image) => {
+      image.addEventListener("load", onContentImageLoad, { once: true });
+      image.addEventListener("error", onContentImageLoad, { once: true });
+    });
   }
 });
+
+watch(
+  () => [item.value.content, item.value.imgs, sysConfig.value.memoMaxHeight],
+  () => void updateCollapseState(),
+);
+
+onBeforeUnmount(() => resizeObserver?.disconnect());
 
 const content = computed(() => {
   if (item.value.content && item.value.content.length > 0) {

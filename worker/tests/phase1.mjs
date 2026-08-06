@@ -12,7 +12,7 @@ const health = await worker.fetch(new Request('https://moments.example.com/api/h
 }), baseEnv);
 expect(health.status === 200, 'health endpoint must return 200');
 const healthData = await health.json();
-expect(healthData.code === 0 && healthData.data.phase === 2, 'health must report Phase 2');
+expect(healthData.code === 0 && healthData.data.phase === 4, 'health must report Phase 4');
 expect(health.headers.get('access-control-allow-origin') === 'https://moments.example.com', 'health CORS origin mismatch');
 
 const options = await worker.fetch(new Request('https://moments.example.com/api/health', { method: 'OPTIONS' }), baseEnv);
@@ -169,6 +169,7 @@ const memoReadDb = {
         return null;
       },
       async all() {
+        if (sql.startsWith('SELECT * FROM comments')) throw new Error('no such table: comments');
         if (sql.includes('FROM memos')) return { results: [memoRow] };
         return { results: [] };
       },
@@ -181,6 +182,7 @@ const listResponse = await worker.fetch(new Request('https://moments.example.com
 const listBody = await listResponse.json();
 expect(listResponse.status === 200 && listBody.data.list.length === 1, 'public memo list must return visible memo');
 expect(listBody.data.list[0].imgConfigs[0].url === '/upload/media/demo.webp', 'memo list must build image configs');
+expect(listBody.data.list[0].comments.length === 0, 'memo list must survive an unavailable comments table');
 
 const rssResponse = await worker.fetch(new Request('https://moments.example.com/rss'), { ASSETS: assets, DB: memoReadDb });
 const rssText = await rssResponse.text();

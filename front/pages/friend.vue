@@ -169,7 +169,7 @@ const addFriend = async () => {
     showAddModal.value = false;
     friend.value = { ...DEFAULT_FRIEND };
   } catch (error) {
-    toast.error(`${message}` || "添加友情链接失败");
+    toast.error(error instanceof Error ? error.message : "添加友情链接失败");
   }
 };
 
@@ -207,7 +207,7 @@ const deleteFriend = async (id: number) => {
     await getFriendList();
     showDeleteModal.value = false;
   } catch (error) {
-    toast.error(`${message}` || "删除友情链接失败");
+    toast.error(error instanceof Error ? error.message : "删除友情链接失败");
   }
 };
 

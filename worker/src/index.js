@@ -233,6 +233,9 @@ async function getConfig(request, env, headers, full = false) {
   }
   const row = await requireBinding(env, 'DB').prepare('SELECT content FROM sys_config WHERE id = 1').first();
   const config = parseConfig(row?.content);
+  // Cloudflare edition always uses the authenticated /api/file/upload -> R2 path.
+  // Never let legacy S3 settings switch the frontend to an unsupported pre-signed endpoint.
+  config.enableS3 = false;
   if (!full) {
     delete config.googleSecretKey;
     delete config.smtpPassword;
@@ -285,6 +288,58 @@ function sqliteTime(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 19).replace('T', ' ');
 }
+
+async function register(request, env, headers) {
+  const body = await readJson(request);
+  const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
+  if (!config.enableRegister) return json(fail('当前未开启注册用户'), 403, headers);
+  const username = String(body?.username || '').trim();
+  const password = String(body?.password || '');
+  if (username.length < 3 || username.length > 40 || !/^[A-Za-z0-9_-]+$/.test(username)) return json(fail('用户名须为 3-40 位字母、数字、下划线或连字符'), 400, headers);
+  if (password.length < 8) return json(fail('密码至少 8 位'), 400, headers);
+  if (password !== String(body?.repeatPassword || '')) return json(fail('两次密码不一致'), 400, headers);
+  if (await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first()) return json(fail('用户名已存在'), 409, headers);
+  const hash = await passwordHash(password, pbkdf2Iterations(env.PBKDF2_ITERATIONS));
+  await env.DB.prepare('INSERT INTO users (username, nickname, password_hash, slogan) VALUES (?, ?, ?, ?)')
+    .bind(username, username, hash, '记录生活的每一个瞬间。').run();
+  return json(ok({}), 201, headers);
+}
+async function fileExists(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  const filename = new URL(request.url).searchParams.get('filename');
+  if (!filename) return json(fail('filename 不能为空'), 400, headers);
+  const row = await env.DB.prepare('SELECT r2_key FROM media WHERE owner_id=? AND (r2_key=? OR original_filename=?) LIMIT 1').bind(access.user.id, filename, filename).first();
+  return json(ok({ exist: Boolean(row), path: row ? `/upload/${row.r2_key}` : '' }), 200, headers);
+}
+function collectUploadKeys(value, target) {
+  const pattern = /\/upload\/([^\s"'<>),]+)/g;
+  for (const match of String(value || '').matchAll(pattern)) target.add(decodeURIComponent(match[1]));
+}
+async function cleanFiles(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  if (!env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
+  const referenced = new Set();
+  const [memos, users, configRow, mediaRows] = await Promise.all([
+    env.DB.prepare('SELECT imgs, ext FROM memos WHERE user_id=?').bind(access.user.id).all(),
+    env.DB.prepare('SELECT avatar_url, cover_url FROM users WHERE id=?').bind(access.user.id).all(),
+    Number(access.user.id) === 1 ? env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : Promise.resolve(null),
+    env.DB.prepare('SELECT id, r2_key FROM media WHERE owner_id=?').bind(access.user.id).all(),
+  ]);
+  for (const row of memos.results || []) { collectUploadKeys(row.imgs, referenced); collectUploadKeys(row.ext, referenced); }
+  for (const row of users.results || []) { collectUploadKeys(row.avatar_url, referenced); collectUploadKeys(row.cover_url, referenced); }
+  collectUploadKeys(configRow?.content, referenced);
+  let num = 0;
+  for (const media of mediaRows.results || []) {
+    if (referenced.has(media.r2_key)) continue;
+    await env.MEDIA.delete(media.r2_key);
+    await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=?').bind(media.id, access.user.id).run();
+    num += 1;
+  }
+  return json(ok({ num }), 200, headers);
+}
+
 function intParam(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isInteger(parsed) ? parsed : fallback;
@@ -362,8 +417,15 @@ async function listMemos(request, env, headers) {
   const list = [];
   for (const row of result.results || []) {
     const view = memoView(row);
-    const comments = await env.DB.prepare('SELECT * FROM comments WHERE memo_id=? ORDER BY created_at DESC LIMIT 5').bind(row.id).all();
-    view.comments = (comments.results || []).map(commentView);
+    try {
+      const comments = await env.DB.prepare('SELECT * FROM comments WHERE memo_id=? ORDER BY created_at DESC LIMIT 5').bind(row.id).all();
+      view.comments = (comments.results || []).map(commentView);
+    } catch (error) {
+      // During a rolling deployment, 0003_comments_friends.sql might not be applied yet.
+      // Keep the public feed usable; the deployment script applies migrations before deploy.
+      console.warn('Comments are temporarily unavailable for memo list', error);
+      view.comments = [];
+    }
     list.push(view);
   }
   return json(ok({ list, total, hasNext: page * size < total }), 200, headers);
@@ -376,8 +438,13 @@ async function getMemo(request, env, headers) {
   if (!memo) return json(fail('动态不存在'), 404, headers);
   if (!(await canReadMemo(memo, await currentUser(request, env)))) return json(fail('暂无权限查看'), 403, headers);
   const view = memoView(memo);
-  const comments = await env.DB.prepare('SELECT * FROM comments WHERE memo_id=? ORDER BY created_at DESC').bind(id).all();
-  view.comments = (comments.results || []).map(commentView);
+  try {
+    const comments = await env.DB.prepare('SELECT * FROM comments WHERE memo_id=? ORDER BY created_at DESC').bind(id).all();
+    view.comments = (comments.results || []).map(commentView);
+  } catch (error) {
+    console.warn('Comments are temporarily unavailable for memo detail', error);
+    view.comments = [];
+  }
   return json(ok(view), 200, headers);
 }
 async function verifyMemoMedia(imgs, user, env) {
@@ -493,10 +560,16 @@ async function addComment(request, env, headers) {
   const body = await readJson(request); if (!body?.memoId || !String(body.content || '').trim()) return json(fail('评论内容不能为空'), 400, headers);
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   if (!config.enableComment) return json(fail('评论未开启'), 403, headers);
-  const content = String(body.content).trim().slice(0, Math.max(1, Number(config.maxCommentLength) || 300));
+  const content = String(body.content).trim();
+  const maxCommentLength = Math.max(1, Number(config.maxCommentLength) || 300);
+  if (content.length > maxCommentLength) return json(fail(`评论字数超过限制长度:${maxCommentLength}`), 400, headers);
   const memo = await env.DB.prepare('SELECT * FROM memos WHERE id=?').bind(intParam(body.memoId)).first();
   if (!memo || !(await canReadMemo(memo, await currentUser(request, env)))) return json(fail('动态不存在或不可评论'), 404, headers);
   const user = await currentUser(request, env); const identity = await commentIdentity(request, env);
+  if (!user) {
+    const recent = await env.DB.prepare("SELECT COUNT(*) AS total FROM comments WHERE identity_hash=? AND created_at >= datetime('now', '-1 minute')").bind(identity.hash).first();
+    if (Number(recent?.total || 0) >= 5) return json(fail('评论过于频繁，请稍后再试'), 429, { ...headers, ...Object.fromEntries(identity.headers) });
+  }
   const website = body.website ? validHttpUrl(String(body.website)) : null;
   if (body.website && !website) return json(fail('网站地址格式错误'), 400, headers);
   const username = user ? user.nickname : String(body.username || `匿名用户_${randomToken(2)}`).trim().slice(0, 80);
@@ -522,7 +595,9 @@ async function addFriend(request, env, headers) {
 }
 async function deleteFriend(request, env, headers) { const access = await requireUser(request, env, headers, true); if (access.response) return access.response; await env.DB.prepare('DELETE FROM friends WHERE id=?').bind(intParam(new URL(request.url).searchParams.get('id'))).run(); return json(ok({}), 200, headers); }
 function forbiddenHost(host) { const h = host.toLowerCase(); if (h === 'localhost' || h.endsWith('.localhost') || h === '::1') return true; if (/^127\.|^10\.|^192\.168\.|^169\.254\./.test(h)) return true; const match = h.match(/^172\.(\d+)\./); return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31); }
-async function externalInfo(request, _env, headers) {
+async function externalInfo(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
   const target = validHttpUrl(new URL(request.url).searchParams.get('url')); if (!target || forbiddenHost(target.hostname)) return json(fail('不允许的链接地址'), 400, headers);
   const response = await fetch(target.href, { redirect: 'manual', headers: { 'user-agent': 'Moments-CF/1.0' }, signal: AbortSignal.timeout(5000) });
   if (response.status >= 300 && response.status < 400) return json(fail('不允许重定向链接'), 400, headers);
@@ -538,10 +613,11 @@ async function handleApi(request, env) {
   const headers = corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   try {
-    if (url.pathname === '/api/health') return json(ok({ ok: true, service: 'moments-cf', phase: 2, database: Boolean(env.DB), media: Boolean(env.MEDIA) }), 200, headers);
+    if (url.pathname === '/api/health') return json(ok({ ok: true, service: 'moments-cf', phase: 4, database: Boolean(env.DB), media: Boolean(env.MEDIA) }), 200, headers);
     if (request.method !== 'POST') return json(fail('仅支持 POST'), 405, headers);
     if (url.pathname === '/api/admin/initialize') return initialize(request, env, headers);
     if (url.pathname === '/api/user/login') return login(request, env, headers);
+    if (url.pathname === '/api/user/reg') return register(request, env, headers);
     if (url.pathname === '/api/user/profile') return getProfile(request, env, headers);
     if (url.pathname.startsWith('/api/user/profile/')) return getProfile(request, env, headers, url.pathname.slice('/api/user/profile/'.length));
     if (url.pathname === '/api/user/saveProfile') return saveProfile(request, env, headers);
@@ -549,6 +625,9 @@ async function handleApi(request, env) {
     if (url.pathname === '/api/sysConfig/getFull') return getConfig(request, env, headers, true);
     if (url.pathname === '/api/sysConfig/save') return saveConfig(request, env, headers);
     if (url.pathname === '/api/file/upload') return upload(request, env, headers);
+    if (url.pathname === '/api/file/exist') return fileExists(request, env, headers);
+    if (url.pathname === '/api/file/clean') return cleanFiles(request, env, headers);
+    if (url.pathname === '/api/file/s3PreSigned') return json(fail('Cloudflare 版本使用 R2 直连上传，请关闭旧 S3 设置'), 400, headers);
     if (url.pathname === '/api/memo/list') return listMemos(request, env, headers);
     if (url.pathname === '/api/memo/get') return getMemo(request, env, headers);
     if (url.pathname === '/api/memo/save') return saveMemo(request, env, headers);
