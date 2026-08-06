@@ -46,7 +46,7 @@ expect(appAsset.status === 200 && (await appAsset.text()) === 'asset:/memo/123',
 const missingR2 = await worker.fetch(new Request('https://moments.example.com/upload/2026/cover.webp'), baseEnv);
 expect(missingR2.status === 503, 'unbound R2 must return 503');
 const rss = await worker.fetch(new Request('https://moments.example.com/rss'), baseEnv);
-expect(rss.status === 501, 'RSS placeholder must return 501');
+expect(rss.status === 503, 'RSS without D1 must return 503');
 
 // In-memory D1/R2 doubles: exercise initialize → login → profile → config → upload.
 const state = { users: [], config: null, media: [] };
@@ -148,3 +148,42 @@ expect(upload.status === 200 && uploadBody.data.length === 1, 'authenticated upl
 expect(uploaded.length === 1 && state.media.length === 1, 'upload must write R2 and media record');
 
 console.log('Phase 2 integration API tests: PASS');
+
+const memoRow = {
+  id: 7, content: '第一条动态', imgs: '/upload/media/demo.webp', fav_count: 2, comment_count: 0,
+  user_id: 1, created_at: '2026-08-06 06:00:00', updated_at: '2026-08-06 06:00:00',
+  location: '郴州', external_url: '', external_title: '', external_favicon: '/favicon.png',
+  pinned: 1, ext: '{}', show_type: 1, tags: '日常,测试,', username: 'admin', nickname: '云梦川',
+  avatar_url: '/avatar.webp', slogan: '测试签名', cover_url: '/cover.webp',
+};
+const DEFAULT_CONFIG_FOR_TEST = { rss: '', title: '测试朋友圈' };
+const memoReadDb = {
+  prepare(sql) {
+    return {
+      bind() { return this; },
+      async first() {
+        if (sql.includes('COUNT(*) AS total')) return { total: 1 };
+        if (sql.startsWith('SELECT content FROM sys_config')) return { content: JSON.stringify({ ...DEFAULT_CONFIG_FOR_TEST, title: '测试朋友圈' }) };
+        if (sql.startsWith('SELECT * FROM users WHERE id=1')) return { ...memoRow };
+        if (sql.includes('WHERE m.id =')) return memoRow;
+        return null;
+      },
+      async all() {
+        if (sql.includes('FROM memos')) return { results: [memoRow] };
+        return { results: [] };
+      },
+    };
+  },
+};
+const listResponse = await worker.fetch(new Request('https://moments.example.com/api/memo/list', {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page: 1, size: 10, tag: '日常' }),
+}), { ASSETS: assets, DB: memoReadDb, CORS_ORIGIN: '*' });
+const listBody = await listResponse.json();
+expect(listResponse.status === 200 && listBody.data.list.length === 1, 'public memo list must return visible memo');
+expect(listBody.data.list[0].imgConfigs[0].url === '/upload/media/demo.webp', 'memo list must build image configs');
+
+const rssResponse = await worker.fetch(new Request('https://moments.example.com/rss'), { ASSETS: assets, DB: memoReadDb });
+const rssText = await rssResponse.text();
+expect(rssResponse.status === 200 && rssText.includes('<rss version="2.0">') && rssText.includes('第一条动态'), 'RSS must render public memos');
+
+console.log('Phase 3 memo list and RSS tests: PASS');

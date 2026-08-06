@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 const config = await readFile(new URL('../wrangler.toml', import.meta.url), 'utf8');
 const schema = await readFile(new URL('../migrations/0001_schema.sql', import.meta.url), 'utf8');
+const memoSchema = await readFile(new URL('../migrations/0002_memos.sql', import.meta.url), 'utf8');
 const required = [
   'name = "moments-cf"',
   'main = "src/index.js"',
@@ -29,4 +30,7 @@ for (const secret of ['JWT_SECRET', 'INIT_SECRET']) {
   }
 }
 
-console.log('Phase 2 Worker configuration guard: PASS');
+for (const table of ['CREATE TABLE IF NOT EXISTS memos', 'CREATE TABLE IF NOT EXISTS memo_likes']) {
+  if (!memoSchema.includes(table)) throw new Error(`Phase 3 schema is missing: ${table}`);
+}
+console.log('Phase 3 Worker configuration guard: PASS');

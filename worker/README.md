@@ -1,6 +1,6 @@
 # Moments Cloudflare Worker
 
-当前是 **Phase 2**：Cloudflare Workers API 壳已绑定 D1 与 R2，并实现首次初始化、登录鉴权、用户资料、系统配置与基础文件上传；动态、评论、标签、RSS 等业务将在后续阶段迁移。
+当前是 **Phase 3**：在 Phase 2 的初始化、认证、资料、配置与上传基础上，已实现动态、标签、置顶、访客点赞去重与 RSS；评论、友链与外部内容抓取将在后续阶段迁移。
 
 ## 资源绑定
 
@@ -21,7 +21,7 @@
 
 可选变量：`PBKDF2_ITERATIONS`，默认 `100000`。不要把任何 Secret 写入 `wrangler.toml` 或 Git。
 
-## Phase 2 API
+## Phase 3 API
 
 所有 API 保持 Moments 原本的 `{ code, message?, data }` 响应格式。登录后的请求继续兼容 `x-api-token`。
 
@@ -37,6 +37,14 @@
 | `/api/sysConfig/getFull` | POST | 管理员完整配置 |
 | `/api/sysConfig/save` | POST | 管理员保存配置 |
 | `/api/file/upload` | POST | 登录后上传 `files` 表单字段到 R2，单文件最大 25MB |
+| `/api/memo/list` | POST | 动态分页列表、标签/用户/时间筛选 |
+| `/api/memo/get?id=` | POST | 动态详情 |
+| `/api/memo/save` | POST | 登录后发布或编辑动态 |
+| `/api/memo/remove?id=` | POST | 作者或管理员删除动态 |
+| `/api/memo/setPinned?id=` | POST | 管理员切换唯一置顶动态 |
+| `/api/memo/like?id=` | POST | 匿名访客点赞；同一浏览器去重 |
+| `/api/tag/list` | POST | 当前登录用户的标签列表 |
+| `/rss` | GET | 最近 15 条公开动态 RSS
 
 ## D1 Migration
 
@@ -44,6 +52,7 @@
 
 ```text
 worker/migrations/0001_schema.sql
+worker/migrations/0002_memos.sql
 ```
 
 在 Workers Builds 自动部署模式下，Migration 不会自动执行；需通过 Dashboard SQL Console 手动粘贴执行，或后续配置专门的受控 migration 工作流。
