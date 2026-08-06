@@ -1,6 +1,6 @@
-# Moments Cloudflare Worker — Phase 7
+# Moments Cloudflare Worker
 
-单个 Worker 提供 API、Nuxt Workers Assets、RSS、OpenAPI 和私有 R2 媒体代理；D1 保存结构化数据。
+单个 Worker 提供 API、Nuxt Workers Assets、RSS 和私有 R2 媒体代理；D1 保存结构化数据。
 
 ## 部署
 
@@ -12,7 +12,7 @@ Cloudflare Workers Builds：
 | Build command | `npm run build:cf` |
 | Deploy command | `npm run deploy:cf` |
 
-部署脚本会按名称查询 `moments-db`，应用 `0001`～`0006` Migration，设置 R2 CORS，再部署 Worker。计划任务为每周日 `03:00 UTC`。
+部署脚本会按名称查询 `moments-db`，应用 `0001`～`0007` Migration，设置 R2 CORS，再部署 Worker。计划任务为每周日 `03:00 UTC`。
 
 ## Bindings 与 Variables
 
@@ -66,9 +66,10 @@ Host、端口、用户名和发件地址在管理员设置页保存；密码/授
 0004_like_counters.sql
 0005_phase6_consistency_trash.sql
 0006_phase7_media.sql
+0007_migration_runs.sql
 ```
 
-`0006` 增加 `sha256`、`thumbnail_key`、`upload_state` 及索引。
+`0006` 增加 `sha256`、`thumbnail_key`、`upload_state` 及索引；`0007` 记录迁移包状态，防止重复导入。
 
 ## 检查
 

@@ -43,7 +43,8 @@ const DEFAULT_CONFIG = {
   s3: { thumbnailSuffix: '' },
 };
 const ALLOWED_MEDIA_TYPES = new Set([
-  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/x-icon',
+  'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/flac', 'audio/mp4',
   'video/mp4', 'video/webm', 'video/quicktime',
 ]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -1051,6 +1052,169 @@ async function backupCreate(request, env, headers) { const access=await requireU
 async function backupDownload(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const key=String(new URL(request.url).searchParams.get('key')||''); if(!key.startsWith(BACKUP_PREFIX)||key.includes('..'))return json(fail('备份名称无效'),400,headers); const object=await env.MEDIA.get(key); if(!object)return json(fail('备份不存在'),404,headers); return new Response(object.body,{headers:{'content-type':'application/sql','content-disposition':`attachment; filename="${key.split('/').pop()}"`}}); }
 async function backupRestore(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const body=await readJson(request); const key=String(body?.key||''); if(body?.confirmName!==key.split('/').pop())return json(fail('请输入完整备份名称确认'),400,headers); if(!(await passwordMatches(String(body?.password||''),access.user.password_hash)))return json(fail('管理员密码错误'),403,headers); await createD1Backup(env); return json(ok(await restoreD1Backup(env,key)),200,headers); }
 
+async function migrationPreflight(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const manifest = body?.manifest;
+  if (!manifest || manifest.format !== 'moments-cf-migration' || Number(manifest.version) !== 1) return json(fail('迁移包格式或版本不受支持'), 400, headers);
+  const packageId = String(manifest.packageId || '');
+  if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('迁移包缺少有效 packageId'), 400, headers);
+  const existingRun = await env.DB.prepare('SELECT status, summary FROM migration_runs WHERE package_id=?').bind(packageId).first();
+  const counts = {};
+  for (const [name, value] of Object.entries(manifest.tables || {})) counts[name] = Number(value) || 0;
+  const userCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM users').first();
+  const memoCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM memos').first();
+  const backupAvailable = Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.D1_DATABASE_ID && env.D1_BACKUP_API_TOKEN);
+  return json(ok({ packageId, existingRun, manifest: { tables: counts, mediaCount: Number(manifest.mediaCount) || 0, mediaBytes: Number(manifest.mediaBytes) || 0 }, destination: { users: Number(userCount?.count || 0), memos: Number(memoCount?.count || 0) }, backupAvailable, warnings: ['旧用户密码不会迁移，管理员密码保留本站当前密码', existingRun?.status === 'completed' ? '该迁移包已经导入完成，不能重复导入' : existingRun?.status === 'importing' ? '检测到未完成迁移，将从已记录的断点继续' : '导入过程中请保持页面开启，避免中断'] }), 200, headers);
+}
+function migrationText(value, max = 2000) { return String(value ?? '').slice(0, max); }
+function migrationTime(value) { return sqliteTime(value) || sqliteTime(); }
+async function migrationMapping(env, packageId, kind, sourceId) {
+  return env.DB.prepare('SELECT target_id FROM migration_items WHERE package_id=? AND kind=? AND source_id=?').bind(packageId, kind, String(sourceId)).first();
+}
+async function saveMigrationMapping(env, packageId, kind, sourceId, targetId = null) {
+  await env.DB.prepare('INSERT OR IGNORE INTO migration_items (package_id,kind,source_id,target_id) VALUES (?,?,?,?)').bind(packageId, kind, String(sourceId), targetId).run();
+}
+async function migrationPrepare(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  if (!body?.password || !(await passwordMatches(String(body.password), access.user.password_hash))) return json(fail('管理员密码错误'), 403, headers);
+  const packageId = String(body?.packageId || '');
+  if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
+  const existing = await env.DB.prepare('SELECT status FROM migration_runs WHERE package_id=?').bind(packageId).first();
+  if (existing?.status === 'completed') return json(fail('该迁移包已经导入完成'), 409, headers);
+  if (existing?.status === 'importing') return json(ok({ packageId, resumed: true }), 200, headers);
+  const missing = requireBackupConfig(env, headers);
+  if (missing) return missing;
+  const backup = await createD1Backup(env);
+  await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', '{}') ON CONFLICT(package_id) DO UPDATE SET status='importing', summary='{}', updated_at=CURRENT_TIMESTAMP").bind(packageId).run();
+  return json(ok({ backup, packageId, resumed: false }), 200, headers);
+}
+async function migrationImport(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const packageId = String(body?.packageId || '');
+  if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
+  const run = await env.DB.prepare('SELECT status FROM migration_runs WHERE package_id=?').bind(packageId).first();
+  if (!run || run.status !== 'importing') return json(fail('迁移未准备或已经结束'), 409, headers);
+  const kind = String(body?.kind || '');
+  const rows = Array.isArray(body?.rows) ? body.rows.slice(0, 50) : [];
+  if (!['users', 'memos', 'comments', 'friends', 'config'].includes(kind) || !rows.length) return json(fail('迁移批次参数错误'), 400, headers);
+  if (kind === 'config') {
+    if (await migrationMapping(env, packageId, 'config', '1')) return json(ok({ imported: 0 }), 200, headers);
+    const old = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
+    const current = parseConfig(old?.content);
+    let legacy = rows[0]?.content ?? rows[0] ?? {};
+    if (typeof legacy === 'string') { try { legacy = JSON.parse(legacy); } catch { legacy = {}; } }
+    const keys = ['title','favicon','beiAnNo','css','js','rss','enableAutoLoadNextPage','enableComment','maxCommentLength','memoMaxHeight','commentOrder','timeFormat','enableRegister'];
+    for (const key of keys) if (Object.hasOwn(legacy, key)) current[key] = legacy[key];
+    current.beiAnNo = sanitizeSafeHtml(current.beiAnNo);
+    current.enableS3 = false;
+    current.s3 = { thumbnailSuffix: '' };
+    await env.DB.prepare('UPDATE sys_config SET content=?, updated_at=CURRENT_TIMESTAMP WHERE id=1').bind(JSON.stringify(current)).run();
+    await saveMigrationMapping(env, packageId, 'config', '1', 1);
+    return json(ok({ imported: 1 }), 200, headers);
+  }
+  if (kind === 'users') {
+    const userMap = {};
+    let imported = 0;
+    for (const row of rows) {
+      const oldId = Number(row.id);
+      if (!Number.isInteger(oldId) || oldId < 1) continue;
+      const mapped = await migrationMapping(env, packageId, 'users', oldId);
+      if (mapped) { userMap[oldId] = Number(mapped.target_id); continue; }
+      if (oldId === 1) {
+        userMap[oldId] = 1;
+        await env.DB.prepare('UPDATE users SET nickname=?, avatar_url=?, slogan=?, cover_url=?, email=?, updated_at=? WHERE id=1').bind(migrationText(row.nickname || row.username, 80), migrationText(row.avatarUrl, 1024), migrationText(row.slogan, 300), migrationText(row.coverUrl, 1024), migrationText(row.email, 254), migrationTime(row.updatedAt)).run();
+        await saveMigrationMapping(env, packageId, 'users', oldId, 1);
+        imported += 1;
+        continue;
+      }
+      const username = migrationText(row.username || `legacy_${oldId}`, 40).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40) || `legacy_${oldId}`;
+      const existing = await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first();
+      if (existing) {
+        userMap[oldId] = Number(existing.id);
+        await saveMigrationMapping(env, packageId, 'users', oldId, existing.id);
+        continue;
+      }
+      const hash = await passwordHash(randomToken(32));
+      const result = await env.DB.prepare('INSERT INTO users (username,nickname,password_hash,avatar_url,slogan,cover_url,email,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(username, migrationText(row.nickname || username, 80), hash, migrationText(row.avatarUrl || '/avatar.webp', 1024), migrationText(row.slogan, 300), migrationText(row.coverUrl || '/cover.webp', 1024), migrationText(row.email, 254), migrationTime(row.createdAt), migrationTime(row.updatedAt)).run();
+      const targetId = Number(result.meta?.last_row_id || 0);
+      userMap[oldId] = targetId;
+      await saveMigrationMapping(env, packageId, 'users', oldId, targetId);
+      imported += 1;
+    }
+    return json(ok({ userMap, imported }), 200, headers);
+  }
+  if (kind === 'memos') {
+    const userMap = body.userMap || {};
+    const memoMap = {};
+    let imported = 0;
+    for (const row of rows) {
+      const oldId = Number(row.id);
+      if (!Number.isInteger(oldId) || oldId < 1) continue;
+      const mapped = await migrationMapping(env, packageId, 'memos', oldId);
+      if (mapped) { memoMap[oldId] = Number(mapped.target_id); continue; }
+      const userId = Number(userMap[String(row.userId)] || userMap[row.userId] || 1);
+      const rawExt = row.ext && typeof row.ext === 'string' ? (() => { try { return JSON.parse(row.ext); } catch { return {}; } })() : (row.ext || {});
+      const ext = sanitizeMemoExt(rawExt);
+      const imgs = Array.isArray(row.imgs) ? row.imgs.join(',') : migrationText(row.imgs, 20000);
+      const result = await env.DB.prepare('INSERT INTO memos (content,imgs,fav_count,comment_count,user_id,created_at,updated_at,location,external_url,external_title,external_favicon,pinned,ext,show_type,tags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(migrationText(row.content, 100000), imgs, Number(row.favCount || 0), 0, userId, migrationTime(row.createdAt), migrationTime(row.updatedAt), migrationText(row.location, 500), migrationText(row.externalUrl, 2000), migrationText(row.externalTitle, 300), migrationText(row.externalFavicon || '/favicon.png', 2000), row.pinned ? 1 : 0, JSON.stringify(ext), row.showType === 0 ? 0 : 1, migrationText(Array.isArray(row.tags) ? row.tags.join(',') : row.tags, 2000)).run();
+      const targetId = Number(result.meta?.last_row_id || 0);
+      memoMap[oldId] = targetId;
+      await saveMigrationMapping(env, packageId, 'memos', oldId, targetId);
+      imported += 1;
+    }
+    return json(ok({ memoMap, imported }), 200, headers);
+  }
+  if (kind === 'comments') {
+    const memoMap = body.memoMap || {};
+    let imported = 0;
+    for (const row of rows) {
+      const oldId = Number(row.id);
+      if (!Number.isInteger(oldId) || oldId < 1 || await migrationMapping(env, packageId, 'comments', oldId)) continue;
+      const memoId = Number(memoMap[String(row.memoId)] || memoMap[row.memoId] || 0);
+      if (!memoId) continue;
+      const result = await env.DB.prepare('INSERT INTO comments (content,reply_to,reply_email,username,email,website,created_at,updated_at,memo_id,author,identity_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(migrationText(row.content, 10000), migrationText(row.replyTo, 200), migrationText(row.replyEmail, 254), migrationText(row.username, 80), migrationText(row.email, 254), migrationText(row.website, 2000), migrationTime(row.createdAt), migrationTime(row.updatedAt), memoId, migrationText(row.author, 200), '').run();
+      await saveMigrationMapping(env, packageId, 'comments', oldId, Number(result.meta?.last_row_id || 0));
+      imported += 1;
+    }
+    return json(ok({ imported }), 200, headers);
+  }
+  let imported = 0;
+  for (const row of rows) {
+    const oldId = Number(row.id);
+    if (!Number.isInteger(oldId) || oldId < 1 || await migrationMapping(env, packageId, 'friends', oldId)) continue;
+    const result = await env.DB.prepare('INSERT INTO friends (name,icon,url,description,created_at,updated_at) VALUES (?,?,?,?,?,?)').bind(migrationText(row.name, 120), migrationText(row.icon, 2000), migrationText(row.url, 2000), migrationText(row.desc || row.description, 1000), migrationTime(row.createdAt), migrationTime(row.updatedAt)).run();
+    await saveMigrationMapping(env, packageId, 'friends', oldId, Number(result.meta?.last_row_id || 0));
+    imported += 1;
+  }
+  return json(ok({ imported }), 200, headers);
+}
+
+async function migrationFinish(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const packageId = String(body?.packageId || '');
+  if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
+  await env.DB.prepare("UPDATE migration_runs SET status='completed', summary=?, updated_at=CURRENT_TIMESTAMP WHERE package_id=? AND status='importing'").bind(JSON.stringify({ finishedAt: new Date().toISOString(), imported: body?.imported || {} }), packageId).run();
+  return json(ok({ packageId, completed: true }), 200, headers);
+}
+
+async function migrationFail(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const packageId = String(body?.packageId || '');
+  if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
+  await env.DB.prepare("UPDATE migration_runs SET status='failed', summary=?, updated_at=CURRENT_TIMESTAMP WHERE package_id=? AND status='importing'").bind(JSON.stringify({ failedAt: new Date().toISOString(), error: migrationText(body?.error, 1000) }), packageId).run();
+  return json(ok({ packageId, failed: true }), 200, headers);
+}
+
 async function handleApi(request, env, ctx) {
   const url = new URL(request.url);
   const headers = corsHeaders(request, env);
@@ -1091,6 +1255,11 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/memo/getFaviconAndTitle') return await externalInfo(request, env, headers);
     if (url.pathname === '/api/memo/getDoubanBookInfo') return await doubanInfo(request, env, headers, 'book');
     if (url.pathname === '/api/memo/getDoubanMovieInfo') return await doubanInfo(request, env, headers, 'movie');
+    if (url.pathname === '/api/admin/migration/preflight') return await migrationPreflight(request, env, headers);
+    if (url.pathname === '/api/admin/migration/prepare') return await migrationPrepare(request, env, headers);
+    if (url.pathname === '/api/admin/migration/finish') return await migrationFinish(request, env, headers);
+    if (url.pathname === '/api/admin/migration/fail') return await migrationFail(request, env, headers);
+    if (url.pathname === '/api/admin/migration/import') return await migrationImport(request, env, headers);
     if (url.pathname === '/api/admin/backup/list') return await backupList(request, env, headers);
     if (url.pathname === '/api/admin/backup/create') return await backupCreate(request, env, headers);
     if (url.pathname === '/api/admin/backup/download') return await backupDownload(request, env, headers);
@@ -1103,7 +1272,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseDouban, parseDoubanMovieJson };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

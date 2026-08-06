@@ -48,9 +48,10 @@ function xhrUpload(url: string, method: string, body: XMLHttpRequestBodyInit, he
     xhr.onerror = () => reject(new Error('上传网络错误')); xhr.onabort = () => reject(new Error('上传已取消')); xhr.send(body)
   })
 }
-async function uploadOne(file: File, progress?: Progress) {
+async function uploadOne(file: File, progress?: Progress, expectedSha256 = '') {
   if (file.size <= 0 || file.size > MAX_BYTES) throw new Error('文件必须在 1B 到 500MB 之间')
   const sha256 = await hashFile(file, progress)
+  if (expectedSha256 && sha256 !== expectedSha256.toLowerCase()) throw new Error('文件 SHA-256 与迁移包清单不一致')
   const exists = await api<{exist:boolean;path:string}>(`/file/exist?sha256=${sha256}`)
   if (exists.exist) { progress?.(1); return exists.path }
   const thumbnail = await imageThumbnail(file)
@@ -66,6 +67,9 @@ async function uploadOne(file: File, progress?: Progress) {
   if (thumbnail && init.thumbnailUploadUrl) await xhrUpload(init.thumbnailUploadUrl, 'PUT', thumbnail, { 'content-type': 'image/webp' })
   const completed = await api<{path:string}>('/file/direct/complete', { key:init.key, thumbnailKey:thumbnail ? init.thumbnailKey : '' })
   return completed.path
+}
+export async function uploadFile(file: File, progress?: Progress, expectedSha256 = '') {
+  return uploadOne(file, progress, expectedSha256)
 }
 export async function uploadFiles(files: FileList, onProgress?: TotalProgress) {
   if (!files.length) { toast.error('没有选择文件'); return [] }

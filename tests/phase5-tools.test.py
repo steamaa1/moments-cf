@@ -117,6 +117,26 @@ def test_phase7_media_schema(database: Path) -> None:
         connection.close()
 
 
+def test_phase8_migration_runs(database: Path) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        apply_sql(connection, "0007_migration_runs.sql")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(migration_runs)")}
+        item_columns = {row[1] for row in connection.execute("PRAGMA table_info(migration_items)")}
+        if not {"package_id", "status", "summary"}.issubset(columns):
+            raise AssertionError("migration_runs columns missing")
+        if not {"package_id", "kind", "source_id", "target_id"}.issubset(item_columns):
+            raise AssertionError("migration_items columns missing")
+        connection.execute("INSERT INTO migration_runs (package_id, status) VALUES (?, 'importing')", ("a" * 64,))
+        connection.execute("UPDATE migration_runs SET status='completed', summary=? WHERE package_id=?", ('{"ok":true}', "a" * 64))
+        row = connection.execute("SELECT status, summary FROM migration_runs WHERE package_id=?", ("a" * 64,)).fetchone()
+        if row != ("completed", '{"ok":true}'):
+            raise AssertionError(f"migration run state mismatch: {row}")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_export_helpers(database: Path, temporary: Path) -> None:
     export_dir = temporary / "export"
     run("scripts/migrate/export-sqlite.py", str(database), "--output", str(export_dir))
@@ -160,6 +180,7 @@ def main() -> None:
         test_like_counter_triggers(database)
         test_phase6_comment_triggers_and_trash(database)
         test_phase7_media_schema(database)
+        test_phase8_migration_runs(database)
         test_export_helpers(database, temporary)
     print("Phase 7 migration and release tool functional tests: PASS")
 

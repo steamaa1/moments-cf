@@ -17,9 +17,12 @@ if (!python.error && python.status === 0) {
     'scripts/migrate/export-sqlite.py',
     'scripts/migrate/build-media-manifest.py',
     'scripts/migrate/verify-migration.py',
+    'scripts/migrate/build-package.py',
     'tests/phase5-tools.test.py',
+    'tests/migration-package.test.py',
   ]);
   run('python3', ['tests/phase5-tools.test.py']);
+  run('python3', ['tests/migration-package.test.py']);
 } else {
   console.warn('SKIP Python migration syntax checks: python3 not available');
 }

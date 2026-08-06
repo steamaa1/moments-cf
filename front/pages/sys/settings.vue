@@ -108,6 +108,10 @@
       <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">D1 生产备份</p><p class="mt-1 text-xs text-gray-500">每周日 03:00 UTC 自动备份，保留 90 天。恢复前会自动再创建一份安全备份。</p></div><UButton size="sm" icon="i-carbon-renew" :loading="backupLoading" @click="createBackup">立即备份</UButton></div>
       <UButton block color="gray" variant="soft" icon="i-carbon-data-backup" @click="openBackups">管理备份</UButton>
     </div>
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">旧 Docker 站数据迁移</p><p class="mt-1 text-xs text-gray-500">上传本地转换器生成的迁移包，预检后导入 D1 与 R2。</p></div></div>
+      <UButton block color="gray" variant="soft" icon="i-carbon-data-transfer" to="/sys/migration">打开一键导入器</UButton>
+    </div>
     <UButton block class="min-h-11 justify-center" @click="save">保存设置</UButton>
   </div>
 

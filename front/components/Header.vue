@@ -16,6 +16,7 @@
         />
         <span v-if="$route.path === '/user/calendar'">日历检索</span>
         <span v-else-if="$route.path === '/sys/settings'">系统设置</span>
+        <span v-else-if="$route.path === '/sys/migration'">数据迁移</span>
         <span v-else-if="$route.path === '/user/settings'">用户中心</span>
         <span v-else-if="$route.path.indexOf('/tags/') >= 0">
           {{ route.params.tag || "话题专栏" }}

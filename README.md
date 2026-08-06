@@ -4,19 +4,6 @@
 
 > 本分支不是 Docker/SQLite 版本。需要原版自托管方案时，请查看上游仓库的 `dev` 分支。
 
-## 架构
-
-```text
-浏览器
-  └─ Cloudflare Worker
-      ├─ /api/*       Worker API
-      ├─ /upload/*    私有 R2 媒体代理
-      ├─ /rss         RSS
-      └─ /*            Nuxt Workers Assets
-
-D1: 用户、配置、动态、评论、友链、媒体索引
-R2: 图片和视频对象
-```
 
 ## 已支持
 
@@ -31,7 +18,7 @@ R2: 图片和视频对象
 - 未引用媒体 7 天回收站、恢复和立即永久删除
 - D1 Migration、部署前检查、线上只读冒烟检查
 
-## Phase 7 新增
+## 新增与改良
 
 - 评论邮件通知：后台按“服务器→端口→用户名（发件邮箱）→密码/授权码”配置 SMTP 465/587；`re_` 开头凭据使用 Resend，凭据经 AES-GCM 加密后存入 D1
 - 浏览器生成 WebP 缩略图，原图与缩略图写入私有 R2
@@ -44,20 +31,9 @@ R2: 图片和视频对象
 - 豆瓣电影 JSON 接口优先、HTML/JSON-LD 回退与同域封面代理
 - 音乐平台与音频直链播放，支持歌曲名和 LRC 滚动歌词
 - 可关闭的“关于”页面，支持 Markdown 与安全 HTML
+- 旧 Docker 站一键迁移：本地转换器生成标准迁移包，后台预检后导入 D1/R2，支持 SHA-256 校验、自动备份、断点重试和防重复导入
 - 用户空间默认朋友圈式时间轴，日历检索结果可切换时间轴排列
 
-## Cloudflare 资源
-
-默认资源名称：
-
-| 类型 | 名称 | Binding |
-| --- | --- | --- |
-| Worker | `moments-cf` | — |
-| D1 | `moments-db` | `DB` |
-| R2 | `moments-media` | `MEDIA` |
-| Workers Assets | `front/.output/public` | `ASSETS` |
-
-可使用 `scripts/cloudflare-bootstrap.mjs` 创建或复用 D1/R2。脚本默认只处理资源；只有显式传入 `--deploy` 才会执行 Migration 和部署。详见 [`scripts/README.md`](scripts/README.md)。
 
 ## Workers Builds 部署
 
@@ -77,7 +53,9 @@ Workers Builds 使用的 Cloudflare API Token 至少需要：
 - Workers Scripts Edit
 - 绑定和访问 R2 所需权限
 
-## 必需 Secrets
+在“Bindings”里查看 D1 R2 是否绑定
+
+### 变量
 
 在 Worker 的 **Settings → Variables and Secrets** 中添加加密 Secret：
 
@@ -97,6 +75,19 @@ Workers Builds 使用的 Cloudflare API Token 至少需要：
 - `CORS_ORIGIN`：允许的 Origin 列表；同域部署通常无需修改
 
 不要将 Secret、Cloudflare Token 或账户资源 ID 提交到 Git。
+
+### Cloudflare 资源
+
+默认资源名称：
+
+| 类型 | 名称 | Binding |
+| --- | --- | --- |
+| Worker | `moments-cf` | — |
+| D1 | `moments-db` | `DB` |
+| R2 | `moments-media` | `MEDIA` |
+| Workers Assets | `front/.output/public` | `ASSETS` |
+
+可使用 `scripts/cloudflare-bootstrap.mjs` 创建或复用 D1/R2。脚本默认只处理资源；只有显式传入 `--deploy` 才会执行 Migration 和部署。详见 [`scripts/README.md`](scripts/README.md)。
 
 ## 首次使用
 
@@ -144,6 +135,22 @@ node scripts/release/smoke-test.mjs
 ## 数据与媒体迁移辅助
 
 `scripts/migrate/` 提供旧 SQLite 和上传目录的只读导出/校验工具。它们不会直接写入生产 D1 或 R2。详见 [`scripts/migrate/README.md`](scripts/migrate/README.md)。
+
+
+## 架构
+
+```text
+浏览器
+  └─ Cloudflare Worker
+      ├─ /api/*       Worker API
+      ├─ /upload/*    私有 R2 媒体代理
+      ├─ /rss         RSS
+      └─ /*            Nuxt Workers Assets
+
+D1: 用户、配置、动态、评论、友链、媒体索引
+R2: 图片和视频对象
+```
+
 
 ## 许可证与上游
 
