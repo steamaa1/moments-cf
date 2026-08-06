@@ -81,6 +81,8 @@ export type SysConfigVO = {
     memoMaxHeight: number,
     commentOrder: 'desc' | 'asc',
     timeFormat: 'timeAgo' | 'time',
+    backupIntervalDays: number,
+    backupRetentionDays: number,
     enableEmail: boolean,
     smtpHost: string,
     smtpPort: '465' | '587',

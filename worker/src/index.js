@@ -35,6 +35,8 @@ const DEFAULT_CONFIG = {
   commentOrder: 'desc',
   timeFormat: 'timeAgo',
   enableRegister: false,
+  backupIntervalDays: 7,
+  backupRetentionDays: 90,
   enableEmail: false,
   smtpHost: '',
   smtpPort: '465',
@@ -267,7 +269,6 @@ async function getConfig(request, env, headers, full = false) {
   // Never let legacy S3 settings switch the frontend to an unsupported pre-signed endpoint.
   config.enableS3 = false;
   config.beiAnNo = sanitizeSafeHtml(config.beiAnNo);
-  config.aboutContent = sanitizeSafeHtml(config.aboutContent);
   if (full) {
     delete config.enableS3;
     delete config.s3;
@@ -291,7 +292,7 @@ async function saveConfig(request, env, headers) {
   const config = { ...previousConfig, ...body, adminUserName: String(body.adminUserName || access.user.username).trim() };
   config.beiAnNo = sanitizeSafeHtml(body.beiAnNo);
   config.enableAbout = Boolean(body.enableAbout);
-  config.aboutContent = sanitizeSafeHtml(String(body.aboutContent || '').slice(0, 50000));
+  config.aboutContent = String(body.aboutContent || '').slice(0, 100000);
   config.enableEmail = Boolean(body.enableEmail);
   config.smtpHost = String(body.smtpHost || '').trim().slice(0, 253);
   config.smtpPort = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : '465';
@@ -300,6 +301,8 @@ async function saveConfig(request, env, headers) {
   config.enableTurnstile = Boolean(body.enableTurnstile);
   config.turnstileSiteKey = String(body.turnstileSiteKey || '').trim().slice(0, 200);
   config.turnstileSecretKey = String(body.turnstileSecretKey || previousConfig.turnstileSecretKey || '').trim().slice(0, 300);
+  config.backupIntervalDays = clampInt(body.backupIntervalDays, 1, 365, 7);
+  config.backupRetentionDays = clampInt(body.backupRetentionDays, 1, 3650, 90);
   config.smtpPasswordEncrypted = previousConfig.smtpPasswordEncrypted || '';
   const mailSecret = String(body.smtpPassword || '');
   if (mailSecret) config.smtpPasswordEncrypted = await encryptConfigSecret(mailSecret, env.JWT_SECRET);
@@ -567,8 +570,8 @@ async function listMemos(request, env, headers) {
     for (const tag of String(body.tag).split(',').map(v => v.trim()).filter(Boolean)) { clauses.push('m.tags LIKE ?'); values.push(`%${tag},%`); }
   }
   if (body.contentContains) { clauses.push('m.content LIKE ?'); values.push(`%${String(body.contentContains).slice(0, 200)}%`); }
-  if (body.start) { clauses.push('m.created_at >= ?'); values.push(String(body.start)); }
-  if (body.end) { clauses.push('m.created_at <= ?'); values.push(String(body.end)); }
+  if (body.start) { const start = sqliteTime(body.start); if (start) { clauses.push('m.created_at >= ?'); values.push(start); } }
+  if (body.end) { const end = sqliteTime(body.end); if (end) { clauses.push('m.created_at <= ?'); values.push(end); } }
   if (user && body.showType != null && Number(body.showType) >= 0) { clauses.push('m.show_type = ?'); values.push(intParam(body.showType)); }
   const where = ` WHERE ${clauses.join(' AND ')}`;
   const count = await env.DB.prepare(`SELECT COUNT(*) AS total FROM memos m JOIN users u ON u.id=m.user_id${where}`).bind(...values).first();
@@ -1048,7 +1051,7 @@ function requireBackupConfig(env, headers) {
   return missing.length ? json(fail(`备份功能未配置：${missing.join(', ')}`),503,headers) : null;
 }
 async function backupList(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; return json(ok({list:await listBackups(env),retentionDays:90}),200,headers); }
-async function backupCreate(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; return json(ok(await createD1Backup(env)),200,headers); }
+async function backupCreate(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const row=await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(); const config=parseConfig(row?.content); return json(ok(await createD1Backup(env, {}, clampInt(config.backupRetentionDays, 1, 3650, 90))),200,headers); }
 async function backupDownload(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const key=String(new URL(request.url).searchParams.get('key')||''); if(!key.startsWith(BACKUP_PREFIX)||key.includes('..'))return json(fail('备份名称无效'),400,headers); const object=await env.MEDIA.get(key); if(!object)return json(fail('备份不存在'),404,headers); return new Response(object.body,{headers:{'content-type':'application/sql','content-disposition':`attachment; filename="${key.split('/').pop()}"`}}); }
 async function backupRestore(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const body=await readJson(request); const key=String(body?.key||''); if(body?.confirmName!==key.split('/').pop())return json(fail('请输入完整备份名称确认'),400,headers); if(!(await passwordMatches(String(body?.password||''),access.user.password_hash)))return json(fail('管理员密码错误'),403,headers); await createD1Backup(env); return json(ok(await restoreD1Backup(env,key)),200,headers); }
 
@@ -1067,6 +1070,10 @@ async function migrationPreflight(request, env, headers) {
   const memoCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM memos').first();
   const backupAvailable = Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.D1_DATABASE_ID && env.D1_BACKUP_API_TOKEN);
   return json(ok({ packageId, existingRun, manifest: { tables: counts, mediaCount: Number(manifest.mediaCount) || 0, mediaBytes: Number(manifest.mediaBytes) || 0 }, destination: { users: Number(userCount?.count || 0), memos: Number(memoCount?.count || 0) }, backupAvailable, warnings: ['旧用户密码不会迁移，管理员密码保留本站当前密码', existingRun?.status === 'completed' ? '该迁移包已经导入完成，不能重复导入' : existingRun?.status === 'importing' ? '检测到未完成迁移，将从已记录的断点继续' : '导入过程中请保持页面开启，避免中断'] }), 200, headers);
+}
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
 }
 function migrationText(value, max = 2000) { return String(value ?? '').slice(0, max); }
 function migrationTime(value) { return sqliteTime(value) || sqliteTime(); }
@@ -1088,7 +1095,8 @@ async function migrationPrepare(request, env, headers) {
   if (existing?.status === 'importing') return json(ok({ packageId, resumed: true }), 200, headers);
   const missing = requireBackupConfig(env, headers);
   if (missing) return missing;
-  const backup = await createD1Backup(env);
+  const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
+  const backup = await createD1Backup(env, {}, clampInt(parseConfig(row?.content).backupRetentionDays, 1, 3650, 90));
   await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', '{}') ON CONFLICT(package_id) DO UPDATE SET status='importing', summary='{}', updated_at=CURRENT_TIMESTAMP").bind(packageId).run();
   return json(ok({ backup, packageId, resumed: false }), 200, headers);
 }
@@ -1268,7 +1276,15 @@ async function handleApi(request, env, ctx) {
     return json(fail('Cloudflare API migration endpoint not implemented yet', 404), 404, headers);
   } catch (error) {
     console.error('API error', error);
-    return json(fail('服务暂时不可用，请稍后再试'), 503, headers);
+    let message = '服务暂时不可用，请稍后再试';
+    try {
+      const me = await currentUser(request, env);
+      if (me && Number(me.id) === 1) {
+        const safe = String(error?.message || error).slice(0, 300).replace(/https?:\/\/[^\s]+/g, '[url]');
+        message = `服务暂时不可用，请稍后再试（${safe}）`;
+      }
+    } catch { /* keep generic message */ }
+    return json(fail(message), 503, headers);
   }
 }
 
@@ -1339,5 +1355,18 @@ export default {
     if (!env.ASSETS) return new Response('Workers Assets binding is not configured', { status: 503 });
     return env.ASSETS.fetch(request);
   },
-  async scheduled(_controller, env, ctx) { ctx.waitUntil(createD1Backup(env).catch(error => console.error('Scheduled D1 backup failed', error))); },
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil((async () => {
+      try {
+        const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
+        const config = parseConfig(row?.content);
+        const intervalDays = clampInt(config.backupIntervalDays, 1, 365, 7);
+        const retentionDays = clampInt(config.backupRetentionDays, 1, 3650, 90);
+        const backups = await listBackups(env);
+        const latest = backups[0] ? new Date(backups[0].uploaded).getTime() : 0;
+        if (Date.now() - latest < intervalDays * 86400000) return;
+        await createD1Backup(env, {}, retentionDays);
+      } catch (error) { console.error('Scheduled D1 backup failed', error); }
+    })());
+  },
 };

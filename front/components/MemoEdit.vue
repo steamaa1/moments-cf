@@ -264,7 +264,7 @@ onMounted(async () => {
     doubanType.value = ext.doubanBook && ext.doubanBook.title ? 'book' : 'movie'
     doubanData.value = doubanType.value === 'book' ? ext.doubanBook : ext.doubanMovie
     selectedLabel.value = res.tags ? res.tags.substring(0,res.tags.length-1).split(',') : []
-    state.createdAt = dayjs(res.createdAt).format()
+    state.createdAt = dayjs.utc(res.createdAt).local().format()
   }
   await loadTags()
 })

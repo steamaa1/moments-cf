@@ -12,7 +12,8 @@ export type TotalProgress = (total: number, current: number, name: string, progr
 
 function tokenHeaders() {
   const global = useGlobalState()
-  return global.value.userinfo.token ? { 'x-api-token': global.value.userinfo.token } : {}
+  const token = global.value?.userinfo?.token
+  return token ? { 'x-api-token': token } : {}
 }
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...tokenHeaders() }, body: body ? JSON.stringify(body) : null })

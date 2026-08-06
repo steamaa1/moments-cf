@@ -129,11 +129,11 @@
           <div class="flex text-xs text-[#9DA4B0]">
             {{
               sysConfig.timeFormat === "timeAgo"
-                ? $dayjs(item.createdAt).fromNow()
-                : $dayjs(item.createdAt).format("YYYY-MM-DD HH:mm")
+                ? $dayjs.utc(item.createdAt).local().fromNow()
+                : $dayjs.utc(item.createdAt).local().format("YYYY-MM-DD HH:mm")
             }}
             {{
-              $dayjs(item.createdAt).isAfter($dayjs()) ? '，未到发布时间，仅自己可见' : ''
+              $dayjs.utc(item.createdAt).local().isAfter($dayjs()) ? '，未到发布时间，仅自己可见' : ''
             }}
           </div>
           <div

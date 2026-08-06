@@ -6,9 +6,12 @@ export type GlobalVO = {
 }
 
 export const useGlobalState = createGlobalState(
-    () => useStorage<GlobalVO>('global',{
-        userinfo:{
-        },
-    }),
+    () => {
+        const storage = useStorage<GlobalVO>('global', { userinfo: {} }, undefined, { deep: true })
+        return computed<GlobalVO>({
+            get: () => ({ userinfo: {}, ...(storage.value ?? {}) }),
+            set: value => { storage.value = value },
+        })
+    },
 )
 

@@ -12,7 +12,7 @@ Cloudflare Workers Builds：
 | Build command | `npm run build:cf` |
 | Deploy command | `npm run deploy:cf` |
 
-部署脚本会按名称查询 `moments-db`，应用 `0001`～`0007` Migration，设置 R2 CORS，再部署 Worker。计划任务为每周日 `03:00 UTC`。
+部署脚本会按名称查询 `moments-db`，应用 `0001`～`0007` Migration，设置 R2 CORS，再部署 Worker。计划任务每日 `03:00 UTC` 触发，按后台配置的备份间隔（默认 7 天）与保留天数（默认 90 天）执行。
 
 ## Bindings 与 Variables
 

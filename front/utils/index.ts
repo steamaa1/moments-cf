@@ -11,7 +11,7 @@ const global = useGlobalState()
 export const useMyFetch = async <T>(url: string, data?: any) => {
   const headers: Record<string, string> = {}
 
-  const userinfo = global.value.userinfo
+  const userinfo = global.value?.userinfo ?? {}
   if (userinfo.token) {
     headers["x-api-token"] = userinfo.token
   }

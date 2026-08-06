@@ -6,7 +6,8 @@ export default defineNuxtConfig({
     ssr: false,
     dayjs: {
         locales: ['zh'],
-        defaultLocale: 'zh'
+        defaultLocale: 'zh',
+        plugins: ['utc', 'relativeTime']
     },
     icon: {
         clientBundle: {

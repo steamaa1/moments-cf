@@ -16,6 +16,6 @@ assert.match(config, /database_id = "test-d1-id"/);
 assert.match(config, /bucket_name = "test-media"/);
 assert.match(config, /CLOUDFLARE_ACCOUNT_ID = "test-account"/);
 assert.match(config, /binding = "ASSETS"/);
-assert.match(config, /crons = \["0 3 \* \* SUN"\]/);
+assert.ok(config.includes('crons = ["0 3 * * *"]'));
 await rm(output);
 console.log('Cloudflare Builds renderer tests: PASS');

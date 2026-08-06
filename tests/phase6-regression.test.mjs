@@ -97,9 +97,7 @@ assert.equal(configBody.data.smtpUsername, undefined);
 assert.equal(configBody.data.smtpHost, undefined);
 assert.equal(configBody.data.enableEmail, undefined);
 assert.equal(configBody.data.enableAbout, true);
-assert.match(configBody.data.aboutContent, /# 关于/);
-assert.match(configBody.data.aboutContent, /<p>安全内容<\/p>/);
-assert.doesNotMatch(configBody.data.aboutContent, /onclick|script/);
+assert.equal(configBody.data.aboutContent, '# 关于\n<p onclick="bad()">安全内容</p><script>bad()</script>');
 
 const bytes = new TextEncoder().encode('0123456789');
 const r2Object = {

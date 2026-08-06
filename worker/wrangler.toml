@@ -10,7 +10,7 @@ binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [triggers]
-crons = ["0 3 * * SUN"]
+crons = ["0 3 * * *"]
 
 [vars]
 CORS_ORIGIN = "*"

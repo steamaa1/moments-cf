@@ -212,7 +212,7 @@ async function cfApi(env, path, body, fetchImpl = fetch) {
   return data.result;
 }
 async function sleep(ms) { await new Promise(resolve => setTimeout(resolve, ms)); }
-export async function createD1Backup(env, dependencies = {}) {
+export async function createD1Backup(env, dependencies = {}, retentionDays = BACKUP_RETENTION_DAYS) {
   const fetchImpl = dependencies.fetch || fetch;
   let result = await cfApi(env, '/export', { output_format: 'polling' }, fetchImpl);
   const bookmark = result.at_bookmark;
@@ -227,16 +227,16 @@ export async function createD1Backup(env, dependencies = {}) {
   if (!download.ok) throw new Error('无法下载 D1 导出文件');
   const key = `${BACKUP_PREFIX}${new Date().toISOString().replace(/[:.]/g, '-')}.sql`;
   await env.MEDIA.put(key, download.body, { httpMetadata: { contentType: 'application/sql' }, customMetadata: { source: 'd1-export', databaseId: env.D1_DATABASE_ID } });
-  await purgeOldBackups(env);
+  await purgeOldBackups(env, Date.now(), retentionDays);
   return { key };
 }
 export async function listBackups(env) {
   const listed = await env.MEDIA.list({ prefix: BACKUP_PREFIX, limit: 1000 });
   return (listed.objects || []).sort((a, b) => b.uploaded - a.uploaded).map(item => ({ key: item.key, name: item.key.slice(BACKUP_PREFIX.length), size: item.size, uploaded: item.uploaded }));
 }
-export async function purgeOldBackups(env, now = Date.now()) {
+export async function purgeOldBackups(env, now = Date.now(), retentionDays = BACKUP_RETENTION_DAYS) {
   const backups = await listBackups(env); let deleted = 0;
-  for (const item of backups) if (now - new Date(item.uploaded).getTime() > BACKUP_RETENTION_DAYS * 86400000) { await env.MEDIA.delete(item.key); deleted += 1; }
+  for (const item of backups) if (now - new Date(item.uploaded).getTime() > retentionDays * 86400000) { await env.MEDIA.delete(item.key); deleted += 1; }
   return deleted;
 }
 // Compact MD5 implementation for D1 Import's required file etag.

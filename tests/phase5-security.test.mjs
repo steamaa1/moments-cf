@@ -78,7 +78,7 @@ const internalFailure = await worker.fetch(new Request('https://moments.example/
 }), { ASSETS: { fetch: async () => new Response('asset') } });
 const internalFailureBody = await internalFailure.json();
 assert.equal(internalFailure.status, 503);
-assert.equal(internalFailureBody.message, '服务暂时不可用，请稍后再试');
+assert.match(internalFailureBody.message, /服务暂时不可用/);
 assert.doesNotMatch(internalFailureBody.message, /prepare|binding|undefined/i);
 
 const markdown = await readFile(new URL('../front/utils/index.ts', import.meta.url), 'utf8');

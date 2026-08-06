@@ -14,7 +14,7 @@ database_id = "__D1_DATABASE_ID__"
 migrations_dir = "migrations"
 
 [triggers]
-crons = ["0 3 * * SUN"]
+crons = ["0 3 * * *"]
 
 [[r2_buckets]]
 binding = "MEDIA"

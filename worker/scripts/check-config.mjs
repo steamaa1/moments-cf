@@ -49,7 +49,7 @@ for (const statement of ['ALTER TABLE media ADD COLUMN sha256', 'ALTER TABLE med
 for (const statement of ['CREATE TABLE IF NOT EXISTS migration_runs', "status TEXT NOT NULL", 'package_id TEXT PRIMARY KEY']) {
   if (!phase8Schema.includes(statement)) throw new Error(`Phase 8 schema is missing: ${statement}`);
 }
-for (const value of ['binding = "ASSETS"', 'crons = ["0 3 * * SUN"]', 'CLOUDFLARE_ACCOUNT_ID = "__CLOUDFLARE_ACCOUNT_ID__"', 'R2_BUCKET_NAME = "__R2_BUCKET_NAME__"']) {
+for (const value of ['binding = "ASSETS"', 'crons = ["0 3 * * *"]', 'CLOUDFLARE_ACCOUNT_ID = "__CLOUDFLARE_ACCOUNT_ID__"', 'R2_BUCKET_NAME = "__R2_BUCKET_NAME__"']) {
   if (!template.includes(value)) throw new Error(`Phase 7 Wrangler template is missing: ${value}`);
 }
 console.log('Phase 7 Worker configuration guard: PASS');
