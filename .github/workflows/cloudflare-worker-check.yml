@@ -37,6 +37,6 @@ jobs:
         working-directory: front
         run: pnpm run generate
 
-      - name: Run Worker Phase 1 checks
+      - name: Run Worker checks
         working-directory: worker
         run: npm run check

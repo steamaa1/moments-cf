@@ -1,257 +1,144 @@
-# Moments - 极简朋友圈
+# Moments CF
 
-[![release](https://img.shields.io/badge/release-更新记录-blue)](https://github.com/kingwrcy/moments/releases)
-[![docker-release-status](https://img.shields.io/github/actions/workflow/status/kingwrcy/moments/docker-image-release.yml)](https://github.com/kingwrcy/moments/actions/workflows/docker-image-release.yml)
-[![docker-pull](https://img.shields.io/docker/pulls/kingwrcy/moments)](https://hub.docker.com/repository/docker/kingwrcy/moments)
-[![telegram-group](https://img.shields.io/badge/Telegram-group-blue)](https://t.me/simple_moments)
-[![discussion](https://img.shields.io/badge/moments-论坛-blue)](https://discussion.mblog.club)
+基于 [kingwrcy/moments](https://github.com/kingwrcy/moments) 改造的 Cloudflare 原生版本：前端与 API 由单个 Cloudflare Worker 提供，结构化数据存储在 D1，图片和视频存储在私有 R2。
 
-> 从 v0.2.1 开始，Moments 采用 Golang 重写服务端，包体积更小，功能更强！
->
-> 仍需 v0.2.0 版本？[点这里](https://github.com/kingwrcy/moments/blob/master/README.md)
+> 本分支不是 Docker/SQLite 版本。需要原版自托管方案时，请查看上游仓库的 `dev` 分支。
 
----
+## 架构
 
-## 功能说明
+```text
+浏览器
+  └─ Cloudflare Worker
+      ├─ /api/*       Worker API
+      ├─ /upload/*    私有 R2 媒体代理
+      ├─ /rss         RSS
+      └─ /*            Nuxt Workers Assets
 
-### 用户系统
-
-- 默认管理员：`admin/a123456`，登录后可在后台修改密码
-- 多用户模式：可以在后台设置是否允许用户注册
-
-### Memo
-
-- 支持使用 Markdown 语法编写
-- 支持修改发布时间，若发布时间晚于当前时间，则对游客不可见
-- 支持添加标签，方便分类查找
-- 支持上传图片、视频
-- 支持引用外部音乐、外部视频、外部链接
-- 支持引用豆瓣读书、豆瓣电影
-- 支持点赞、评论，可在后台开启/关闭评论功能
-
-### 文件上传
-
-上传到服务器时：
-
-- 支持上传到服务器的 `$UPLOAD_DIR` 目录下
-- 上传文件时，会先通过 SHA256 检查文件是否被上传过，若上传过则可以“秒传”
-- 上传图片时，会自动创建图片的缩略图，在浏览 Memo 时默认加载缩略图
-- 上传文件时，会和 Memo 产生关联，可以在设置中清理无用的文件，无用的文件将会被整理到 `$UPLOAD_DIR/removed` 目录下
-
-上传到 S3 时：
-
-- 支持上传到兼容 S3 的存储服务
-- 开启 S3 时，可以设置图片压缩后缀，在浏览 Memo 时，会默认请求带后缀的图片加载缩略图
-
-### 其他功能
-
-以下功能没有详细介绍，请自行探索：
-
-- 友情链接
-- 邮件通知
-- RSS 订阅
-- 暗黑模式
-- 数据库自动备份，当检测到启动的版本发生变化时，自动备份数据库文件到 `$DB` 目录下
-
----
-
-## 快速上手
-
-### 应用配置
-
-支持通过环境变量进行配置：
-
-| 变量名            | 说明                   | 默认值                                                                         |
-| ----------------- | ---------------------- | ------------------------------------------------------------------------------ |
-| PORT              | 监听端口               | 3000                                                                           |
-| CORS_ORIGIN       | 允许的跨域 Origin 列表 | 空，多个 Origin 可以使用英文逗号分隔，如 `http://127.0.0.1,http://10.10.10.10` |
-| JWT_KEY           | JWT 密钥               | 空，不填写则随机生成，重启后需重新登录                                         |
-| DB                | SQLite 数据库存放目录  | /app/data/db.sqlite                                                            |
-| UPLOAD_DIR        | 上传文件本地目录       | /app/data/upload                                                               |
-| LOG_LEVEL         | 日志级别               | info，可选 debug                                                               |
-| ENABLE_SWAGGER    | 启用 Swagger 文档      | false，可选 true，通过 `/swagger/index.html` 访问                              |
-| ENABLE_SQL_OUTPUT | 启用 SQL 输出          | false，可选 true                                                               |
-
-支持 `.env` 文件加载环境变量，示例：
-
-```env
-JWT_KEY=your_secret_key
-LOG_LEVEL=info
+D1: 用户、配置、动态、评论、友链、媒体索引
+R2: 图片和视频对象
 ```
 
-### 使用 Docker Cli 启动
+## 已支持
 
-启动容器（需替换 `$JWT_KEY`）：
+- 管理员初始化、登录、注册开关、多用户资料
+- Markdown 动态、标签、地点、公开/私密、定时发布、置顶
+- 图片和视频上传、R2 同域访问、Range/HEAD 视频请求
+- 外部链接、在线音乐、B站/YouTube/在线视频
+- 豆瓣图书和电影元数据抓取与卡片展示
+- 匿名点赞去重、评论、评论限流与可配置排序
+- 友情链接、RSS、自定义 CSS/JS、reCAPTCHA 服务端验证
+- 公开邮箱/评论隐私保护、错误脱敏和 URL 白名单
+- 未引用媒体 7 天回收站、恢复和立即永久删除
+- D1 Migration、部署前检查、线上只读冒烟检查
+
+## 暂未迁移
+
+以下能力仍留待后续版本：
+
+- 评论邮件通知
+- 图片缩略图/压缩
+- SHA-256 秒传
+- 大文件浏览器直传 R2
+- 生产 D1/R2 备份与一键恢复
+- OpenAPI/Swagger
+
+## Cloudflare 资源
+
+默认资源名称：
+
+| 类型 | 名称 | Binding |
+| --- | --- | --- |
+| Worker | `moments-cf` | — |
+| D1 | `moments-db` | `DB` |
+| R2 | `moments-media` | `MEDIA` |
+| Workers Assets | `front/.output/public` | `ASSETS` |
+
+可使用 `scripts/cloudflare-bootstrap.mjs` 创建或复用 D1/R2。脚本默认只处理资源；只有显式传入 `--deploy` 才会执行 Migration 和部署。详见 [`scripts/README.md`](scripts/README.md)。
+
+## Workers Builds 部署
+
+在 Cloudflare Dashboard 连接本仓库的 `cf` 分支，然后设置：
+
+| 项目 | 值 |
+| --- | --- |
+| Root directory | `worker` |
+| Build command | `npm run build:cf` |
+| Deploy command | `npm run deploy:cf` |
+
+部署脚本会按名称查询 `moments-db` 的 UUID，临时生成被 Git 忽略的 `worker/wrangler.build.toml`，依次应用 D1 Migration，再部署 Worker。仓库不会保存账户专属 D1 ID。
+
+Workers Builds 使用的 Cloudflare API Token 至少需要：
+
+- D1 Read / Write
+- Workers Scripts Edit
+- 绑定和访问 R2 所需权限
+
+## 必需 Secrets
+
+在 Worker 的 **Settings → Variables and Secrets** 中添加加密 Secret：
+
+| 名称 | 要求 |
+| --- | --- |
+| `JWT_SECRET` | 至少 32 字符随机值，用于 JWT 和匿名身份签名 |
+| `INIT_SECRET` | 至少 24 字符随机值，仅用于首次管理员初始化 |
+
+可选变量：
+
+- `PBKDF2_ITERATIONS`：默认并最大为 `100000`
+- `CORS_ORIGIN`：允许的 Origin 列表；同域部署通常无需修改
+
+不要将 Secret、Cloudflare Token 或账户资源 ID 提交到 Git。
+
+## 首次使用
+
+部署完成后访问站点。若数据库尚无用户，使用初始化接口创建管理员：
 
 ```bash
-docker run -d \
-  -e PORT=3000 \
-  -e JWT_KEY=$JWT_KEY \
-  -p 3000:3000 \
-  -v /var/moments:/app/data \
-  --name moments \
-  kingwrcy/moments:latest
+curl -X POST "https://your-worker.workers.dev/api/admin/initialize" \
+  -H "content-type: application/json" \
+  -H "x-init-secret: <INIT_SECRET>" \
+  -d '{"username":"admin","nickname":"管理员","password":"至少8位密码"}'
 ```
 
-镜像标签可选：
+初始化只能在用户表为空时成功一次。初始化完成后可在后台修改账号和站点设置。
 
-- latest：稳定版
-- dev：开发版，功能前沿但相对不稳定
+## 本地验证
 
-### 使用 Docker Compose 启动
-
-```yaml
-services:
-  moments:
-    image: kingwrcy/moments:latest
-    container_name: moments
-    restart: always
-    environment:
-      PORT: 3000
-      JWT_KEY: $JWT_KEY
-    ports:
-      - 3000:3000
-    volumes:
-      - /var/moments:/app/data # 持久化数据到主机的 /var/moments 目录，可以按需修改
-```
-
-### 使用可执行文件启动
-
-[下载最新版本](https://github.com/kingwrcy/moments/releases)
-
-示例（Windows 版）：
-
-| 文件名                                         | 说明                         |
-| ---------------------------------------------- | ---------------------------- |
-| `moments-windows-amd64-x.x.x.exe.zip`          | 压缩包，解压后可直接运行     |
-| `moments-windows-amd64-x.x.x.exe-checksum.txt` | `MD5` 校验码，验证文件完整性 |
-
----
-
-## JWT_KEY 生成方式
-
-方法 1：OpenSSL
+Worker 检查不需要安装额外的 Worker 运行时依赖：
 
 ```bash
-openssl rand -hex 32
+cd worker
+npm run check
 ```
 
-方法 2：SHA256
+完整前端构建：
 
 ```bash
-echo $RANDOM | sha256sum
+cd front
+pnpm install --frozen-lockfile
+pnpm run generate
 ```
 
-方法 3：在线生成（[点这里](https://tool.lu/uuid) 生成 UUID）
-
----
-
-## 开发
-
-### 依赖环境
-
-后端：Go 1.23.3+
-前端：NodeJS 18+，使用 PNPM 管理依赖
-
-VSCode 推荐插件：
-
-- gitlens：Git 扩展
-- prettier：代码格式化
-- eslint：代码规范检查
-- golang：Go 语言支持
-
-### 启动
-
-#### 使用 make（推荐）
-
-后端：
+部署前只读检查：
 
 ```bash
-cd moments
-make backend-dev
+node scripts/release/preflight.mjs
 ```
 
-前端（新终端）：
+部署后只读冒烟检查：
 
 ```bash
-cd moments
-make frontend-install
-make frontend-dev
+MOMENTS_BASE_URL=https://your-worker.workers.dev \
+node scripts/release/smoke-test.mjs
 ```
 
-#### 手动运行
+## 数据与媒体迁移辅助
 
-后端：
+`scripts/migrate/` 提供旧 SQLite 和上传目录的只读导出/校验工具。它们不会直接写入生产 D1 或 R2。详见 [`scripts/migrate/README.md`](scripts/migrate/README.md)。
 
-```bash
-cd moments/backend
-go build -ldflags="-X main.version=local -X main.commitId=local" -o ./dist/moments
-./dist/moments
-```
+## 许可证与上游
 
-前端：
+本项目继承上游的 GPL-3.0 许可证。原项目、贡献者及 Docker/SQLite 版本说明请访问：
 
-```bash
-cd moments/front
-pnpm install
-pnpm run dev
-```
-
-启动后访问 `http://localhost:3000`
-
----
-
-## 其他版本
-
-| 项目                                                            | 演示地址                                                             |
-| --------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [RandallAnjie/moments](https://github.com/RandallAnjie/moments) | [https://moments.randallanjie.com](https://moments.randallanjie.com) |
-
----
-
-## 致谢 Contributors
-
-感谢所有贡献者!
-
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/kingwrcy"><img src="https://avatars.githubusercontent.com/u/1247324?v=4?s=80" width="80px;" alt="kingwrcy"/><br /><sub><b>kingwrcy</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/RandallAnjie"><img src="https://avatars.githubusercontent.com/u/84122428?v=4?s=80" width="80px;" alt="Randall"/><br /><sub><b>Randall</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Jonnyan404"><img src="https://avatars.githubusercontent.com/u/20352705?v=4?s=80" width="80px;" alt="jonny"/><br /><sub><b>jonny</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/akarikun"><img src="https://avatars.githubusercontent.com/u/11921182?v=4?s=80" width="80px;" alt="akari"/><br /><sub><b>akari</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/douseful"><img src="https://avatars.githubusercontent.com/u/52767905?v=4?s=80" width="80px;" alt="yee"/><br /><sub><b>yee</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://www.jschef.com"><img src="https://avatars.githubusercontent.com/u/38160059?v=4?s=80" width="80px;" alt="Chef"/><br /><sub><b>Chef</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://xwsir.cn"><img src="https://avatars.githubusercontent.com/u/17978673?v=4?s=80" width="80px;" alt="小王先森"/><br /><sub><b>小王先森</b></sub></a><br /></td>
-    </tr>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://www.gooth.org"><img src="https://avatars.githubusercontent.com/u/126313?v=4?s=80" width="80px;" alt="Athurg Gooth"/><br /><sub><b>Athurg Gooth</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/xuewenG"><img src="https://avatars.githubusercontent.com/u/32838722?v=4?s=80" width="80px;" alt="xuewenG"/><br /><sub><b>xuewenG</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Secretlovez"><img src="https://avatars.githubusercontent.com/u/40491055?v=4?s=80" width="80px;" alt="Secretlovez"/><br /><sub><b>Secretlovez</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jkjoy"><img src="https://avatars.githubusercontent.com/u/23159890?v=4?s=80" width="80px;" alt="浪子"/><br /><sub><b>浪子</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/lateautumn2"><img src="https://avatars.githubusercontent.com/u/57248164?v=4?s=80" width="80px;" alt="lateautumn2"/><br /><sub><b>lateautumn2</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Jinvic"><img src="https://avatars.githubusercontent.com/u/77521861?v=4?s=80" width="80px;" alt="Jinvic"/><br /><sub><b>Jinvic</b></sub></a><br /></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/dianso"><img src="https://avatars.githubusercontent.com/u/1454808?v=4?s=80" width="80px;" alt="DIANSO"/><br /><sub><b>DIANSO</b></sub></a><br /></td>
-    </tr>
-  </tbody>
-</table>
-
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
-
-<!-- ALL-CONTRIBUTORS-LIST:END -->
-
-This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
-
-欢迎贡献！详情见 [all-contributors](https://github.com/all-contributors/all-contributors) 规范。
-
----
-
-## Star History
-
-[![Star History](https://api.star-history.com/svg?repos=kingwrcy/moments&type=Date)](https://star-history.com/#kingwrcy/moments&Date)
-
-如果你觉得 Moments 还不错，欢迎点个 Star！
+- 上游仓库：https://github.com/kingwrcy/moments
+- 当前 Cloudflare Worker 说明：[`worker/README.md`](worker/README.md)

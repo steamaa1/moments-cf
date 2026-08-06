@@ -282,7 +282,6 @@ const saveMemo = async () => {
       [doubanKey]: doubanData.value,
       video: state.video.value ? state.video : {},
     },
-    pinned: state.pinned,
     showType: state.showType ? 1 : 0,
     externalFavicon: state.externalUrl ? state.externalFavicon : "",
     externalTitle: state.externalTitle,

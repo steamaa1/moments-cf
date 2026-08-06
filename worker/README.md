@@ -1,6 +1,6 @@
-# Moments Cloudflare Worker
+# Moments Cloudflare Worker — Phase 6
 
-当前是 **Phase 5**：核心功能已迁移至 Worker，并完成公开邮箱/评论隐私、Markdown XSS、reCAPTCHA 服务端验证、评论批量查询、R2/D1 上传回滚、点赞计数一致性及错误脱敏加固。
+Cloudflare 版使用单个 Worker 提供 API、Nuxt Workers Assets、RSS 和私有 R2 媒体代理；D1 保存结构化数据。
 
 ## 资源绑定
 
@@ -8,82 +8,80 @@
 | --- | --- |
 | `DB` | D1：`moments-db` |
 | `MEDIA` | R2：`moments-media` |
-| `ASSETS` | `../front/.output/public` 的 Nuxt SPA 静态资源 |
+| `ASSETS` | `../front/.output/public` |
 
-## Cloudflare Workers Builds：只需两条命令
+## Workers Builds
 
-在 Dashboard → Workers Builds 中填写：
-
-| 项目 | 填写 |
+| 项目 | 值 |
 | --- | --- |
 | 路径 | `worker` |
 | 构建命令 | `npm run build:cf` |
 | 部署命令 | `npm run deploy:cf` |
 
-**不需要** `D1_DATABASE_ID` Build Variable。部署脚本会通过 Workers Builds 已使用的 API Token 查询已存在的 `moments-db`，在构建环境临时生成完整 Wrangler 配置，自动执行未应用的 D1 Migration 后部署。
+`deploy:cf` 会通过 API Token 按名称查询 D1 UUID，生成被忽略的 `wrangler.build.toml`，应用未执行的 Migration 后部署。无需设置 `D1_DATABASE_ID` Build Variable。
 
-Workers Builds 使用的 API Token 需有：`D1 Read`、`D1 Write`、`Workers Scripts Edit`，以及 R2 绑定/访问所需权限。仓库不会保存任何账户专属 D1 ID。
+## Secrets
 
-## 部署前必须设置的 Secrets
+- `JWT_SECRET`：至少 32 字符
+- `INIT_SECRET`：至少 24 字符
+- 可选 `PBKDF2_ITERATIONS`：默认/最大 `100000`
 
-在 Cloudflare Worker 的 **Settings → Variables and Secrets** 添加加密 Secret：
+Secret 只能保存在 Cloudflare 加密变量中。
 
-| 名称 | 用途 |
+## Phase 6 重点
+
+- 外部链接、图片、音乐、视频和豆瓣扩展字段服务端白名单
+- reCAPTCHA action、hostname 和 score 校验
+- 评论计数 Trigger 及历史计数修正
+- 每条动态最多读取 5 条评论，恢复 `latest=1`
+- R2 媒体 Range、HEAD、ETag/304
+- 豆瓣图书/电影元数据抓取；封面保留原始 HTTPS URL
+- 未引用媒体进入 7 天逻辑回收站，可恢复或立即永久删除
+- 公开配置使用白名单，不返回 SMTP/S3 遗留字段
+
+## API 补充
+
+所有 API 使用 `{ code, message?, data }` 格式；登录请求兼容 `x-api-token`。
+
+| 路径 | 说明 |
 | --- | --- |
-| `JWT_SECRET` | 至少 32 字符的随机密钥，用于登录令牌签名 |
-| `INIT_SECRET` | 首次管理员初始化接口的单次保护密钥，至少 24 字符 |
+| `GET /api/health` | Worker 和 Binding 状态，当前 `phase: 6` |
+| `POST /api/admin/initialize` | 首次管理员初始化，需 `x-init-secret` |
+| `POST /api/memo/getDoubanBookInfo?id=` | 登录后抓取豆瓣图书元数据 |
+| `POST /api/memo/getDoubanMovieInfo?id=` | 登录后抓取豆瓣电影元数据 |
+| `POST /api/file/clean` | 扫描未引用媒体并移入回收站，同时清理超过 7 天的对象 |
+| `POST /api/file/trash/list` | 当前用户回收站列表 |
+| `POST /api/file/trash/restore?id=` | 恢复媒体记录 |
+| `POST /api/file/trash/purge?id=` | 立即永久删除 R2 对象和 D1 记录 |
+| `GET/HEAD /upload/*` | 私有 R2 同域代理，支持 Range 与条件缓存 |
 
-可选变量：`PBKDF2_ITERATIONS`，默认 `100000`。不要把任何 Secret 写入 `wrangler.toml` 或 Git。
-
-## Phase 5 API
-
-所有 API 保持 Moments 原本的 `{ code, message?, data }` 响应格式。登录后的请求继续兼容 `x-api-token`。
-
-| 路径 | 方法 | 说明 |
-| --- | --- | --- |
-| `/api/health` | GET | Worker 与 Binding 状态 |
-| `/api/admin/initialize` | POST | 首次建立管理员；需 `x-init-secret`，仅无用户时可用 |
-| `/api/user/login` | POST | 登录，返回 `x-api-token` 兼容 JWT |
-| `/api/user/profile` | POST | 当前登录用户资料；游客回退管理员资料 |
-| `/api/user/profile/:username` | POST | 指定公开用户资料 |
-| `/api/user/saveProfile` | POST | 保存当前用户资料/密码 |
-| `/api/sysConfig/get` | POST | 公开系统配置，自动剔除敏感字段 |
-| `/api/sysConfig/getFull` | POST | 管理员完整配置 |
-| `/api/sysConfig/save` | POST | 管理员保存配置 |
-| `/api/file/upload` | POST | 登录后上传 `files` 表单字段到 R2，单文件最大 25MB |
-| `/api/memo/list` | POST | 动态分页列表、标签/用户/时间筛选 |
-| `/api/memo/get?id=` | POST | 动态详情 |
-| `/api/memo/save` | POST | 登录后发布或编辑动态 |
-| `/api/memo/remove?id=` | POST | 作者或管理员删除动态 |
-| `/api/memo/setPinned?id=` | POST | 管理员切换唯一置顶动态 |
-| `/api/memo/like?id=&token=` | POST | 匿名访客点赞；同一浏览器去重；启用 reCAPTCHA 时服务端验证 token |
-| `/api/tag/list` | POST | 当前登录用户的标签列表 |
-| `/rss` | GET | 最近 15 条公开动态 RSS |
-| `/api/comment/add` | POST | 添加评论（访客或登录用户）；启用 reCAPTCHA 时服务端验证 token |
-| `/api/comment/remove?id=` | POST | 动态作者或管理员删除评论 |
-| `/api/friend/list` | POST | 公开友链列表 |
-| `/api/friend/add` | POST | 管理员添加友链 |
-| `/api/friend/delete?id=` | POST | 管理员删除友链 |
-| `/api/memo/getFaviconAndTitle?url=` | POST | 登录后抓取网页标题/Favicon；禁止内网/重定向 SSRF
+其他用户、动态、评论、点赞、标签、友链、配置和 RSS API 与原前端路径保持兼容。
 
 ## D1 Migration
 
-首次部署后，在 Cloudflare Dashboard 的 D1 数据库 `moments-db` 中执行：
+按顺序维护：
 
 ```text
-worker/migrations/0001_schema.sql
-worker/migrations/0002_memos.sql
-worker/migrations/0003_comments_friends.sql
-worker/migrations/0004_like_counters.sql
+0001_schema.sql
+0002_memos.sql
+0003_comments_friends.sql
+0004_like_counters.sql
+0005_phase6_consistency_trash.sql
 ```
 
-正常的 Workers Builds 部署命令 `npm run deploy:cf` 会在发布 Worker 前自动执行尚未应用的 Migration。`0004_like_counters.sql` 会按 `memo_likes` 修正已有点赞数，并通过 D1 Trigger 原子维护后续计数。仅在不使用该部署命令时，才需要在 Dashboard 手动执行。
+`0005` 会：
 
-## 本地检查
+1. 根据真实评论修正 `comment_count`
+2. 建立评论新增/删除 Trigger
+3. 为媒体表增加 `trashed_at` 和回收站索引
+
+正常使用 `npm run deploy:cf` 时 Migration 会自动应用。
+
+## 检查
 
 ```bash
 cd worker
 npm run check
 ```
 
-无需安装 Worker 专属依赖；检查包含 Worker/API 回归、安全与隐私、SQL Migration 真实 SQLite 行为、只读迁移工具和部署前检查。上线后可按 `scripts/release/README.md` 执行只读冒烟测试。
+检查包含 Worker/API 回归、安全和隐私、豆瓣解析、R2 Range/HEAD、真实 SQLite Migration、迁移工具和部署前检查。

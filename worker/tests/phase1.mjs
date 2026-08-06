@@ -12,7 +12,7 @@ const health = await worker.fetch(new Request('https://moments.example.com/api/h
 }), baseEnv);
 expect(health.status === 200, 'health endpoint must return 200');
 const healthData = await health.json();
-expect(healthData.code === 0 && healthData.data.phase === 5, 'health must report Phase 5');
+expect(healthData.code === 0 && healthData.data.phase === 6, 'health must report Phase 6');
 expect(health.headers.get('access-control-allow-origin') === 'https://moments.example.com', 'health CORS origin mismatch');
 
 const options = await worker.fetch(new Request('https://moments.example.com/api/health', { method: 'OPTIONS' }), baseEnv);

@@ -1,4 +1,4 @@
-import type { ResultVO, SysConfigVO } from "~/types"
+import type { ResultVO } from "~/types"
 import CryptoJS from "crypto-js"
 import { toast } from "vue-sonner"
 import { useGlobalState } from "~/store"
@@ -217,11 +217,6 @@ export const useUpload = async (
   if (files.length === 0) {
     toast.error("没有选择文件")
     return []
-  }
-
-  const sysConfig = useState<SysConfigVO>("sysConfig")
-  if (sysConfig.value.enableS3) {
-    return upload2S3(files, onProgress)
   }
 
   return uploadFile2Server(files, onProgress)

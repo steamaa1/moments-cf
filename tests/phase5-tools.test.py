@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Functional tests for Phase 5 SQL migrations and read-only migration helpers."""
+"""Functional tests for SQL migrations through Phase 6 and read-only migration helpers."""
 from __future__ import annotations
 
 import hashlib
@@ -43,8 +43,10 @@ def prepare_database(database: Path) -> None:
             "INSERT INTO users (username, nickname, password_hash) VALUES (?, ?, ?)",
             ("admin", "Admin", "test-only-hash"),
         )
-        connection.execute("INSERT INTO memos (content, user_id, fav_count) VALUES (?, 1, 9)", ("memo",))
+        connection.execute("INSERT INTO memos (content, user_id, fav_count, comment_count) VALUES (?, 1, 9, 9)", ("memo",))
         connection.execute("INSERT INTO memo_likes (memo_id, identity_hash) VALUES (1, 'browser-a')")
+        connection.execute("INSERT INTO comments (content, username, memo_id) VALUES ('legacy comment', 'guest', 1)")
+        connection.execute("INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes) VALUES (1, 'media/test.webp', 'test.webp', 'image/webp', 10)")
         connection.commit()
     finally:
         connection.close()
@@ -69,6 +71,30 @@ def test_like_counter_triggers(database: Path) -> None:
         count = connection.execute("SELECT fav_count FROM memos WHERE id=1").fetchone()[0]
         if count != 1:
             raise AssertionError(f"delete trigger expected fav_count=1, found {count}")
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_phase6_comment_triggers_and_trash(database: Path) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        apply_sql(connection, "0005_phase6_consistency_trash.sql")
+        count = connection.execute("SELECT comment_count FROM memos WHERE id=1").fetchone()[0]
+        if count != 1:
+            raise AssertionError(f"comment reconciliation expected 1, found {count}")
+        connection.execute("INSERT INTO comments (content, username, memo_id) VALUES ('new comment', 'guest', 1)")
+        if connection.execute("SELECT comment_count FROM memos WHERE id=1").fetchone()[0] != 2:
+            raise AssertionError("comment insert trigger did not increment counter")
+        connection.execute("DELETE FROM comments WHERE content='new comment'")
+        if connection.execute("SELECT comment_count FROM memos WHERE id=1").fetchone()[0] != 1:
+            raise AssertionError("comment delete trigger did not decrement counter")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(media)")}
+        if "trashed_at" not in columns:
+            raise AssertionError("media trash column was not created")
+        connection.execute("UPDATE media SET trashed_at=CURRENT_TIMESTAMP WHERE id=1")
+        if connection.execute("SELECT trashed_at FROM media WHERE id=1").fetchone()[0] is None:
+            raise AssertionError("media trash timestamp was not stored")
         connection.commit()
     finally:
         connection.close()
@@ -115,8 +141,9 @@ def main() -> None:
         database = temporary / "legacy.sqlite"
         prepare_database(database)
         test_like_counter_triggers(database)
+        test_phase6_comment_triggers_and_trash(database)
         test_export_helpers(database, temporary)
-    print("Phase 5 migration and release tool functional tests: PASS")
+    print("Phase 6 migration and release tool functional tests: PASS")
 
 
 if __name__ == "__main__":

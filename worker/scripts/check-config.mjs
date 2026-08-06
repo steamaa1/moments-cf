@@ -5,6 +5,7 @@ const schema = await readFile(new URL('../migrations/0001_schema.sql', import.me
 const memoSchema = await readFile(new URL('../migrations/0002_memos.sql', import.meta.url), 'utf8');
 const phase4Schema = await readFile(new URL('../migrations/0003_comments_friends.sql', import.meta.url), 'utf8');
 const phase5Schema = await readFile(new URL('../migrations/0004_like_counters.sql', import.meta.url), 'utf8');
+const phase6Schema = await readFile(new URL('../migrations/0005_phase6_consistency_trash.sql', import.meta.url), 'utf8');
 const template = await readFile(new URL('../wrangler.toml.template', import.meta.url), 'utf8');
 const required = [
   'name = "moments-cf"',
@@ -37,4 +38,7 @@ for (const table of ['CREATE TABLE IF NOT EXISTS comments', 'CREATE TABLE IF NOT
 for (const statement of ['UPDATE memos', 'CREATE TRIGGER IF NOT EXISTS trg_memo_likes_insert', 'CREATE TRIGGER IF NOT EXISTS trg_memo_likes_delete']) {
   if (!phase5Schema.includes(statement)) throw new Error(`Phase 5 schema is missing: ${statement}`);
 }
-console.log('Phase 5 Worker configuration guard: PASS');
+for (const statement of ['CREATE TRIGGER IF NOT EXISTS trg_comments_insert', 'CREATE TRIGGER IF NOT EXISTS trg_comments_delete', 'ALTER TABLE media ADD COLUMN trashed_at']) {
+  if (!phase6Schema.includes(statement)) throw new Error(`Phase 6 schema is missing: ${statement}`);
+}
+console.log('Phase 6 Worker configuration guard: PASS');

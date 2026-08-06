@@ -37,6 +37,12 @@ const ALLOWED_MEDIA_TYPES = new Set([
   'video/mp4', 'video/webm', 'video/quicktime',
 ]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const TRASH_RETENTION_DAYS = 7;
+const PUBLIC_CONFIG_KEYS = [
+  'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
+  'enableGoogleRecaptcha', 'googleSiteKey', 'enableComment', 'maxCommentLength',
+  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister',
+];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
 const MAX_PBKDF2_ITERATIONS = 100000;
 
@@ -94,6 +100,9 @@ function publicUser(user, includeEmail = false) {
 }
 function parseConfig(value) {
   try { return { ...DEFAULT_CONFIG, ...(value ? JSON.parse(value) : {}) }; } catch { return { ...DEFAULT_CONFIG }; }
+}
+function publicConfig(config) {
+  return Object.fromEntries(PUBLIC_CONFIG_KEYS.map(key => [key, config[key]]));
 }
 async function hmac(secret, value) {
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -245,13 +254,14 @@ async function getConfig(request, env, headers, full = false) {
   // Cloudflare edition always uses the authenticated /api/file/upload -> R2 path.
   // Never let legacy S3 settings switch the frontend to an unsupported pre-signed endpoint.
   config.enableS3 = false;
-  if (!full) {
-    delete config.googleSecretKey;
-    delete config.smtpPassword;
-    delete config.s3?.accessKey;
-    delete config.s3?.secretKey;
+  config.enableEmail = false;
+  if (full) {
+    delete config.enableS3;
+    delete config.s3;
+    delete config.enableEmail;
+    for (const key of ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword']) delete config[key];
   }
-  return json(ok(config), 200, headers);
+  return json(ok(full ? config : publicConfig(config)), 200, headers);
 }
 async function saveConfig(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
@@ -262,6 +272,11 @@ async function saveConfig(request, env, headers) {
   const config = { ...parseConfig(old?.content), ...body, adminUserName: String(body.adminUserName || access.user.username).trim() };
   delete config.version;
   delete config.commitId;
+  // Unsupported legacy credentials must never be persisted by the Cloudflare edition.
+  config.enableS3 = false;
+  config.enableEmail = false;
+  config.s3 = { thumbnailSuffix: '' };
+  for (const key of ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword']) delete config[key];
   await env.DB.batch([
     env.DB.prepare('INSERT INTO sys_config (id, content, updated_at) VALUES (1, ?, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET content=excluded.content, updated_at=CURRENT_TIMESTAMP').bind(JSON.stringify(config)),
     env.DB.prepare('UPDATE users SET username=?, updated_at=CURRENT_TIMESTAMP WHERE id=1').bind(config.adminUserName),
@@ -324,12 +339,23 @@ async function fileExists(request, env, headers) {
   if (access.response) return access.response;
   const filename = new URL(request.url).searchParams.get('filename');
   if (!filename) return json(fail('filename 不能为空'), 400, headers);
-  const row = await env.DB.prepare('SELECT r2_key FROM media WHERE owner_id=? AND (r2_key=? OR original_filename=?) LIMIT 1').bind(access.user.id, filename, filename).first();
+  const row = await env.DB.prepare('SELECT r2_key FROM media WHERE owner_id=? AND trashed_at IS NULL AND (r2_key=? OR original_filename=?) LIMIT 1').bind(access.user.id, filename, filename).first();
   return json(ok({ exist: Boolean(row), path: row ? `/upload/${row.r2_key}` : '' }), 200, headers);
 }
 function collectUploadKeys(value, target) {
   const pattern = /\/upload\/([^\s"'<>),]+)/g;
   for (const match of String(value || '').matchAll(pattern)) target.add(decodeURIComponent(match[1]));
+}
+async function purgeExpiredTrash(userId, env) {
+  const expired = await env.DB.prepare("SELECT id, r2_key FROM media WHERE owner_id=? AND trashed_at IS NOT NULL AND trashed_at <= datetime('now', ?)")
+    .bind(userId, `-${TRASH_RETENTION_DAYS} days`).all();
+  let purged = 0;
+  for (const media of expired.results || []) {
+    await env.MEDIA.delete(media.r2_key);
+    await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(media.id, userId).run();
+    purged += 1;
+  }
+  return purged;
 }
 async function cleanFiles(request, env, headers) {
   const access = await requireUser(request, env, headers);
@@ -340,7 +366,7 @@ async function cleanFiles(request, env, headers) {
     env.DB.prepare('SELECT imgs, ext FROM memos WHERE user_id=?').bind(access.user.id).all(),
     env.DB.prepare('SELECT avatar_url, cover_url FROM users WHERE id=?').bind(access.user.id).all(),
     Number(access.user.id) === 1 ? env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : Promise.resolve(null),
-    env.DB.prepare('SELECT id, r2_key FROM media WHERE owner_id=?').bind(access.user.id).all(),
+    env.DB.prepare('SELECT id, r2_key FROM media WHERE owner_id=? AND trashed_at IS NULL').bind(access.user.id).all(),
   ]);
   for (const row of memos.results || []) { collectUploadKeys(row.imgs, referenced); collectUploadKeys(row.ext, referenced); }
   for (const row of users.results || []) { collectUploadKeys(row.avatar_url, referenced); collectUploadKeys(row.cover_url, referenced); }
@@ -348,11 +374,39 @@ async function cleanFiles(request, env, headers) {
   let num = 0;
   for (const media of mediaRows.results || []) {
     if (referenced.has(media.r2_key)) continue;
-    await env.MEDIA.delete(media.r2_key);
-    await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=?').bind(media.id, access.user.id).run();
+    await env.DB.prepare('UPDATE media SET trashed_at=CURRENT_TIMESTAMP WHERE id=? AND owner_id=? AND trashed_at IS NULL').bind(media.id, access.user.id).run();
     num += 1;
   }
-  return json(ok({ num }), 200, headers);
+  const purged = await purgeExpiredTrash(access.user.id, env);
+  return json(ok({ num, purged, retentionDays: TRASH_RETENTION_DAYS }), 200, headers);
+}
+async function listTrash(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  const rows = await env.DB.prepare('SELECT id, r2_key, original_filename, content_type, size_bytes, trashed_at FROM media WHERE owner_id=? AND trashed_at IS NOT NULL ORDER BY trashed_at DESC').bind(access.user.id).all();
+  return json(ok({ list: (rows.results || []).map(row => ({
+    id: Number(row.id), path: `/upload/${row.r2_key}`, filename: row.original_filename,
+    contentType: row.content_type, size: Number(row.size_bytes), trashedAt: row.trashed_at,
+  })), retentionDays: TRASH_RETENTION_DAYS }), 200, headers);
+}
+async function restoreTrash(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  const id = intParam(new URL(request.url).searchParams.get('id'));
+  const result = await env.DB.prepare('UPDATE media SET trashed_at=NULL WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).run();
+  if (Number(result.meta?.changes || 0) !== 1) return json(fail('回收站文件不存在'), 404, headers);
+  return json(ok({}), 200, headers);
+}
+async function purgeTrash(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  if (!env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
+  const id = intParam(new URL(request.url).searchParams.get('id'));
+  const media = await env.DB.prepare('SELECT id, r2_key FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).first();
+  if (!media) return json(fail('回收站文件不存在'), 404, headers);
+  await env.MEDIA.delete(media.r2_key);
+  await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).run();
+  return json(ok({}), 200, headers);
 }
 
 function intParam(value, fallback = 0) {
@@ -437,10 +491,13 @@ async function listMemos(request, env, headers) {
       const ids = rows.map(row => Number(row.id));
       const placeholders = ids.map(() => '?').join(',');
       const order = config.commentOrder === 'asc' ? 'ASC' : 'DESC';
-      const all = await env.DB.prepare(`SELECT * FROM comments WHERE memo_id IN (${placeholders}) ORDER BY memo_id, created_at ${order}`).bind(...ids).all();
+      const all = await env.DB.prepare(`SELECT * FROM (
+        SELECT c.*, ROW_NUMBER() OVER (PARTITION BY memo_id ORDER BY created_at ${order}, id ${order}) AS row_num
+        FROM comments c WHERE memo_id IN (${placeholders})
+      ) ranked WHERE row_num <= 5 ORDER BY memo_id, created_at ${order}, id ${order}`).bind(...ids).all();
       for (const row of all.results || []) {
         const bucket = commentsByMemo.get(Number(row.memo_id)) || [];
-        if (bucket.length < 5) bucket.push(commentView(row));
+        bucket.push(commentView(row));
         commentsByMemo.set(Number(row.memo_id), bucket);
       }
     } catch (error) {
@@ -466,7 +523,8 @@ async function getMemo(request, env, headers) {
   const view = memoView(memo);
   try {
     const order = config.commentOrder === 'asc' ? 'ASC' : 'DESC';
-    const comments = await env.DB.prepare(`SELECT * FROM comments WHERE memo_id=? ORDER BY created_at ${order}`).bind(id).all();
+    const latest = url.searchParams.get('latest');
+    const comments = await env.DB.prepare(`SELECT * FROM comments WHERE memo_id=? ORDER BY created_at ${order}, id ${order}${latest ? ' LIMIT 5' : ''}`).bind(id).all();
     view.comments = (comments.results || []).map(commentView);
   } catch (error) {
     console.warn('Comments are temporarily unavailable for memo detail', error);
@@ -478,7 +536,7 @@ async function verifyMemoMedia(imgs, user, env) {
   for (const url of imgs) {
     if (!url.startsWith('/upload/media/')) continue;
     const key = url.slice('/upload/'.length);
-    const media = await env.DB.prepare('SELECT owner_id FROM media WHERE r2_key = ?').bind(key).first();
+    const media = await env.DB.prepare('SELECT owner_id FROM media WHERE r2_key = ? AND trashed_at IS NULL').bind(key).first();
     if (!media || Number(media.owner_id) !== Number(user.id)) throw new Error('图片不属于当前用户');
   }
 }
@@ -488,24 +546,34 @@ async function saveMemo(request, env, headers) {
   const body = await readJson(request);
   if (!body || typeof body !== 'object') return json(fail('参数错误'), 400, headers);
   const content = String(body.content || '').trim();
-  const imgs = Array.isArray(body.imgs) ? body.imgs.map(v => String(v).trim()).filter(Boolean).slice(0, 9) : [];
+  let imgs;
+  try {
+    imgs = (Array.isArray(body.imgs) ? body.imgs : []).map(value => safeHttpHref(value, '图片地址', { allowRelativeUpload: true })).filter(Boolean).slice(0, 9);
+  } catch (error) { return json(fail(error.message), 400, headers); }
   if (!content && !imgs.length && !body.externalUrl && !body.ext?.video?.value) return json(fail('动态内容不能为空'), 400, headers);
   if (content.length > 10000) return json(fail('动态内容不能超过 10000 字'), 400, headers);
   try { await verifyMemoMedia(imgs, access.user, env); } catch (error) { return json(fail(error.message), 403, headers); }
   const id = intParam(body.id);
-  const pinned = body.pinned ? 1 : 0;
   const showType = Number(body.showType) === 0 ? 0 : 1;
   const createdAt = sqliteTime(body.createdAt || new Date());
-  const ext = JSON.stringify(body.ext && typeof body.ext === 'object' ? body.ext : {});
-  const values = [content, imgs.join(','), String(body.location || '').slice(0, 200), String(body.externalUrl || '').slice(0, 2048), String(body.externalTitle || '').slice(0, 300), String(body.externalFavicon || '/favicon.png').slice(0, 2048), pinned, ext, showType, tagsString(body.tags)];
+  if (!createdAt) return json(fail('发布时间格式错误'), 400, headers);
+  const externalUrl = body.externalUrl ? validHttpUrl(String(body.externalUrl)) : null;
+  let externalFavicon = '';
+  try { externalFavicon = safeSiteAssetHref(body.externalFavicon, '外部图标'); }
+  catch (error) { return json(fail(error.message), 400, headers); }
+  if (body.externalUrl && !externalUrl) return json(fail('外部链接仅支持 http/https'), 400, headers);
+  let safeExt;
+  try { safeExt = sanitizeMemoExt(body.ext); } catch (error) { return json(fail(error.message), 400, headers); }
+  const ext = JSON.stringify(safeExt);
+  const values = [content, imgs.join(','), String(body.location || '').slice(0, 200), externalUrl?.href || '', String(body.externalTitle || '').slice(0, 300), externalFavicon || '/favicon.png', ext, showType, tagsString(body.tags)];
   if (id) {
     const existing = await env.DB.prepare('SELECT * FROM memos WHERE id=?').bind(id).first();
     if (!existing) return json(fail('动态不存在'), 404, headers);
     if (Number(existing.user_id) !== Number(access.user.id)) return json(fail('没有权限'), 403, headers);
-    await env.DB.prepare('UPDATE memos SET content=?, imgs=?, location=?, external_url=?, external_title=?, external_favicon=?, pinned=?, ext=?, show_type=?, tags=?, created_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    await env.DB.prepare('UPDATE memos SET content=?, imgs=?, location=?, external_url=?, external_title=?, external_favicon=?, ext=?, show_type=?, tags=?, created_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
       .bind(...values, createdAt, id).run();
   } else {
-    await env.DB.prepare('INSERT INTO memos (content, imgs, location, external_url, external_title, external_favicon, pinned, ext, show_type, tags, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)')
+    await env.DB.prepare('INSERT INTO memos (content, imgs, location, external_url, external_title, external_favicon, pinned, ext, show_type, tags, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)')
       .bind(...values, access.user.id, createdAt).run();
   }
   return json(ok({}), 200, headers);
@@ -535,7 +603,8 @@ async function setPinned(request, env, headers) {
 async function likeMemo(request, env, headers) {
   const id = intParam(new URL(request.url).searchParams.get('id'));
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
-  const recaptcha = await verifyRecaptchaToken(new URL(request.url).searchParams.get('token'), config);
+  const requestUrl = new URL(request.url);
+  const recaptcha = await verifyRecaptchaToken(requestUrl.searchParams.get('token'), config, 'likeMemo', requestUrl.hostname);
   if (!recaptcha.ok) return json(fail(recaptcha.message), 400, headers);
   const memo = await env.DB.prepare('SELECT id, show_type, created_at FROM memos WHERE id=?').bind(id).first();
   if (!memo || Number(memo.show_type) !== 1 || Date.parse(memo.created_at) > Date.now()) return json(fail('动态不存在或不可点赞'), 404, headers);
@@ -578,10 +647,64 @@ async function rss(request, env) {
 function validHttpUrl(value) {
   try { const url = new URL(value); return url.protocol === 'https:' || url.protocol === 'http:' ? url : null; } catch { return null; }
 }
+function safeHttpHref(value, label, { allowRelativeUpload = false } = {}) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (allowRelativeUpload && text.startsWith('/upload/')) return text.slice(0, 2048);
+  const url = validHttpUrl(text);
+  if (!url) throw new Error(`${label}仅支持 http/https`);
+  return url.href.slice(0, 2048);
+}
+function safeSiteAssetHref(value, label) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^\/(?:upload\/|favicon(?:\.|\/))/.test(text) && !text.includes('..')) return text.slice(0, 2048);
+  return safeHttpHref(text, label);
+}
+function sanitizeMemoExt(input) {
+  const ext = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const output = { music: {}, video: {}, doubanBook: {}, doubanMovie: {} };
+  if (ext.music?.id) {
+    const servers = new Set(['netease', 'tencent', 'kugou', 'xiami', 'baidu']);
+    const types = new Set(['song', 'playlist', 'album', 'search', 'artist']);
+    const server = String(ext.music.server || '');
+    const type = String(ext.music.type || '');
+    if (!servers.has(server)) throw new Error('不支持的音乐平台');
+    if (!types.has(type)) throw new Error('不支持的音乐类型');
+    output.music = {
+      id: String(ext.music.id).slice(0, 200), server, type,
+      api: safeHttpHref(ext.music.api, '音乐 API'),
+    };
+  }
+  if (ext.video?.value) {
+    const type = String(ext.video.type || '');
+    if (!['online', 'youtube', 'bilibili'].includes(type)) throw new Error('不支持的视频类型');
+    const value = safeHttpHref(ext.video.value, '视频地址', { allowRelativeUpload: type === 'online' });
+    const url = value.startsWith('/upload/') ? null : new URL(value);
+    if (type === 'youtube' && !['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com'].includes(url?.hostname)) throw new Error('Youtube 视频地址无效');
+    if (type === 'bilibili' && url?.hostname !== 'player.bilibili.com') throw new Error('B站视频地址无效');
+    output.video = { type, value };
+  }
+  for (const key of ['doubanBook', 'doubanMovie']) {
+    const item = ext[key];
+    if (!item || typeof item !== 'object' || !item.title) continue;
+    const isBook = key === 'doubanBook';
+    const clean = {
+      id: String(item.id || '').replace(/\D/g, '').slice(0, 20),
+      url: safeHttpHref(item.url, '豆瓣链接'), title: String(item.title).slice(0, 300),
+      desc: String(item.desc || '').slice(0, 4000), image: safeHttpHref(item.image, '豆瓣封面', { allowRelativeUpload: true }),
+      rating: String(item.rating || '').slice(0, 30),
+    };
+    if (isBook) Object.assign(clean, { isbn: String(item.isbn || '').slice(0, 40), author: String(item.author || '').slice(0, 300), pubDate: String(item.pubDate || '').slice(0, 40), keywords: String(item.keywords || '').slice(0, 1000) });
+    else Object.assign(clean, { director: String(item.director || '').slice(0, 300), releaseDate: String(item.releaseDate || '').slice(0, 80), actors: String(item.actors || '').slice(0, 1000), runtime: String(item.runtime || '').slice(0, 40) });
+    output[key] = clean;
+  }
+  return output;
+}
 function commentView(row) {
   return { id: Number(row.id), content: row.content, replyTo: row.reply_to, username: row.username, website: row.website, createdAt: row.created_at, updatedAt: row.updated_at, memoId: Number(row.memo_id), author: row.author };
 }
-async function verifyRecaptchaToken(token, config) {
+async function verifyRecaptchaToken(token, config, expectedAction = '', expectedHostname = '') {
   if (!config.enableGoogleRecaptcha) return { ok: true };
   if (!config.googleSecretKey) return { ok: false, message: 'reCAPTCHA 服务端未配置' };
   if (!token) return { ok: false, message: 'token不能为空' };
@@ -595,7 +718,9 @@ async function verifyRecaptchaToken(token, config) {
     if (!response.ok) return { ok: false, message: '人机校验服务不可用' };
     const data = await response.json();
     if (!data.success) return { ok: false, message: '人机校验不通过' };
-    if (typeof data.score === 'number' && data.score <= 0.5) return { ok: false, message: '人机校验不通过' };
+    if (typeof data.score !== 'number' || data.score <= 0.5) return { ok: false, message: '人机校验不通过' };
+    if (expectedAction && data.action !== expectedAction) return { ok: false, message: '人机校验场景不匹配' };
+    if (expectedHostname && data.hostname !== expectedHostname) return { ok: false, message: '人机校验域名不匹配' };
     return { ok: true };
   } catch {
     return { ok: false, message: '人机校验服务不可用' };
@@ -612,7 +737,7 @@ async function addComment(request, env, headers) {
   const body = await readJson(request); if (!body?.memoId || !String(body.content || '').trim()) return json(fail('评论内容不能为空'), 400, headers);
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   if (!config.enableComment) return json(fail('评论未开启'), 403, headers);
-  const recaptcha = await verifyRecaptchaToken(body.token, config);
+  const recaptcha = await verifyRecaptchaToken(body.token, config, 'newComment', new URL(request.url).hostname);
   if (!recaptcha.ok) return json(fail(recaptcha.message), 400, headers);
   const content = String(body.content).trim();
   const maxCommentLength = Math.max(1, Number(config.maxCommentLength) || 300);
@@ -629,7 +754,7 @@ async function addComment(request, env, headers) {
   const username = user ? user.nickname : String(body.username || `匿名用户_${randomToken(2)}`).trim().slice(0, 80);
   await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(content, String(body.replyTo || '').slice(0, 80), String(body.replyEmail || '').slice(0, 254), username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash).run();
-  await env.DB.prepare('UPDATE memos SET comment_count=comment_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(memo.id).run();
+  // D1 trigger trg_comments_insert updates comment_count atomically.
   return json(ok({}), 200, { ...headers, ...Object.fromEntries(identity.headers) });
 }
 async function removeComment(request, env, headers) {
@@ -637,7 +762,8 @@ async function removeComment(request, env, headers) {
   const id = intParam(new URL(request.url).searchParams.get('id')); const comment = await env.DB.prepare('SELECT c.*, m.user_id FROM comments c JOIN memos m ON m.id=c.memo_id WHERE c.id=?').bind(id).first();
   if (!comment) return json(fail('评论不存在'), 404, headers);
   if (Number(comment.user_id) !== Number(access.user.id) && Number(access.user.id) !== 1) return json(fail('没有权限'), 403, headers);
-  await env.DB.batch([env.DB.prepare('DELETE FROM comments WHERE id=?').bind(id), env.DB.prepare('UPDATE memos SET comment_count=MAX(0, comment_count-1), updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(comment.memo_id)]);
+  await env.DB.prepare('DELETE FROM comments WHERE id=?').bind(id).run();
+  // D1 trigger trg_comments_delete updates comment_count atomically.
   return json(ok({}), 200, headers);
 }
 async function listFriends(_request, env, headers) { const rows = await env.DB.prepare('SELECT * FROM friends ORDER BY created_at ASC').all(); return json(ok({ list: (rows.results || []).map(row => ({ id: Number(row.id), name: row.name, icon: row.icon, url: row.url, desc: row.description })) }), 200, headers); }
@@ -649,6 +775,55 @@ async function addFriend(request, env, headers) {
 }
 async function deleteFriend(request, env, headers) { const access = await requireUser(request, env, headers, true); if (access.response) return access.response; await env.DB.prepare('DELETE FROM friends WHERE id=?').bind(intParam(new URL(request.url).searchParams.get('id'))).run(); return json(ok({}), 200, headers); }
 function forbiddenHost(host) { const h = host.toLowerCase(); if (h === 'localhost' || h.endsWith('.localhost') || h === '::1') return true; if (/^127\.|^10\.|^192\.168\.|^169\.254\./.test(h)) return true; const match = h.match(/^172\.(\d+)\./); return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31); }
+function decodeHtml(value) {
+  return String(value || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&#(\d+);/g, (_m, code) => String.fromCodePoint(Number(code)));
+}
+function metaContent(html, attribute, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patterns = [
+    new RegExp(`<meta[^>]+${attribute}=["']${escaped}["'][^>]+content=["']([^"']*)["'][^>]*>`, 'i'),
+    new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+${attribute}=["']${escaped}["'][^>]*>`, 'i'),
+  ];
+  return decodeHtml(patterns.map(pattern => html.match(pattern)?.[1]).find(Boolean) || '').trim();
+}
+function selectorText(html, className) {
+  const escaped = className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = html.match(new RegExp(`<[^>]+class=["'][^"']*\\b${escaped}\\b[^"']*["'][^>]*>([\\s\\S]*?)<\\/[^>]+>`, 'i'));
+  return decodeHtml((match?.[1] || '').replace(/<[^>]*>/g, '')).trim();
+}
+function parseDouban(html, type, id) {
+  const target = `https://${type === 'book' ? 'book' : 'movie'}.douban.com/subject/${id}/`;
+  const common = {
+    id, url: target, title: metaContent(html, 'property', 'og:title').slice(0, 300),
+    desc: metaContent(html, 'property', 'og:description').slice(0, 4000),
+    image: safeHttpHref(metaContent(html, 'property', 'og:image'), '豆瓣封面'),
+    rating: selectorText(html, 'rating_num') || (type === 'book' ? '暂无' : '未知评分'),
+  };
+  if (!common.title || !common.image) throw new Error('无法解析豆瓣页面');
+  if (type === 'book') {
+    const keywords = metaContent(html, 'name', 'keywords');
+    return { ...common, author: metaContent(html, 'property', 'book:author'), isbn: metaContent(html, 'property', 'book:isbn'), keywords, pubDate: keywords.match(/\d{4}-\d{1,2}(?:-\d{1,2})?/)?.[0] || '' };
+  }
+  const releaseDate = html.match(/<span[^>]+property=["']v:initialReleaseDate["'][^>]+content=["']([^"']*)["']/i)?.[1] || '';
+  const runtime = html.match(/<span[^>]+property=["']v:runtime["'][^>]+content=["']([^"']*)["']/i)?.[1] || '';
+  const actors = [...html.matchAll(/<meta[^>]+property=["']video:actor["'][^>]+content=["']([^"']*)["']/gi)].map(match => decodeHtml(match[1])).join('/');
+  return { ...common, director: metaContent(html, 'property', 'video:director'), actors, releaseDate: decodeHtml(releaseDate), runtime: decodeHtml(runtime) };
+}
+async function doubanInfo(request, env, headers, type) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  const id = String(new URL(request.url).searchParams.get('id') || '');
+  if (!/^\d{1,20}$/.test(id)) return json(fail('豆瓣 ID 格式错误'), 400, headers);
+  const hostname = type === 'book' ? 'book.douban.com' : 'movie.douban.com';
+  const target = `https://${hostname}/subject/${id}/`;
+  const response = await fetch(target, { redirect: 'manual', headers: { 'user-agent': 'Mozilla/5.0 (compatible; Moments-CF/1.0)' }, signal: AbortSignal.timeout(8000) });
+  if (!response.ok) return json(fail(`豆瓣页面暂时不可用（${response.status}）`), 502, headers);
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/html')) return json(fail('豆瓣返回了非网页内容'), 502, headers);
+  const html = (await response.text()).slice(0, 1024 * 1024);
+  try { return json(ok(parseDouban(html, type, id)), 200, headers); }
+  catch { return json(fail('无法解析豆瓣页面，页面结构可能已变化'), 502, headers); }
+}
 async function externalInfo(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
@@ -667,7 +842,7 @@ async function handleApi(request, env) {
   const headers = corsHeaders(request, env);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
   try {
-    if (url.pathname === '/api/health') return json(ok({ ok: true, service: 'moments-cf', phase: 5, database: Boolean(env.DB), media: Boolean(env.MEDIA) }), 200, headers);
+    if (url.pathname === '/api/health') return json(ok({ ok: true, service: 'moments-cf', phase: 6, database: Boolean(env.DB), media: Boolean(env.MEDIA) }), 200, headers);
     if (request.method !== 'POST') return json(fail('仅支持 POST'), 405, headers);
     if (url.pathname === '/api/admin/initialize') return await initialize(request, env, headers);
     if (url.pathname === '/api/user/login') return await login(request, env, headers);
@@ -681,6 +856,9 @@ async function handleApi(request, env) {
     if (url.pathname === '/api/file/upload') return await upload(request, env, headers);
     if (url.pathname === '/api/file/exist') return await fileExists(request, env, headers);
     if (url.pathname === '/api/file/clean') return await cleanFiles(request, env, headers);
+    if (url.pathname === '/api/file/trash/list') return await listTrash(request, env, headers);
+    if (url.pathname === '/api/file/trash/restore') return await restoreTrash(request, env, headers);
+    if (url.pathname === '/api/file/trash/purge') return await purgeTrash(request, env, headers);
     if (url.pathname === '/api/file/s3PreSigned') return json(fail('Cloudflare 版本使用 R2 直连上传，请关闭旧 S3 设置'), 400, headers);
     if (url.pathname === '/api/memo/list') return await listMemos(request, env, headers);
     if (url.pathname === '/api/memo/get') return await getMemo(request, env, headers);
@@ -695,6 +873,8 @@ async function handleApi(request, env) {
     if (url.pathname === '/api/friend/add') return await addFriend(request, env, headers);
     if (url.pathname === '/api/friend/delete') return await deleteFriend(request, env, headers);
     if (url.pathname === '/api/memo/getFaviconAndTitle') return await externalInfo(request, env, headers);
+    if (url.pathname === '/api/memo/getDoubanBookInfo') return await doubanInfo(request, env, headers, 'book');
+    if (url.pathname === '/api/memo/getDoubanMovieInfo') return await doubanInfo(request, env, headers, 'movie');
 
     return json(fail('Cloudflare API migration endpoint not implemented yet', 404), 404, headers);
   } catch (error) {
@@ -703,21 +883,67 @@ async function handleApi(request, env) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, commentView, publicUser };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, commentView, publicUser, sanitizeMemoExt, parseDouban };
+function parseRangeHeader(header, size) {
+  const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
+  if (!match) return null;
+  if (!match[1] && !match[2]) return null;
+  let start;
+  let end;
+  if (!match[1]) {
+    const suffix = Number(match[2]);
+    if (!Number.isInteger(suffix) || suffix <= 0) return null;
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Number(match[2]) : size - 1;
+  }
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= size || end < start) return null;
+  end = Math.min(end, size - 1);
+  return { offset: start, length: end - start + 1 };
+}
+async function serveMedia(request, env, key) {
+  if (!env.MEDIA) return new Response('R2 binding is not configured', { status: 503 });
+  if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
+  const media = await env.DB.prepare('SELECT id FROM media WHERE r2_key=? AND trashed_at IS NULL').bind(key).first();
+  if (!media) return new Response('Not Found', { status: 404 });
+  const head = await env.MEDIA.head(key);
+  if (!head) return new Response('Not Found', { status: 404 });
+  const etag = head.httpEtag;
+  if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers: { etag } });
+  const headers = new Headers();
+  head.writeHttpMetadata(headers);
+  headers.set('etag', etag);
+  headers.set('cache-control', 'public, max-age=31536000, immutable');
+  headers.set('accept-ranges', 'bytes');
+  if (request.method === 'HEAD') {
+    headers.set('content-length', String(head.size));
+    return new Response(null, { status: 200, headers });
+  }
+  const rangeHeader = request.headers.get('range');
+  if (rangeHeader) {
+    const range = parseRangeHeader(rangeHeader, head.size);
+    if (!range) return new Response('Range Not Satisfiable', { status: 416, headers: { 'content-range': `bytes */${head.size}`, 'accept-ranges': 'bytes' } });
+    const object = await env.MEDIA.get(key, { range });
+    if (!object) return new Response('Not Found', { status: 404 });
+    headers.set('content-range', `bytes ${range.offset}-${range.offset + range.length - 1}/${head.size}`);
+    headers.set('content-length', String(range.length));
+    return new Response(object.body, { status: 206, headers });
+  }
+  const object = await env.MEDIA.get(key);
+  if (!object) return new Response('Not Found', { status: 404 });
+  headers.set('content-length', String(head.size));
+  return new Response(object.body, { status: 200, headers });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env);
     if (url.pathname.startsWith('/upload/')) {
-      if (!env.MEDIA) return new Response('R2 binding is not configured', { status: 503 });
       const key = url.pathname.slice('/upload/'.length);
-      const object = await env.MEDIA.get(key);
-      if (!object) return new Response('Not Found', { status: 404 });
-      const headers = new Headers();
-      object.writeHttpMetadata(headers);
-      headers.set('etag', object.httpEtag);
-      headers.set('cache-control', 'public, max-age=31536000, immutable');
-      return new Response(object.body, { headers });
+      return serveMedia(request, env, key);
     }
     if (url.pathname === '/rss') return rss(request, env);
     if (!env.ASSETS) return new Response('Workers Assets binding is not configured', { status: 503 });

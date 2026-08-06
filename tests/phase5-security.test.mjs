@@ -45,12 +45,14 @@ try {
   const rejected = await verifyRecaptchaToken('token', { enableGoogleRecaptcha: true, googleSecretKey: 'test-secret' });
   assert.equal(rejected.ok, false);
 
-  globalThis.fetch = async () => new Response(JSON.stringify({ success: true, score: 0.9 }), {
+  globalThis.fetch = async () => new Response(JSON.stringify({ success: true, score: 0.9, action: 'newComment', hostname: 'moments.example' }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
-  const accepted = await verifyRecaptchaToken('token', { enableGoogleRecaptcha: true, googleSecretKey: 'test-secret' });
+  const accepted = await verifyRecaptchaToken('token', { enableGoogleRecaptcha: true, googleSecretKey: 'test-secret' }, 'newComment', 'moments.example');
   assert.equal(accepted.ok, true);
+  const wrongAction = await verifyRecaptchaToken('token', { enableGoogleRecaptcha: true, googleSecretKey: 'test-secret' }, 'likeMemo', 'moments.example');
+  assert.equal(wrongAction.ok, false);
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -72,7 +74,7 @@ const settings = await readFile(new URL('../front/pages/sys/settings.vue', impor
 assert.match(settings, /v-model="state\.googleSecretKey"[^>]*type="password"/);
 
 const workerSource = await readFile(new URL('../worker/src/index.js', import.meta.url), 'utf8');
-assert.match(workerSource, /service: 'moments-cf', phase: 5/);
+assert.match(workerSource, /service: 'moments-cf', phase: 6/);
 assert.match(workerSource, /memo_id IN \(\$\{placeholders\}\)/);
 assert.match(workerSource, /config\.commentOrder === 'asc' \? 'ASC' : 'DESC'/);
 assert.match(workerSource, /await env\.MEDIA\.delete\(key\)\.catch/);

@@ -5,7 +5,8 @@ const worker = await readFile(new URL('../worker/src/index.js', import.meta.url)
 const routes = [
   '/api/user/reg', '/api/file/exist', '/api/file/clean', '/api/file/s3PreSigned',
   '/api/comment/add', '/api/comment/remove', '/api/friend/list', '/api/friend/add',
-  '/api/friend/delete', '/api/memo/getFaviconAndTitle',
+  '/api/friend/delete', '/api/memo/getFaviconAndTitle', '/api/memo/getDoubanBookInfo',
+  '/api/memo/getDoubanMovieInfo', '/api/file/trash/list', '/api/file/trash/restore', '/api/file/trash/purge',
 ];
 for (const route of routes) assert.ok(worker.includes(`url.pathname === '${route}'`), `missing ${route}`);
 assert.match(worker, /config\.enableS3 = false/);
@@ -13,7 +14,7 @@ assert.match(worker, /评论过于频繁，请稍后再试/);
 assert.match(worker, /评论字数超过限制长度/);
 assert.match(worker, /env\.MEDIA\.delete\(media\.r2_key\)/);
 assert.match(worker, /no such table: comments|Comments are temporarily unavailable/);
-assert.match(worker, /service: 'moments-cf', phase: 5/);
+assert.match(worker, /service: 'moments-cf', phase: 6/);
 
 const config = await readFile(new URL('../worker/wrangler.toml', import.meta.url), 'utf8');
 assert.doesNotMatch(config, /database_id/);

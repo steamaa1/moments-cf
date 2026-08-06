@@ -17,5 +17,5 @@ assert.match(memo, /showMoreClicked \? "收起" : "全文"/);
 assert.doesNotMatch(memo, /getMemoMaxHeightStyle\(\) === "" \? "收起"/);
 
 const worker = await readFile(new URL('../worker/src/index.js', import.meta.url), 'utf8');
-assert.match(worker, /service: 'moments-cf', phase: 5/);
+assert.match(worker, /service: 'moments-cf', phase: 6/);
 console.log('Memo collapse regression tests: PASS');

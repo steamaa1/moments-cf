@@ -66,51 +66,22 @@
           <UInput v-model="state.googleSecretKey" type="password" autocomplete="off"/>
         </UFormGroup>
       </template>
-      <UFormGroup label="是否启用S3存储" name="s3" :ui="{label:{base:'font-bold'}}">
-        <UToggle v-model="state.enableS3"/>
-      </UFormGroup>
-      <template v-if="state.enableS3">
-        <UFormGroup label="Bucket 域名（资源访问地址）" name="domain" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.domain" placeholder="https://moments-test-bucket.oss-cn-hangzhou.aliyuncs.com" />
-        </UFormGroup>
-        <UFormGroup label="Endpoint 地址" name="endpoint" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.endpoint" placeholder="https://oss-cn-hangzhou.aliyuncs.com" />
-        </UFormGroup>
-        <UFormGroup label="Bucket 名称" name="bucket" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.bucket" placeholder="moments-test-bucket" />
-        </UFormGroup>
-        <UFormGroup label="Bucket 地区" name="region" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.region" placeholder="oss-cn-hangzhou" />
-        </UFormGroup>
-        <UFormGroup label="AccessKey" name="accessKey" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.accessKey"/>
-        </UFormGroup>
-        <UFormGroup label="SecretKey" name="secretKey" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.secretKey"/>
-        </UFormGroup>
-        <UFormGroup label="图片后缀（在访问缩略图时会追加在图片地址后）" name="thumbnailSuffix" :ui="{label:{base:'font-bold'}}">
-          <UInput v-model="state.s3.thumbnailSuffix"/>
-        </UFormGroup>
-      </template>
-      <UFormGroup label="是否启用邮件通知" name="enableEmail" :ui="{label:{base:'font-bold'}}">
-      <UToggle v-model="state.enableEmail"/>
-      </UFormGroup>
-      <template v-if="state.enableEmail">
-      <UFormGroup label="smtp服务器" name="smtpHost" :ui="{label:{base:'font-bold'}}">
-        <UInput v-model="state.smtpHost" placeholder="smtp.qq.com"/>
-      </UFormGroup>
-      <UFormGroup label="smtp端口" name="smtpPort" :ui="{label:{base:'font-bold'}}">
-        <UInput v-model="state.smtpPort" placeholder="465"/>
-      </UFormGroup>
-      <UFormGroup label="smtp用户名" name="smtpUsername" :ui="{label:{base:'font-bold'}}">
-        <UInput v-model="state.smtpUsername" placeholder="******@qq.com"/>
-      </UFormGroup>
-      <UFormGroup label="smtp密码/授权码" name="smtpPassword" :ui="{label:{base:'font-bold'}}">
-        <UInput v-model="state.smtpPassword" type="password"/>
-      </UFormGroup>
-      </template>
-    <UButton class="justify-center" color="red" @click="showCleanFileModal = true">清理已上传的文件</UButton>
-    <UButton class="justify-center" @click="save">保存</UButton>
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-neutral-900/40 p-4 space-y-3">
+      <div class="flex items-start gap-3">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+          <UIcon name="i-carbon-cloud" class="h-5 w-5"/>
+        </span>
+        <div>
+          <p class="font-semibold text-gray-800 dark:text-gray-100">Cloudflare R2 媒体存储</p>
+          <p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">未引用文件会先进入回收站并保留 7 天，期间可恢复；到期文件会在下次清理时永久删除。</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <UButton block color="red" variant="soft" icon="i-carbon-clean" @click="showCleanFileModal = true">扫描未引用文件</UButton>
+        <UButton block color="gray" variant="soft" icon="i-carbon-trash-can" @click="openTrash">查看回收站</UButton>
+      </div>
+    </div>
+    <UButton class="justify-center min-h-11" @click="save">保存设置</UButton>
   </div>
 
   <UModal
@@ -122,12 +93,43 @@
   >
     <div class="p-4 bg-white dark:bg-neutral-800 rounded-lg shadow-md">
       <p class="text-lg font-bold mb-2">谨慎操作</p>
-      <p class="text-gray-600 mb-4">确认要清理未使用的文件（图片、视频）吗？清理后，文件将被移动到 {uploadDir}/removed 目录下，请在检查后手动删除文件以释放空间。</p>
+      <p class="text-gray-600 dark:text-gray-300 mb-4 leading-6">确认扫描未使用的图片和视频吗？未引用文件会进入回收站并保留 7 天，不会立即从 R2 删除。</p>
       <div class="flex justify-end gap-2 mt-4">
         <UButton color="white" @click="showCleanFileModal = false">取消</UButton>
         <UButton @click="cleanFile">确认清理</UButton>
       </div>
         </div>
+  </UModal>
+
+  <UModal v-model="showTrashModal" :ui="{container:'flex justify-center items-center backdrop-blur'}">
+    <div class="max-h-[80vh] overflow-auto rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-800">
+      <div class="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">媒体回收站</h2>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">文件保留 {{ trashRetentionDays }} 天，可恢复或立即永久删除。</p>
+        </div>
+        <UButton color="gray" variant="ghost" icon="i-carbon-close" aria-label="关闭回收站" @click="showTrashModal = false"/>
+      </div>
+      <div v-if="trashLoading" class="py-10 text-center text-sm text-gray-500">正在加载回收站…</div>
+      <div v-else-if="trashFiles.length === 0" class="rounded-lg border border-dashed border-gray-300 py-10 text-center text-sm text-gray-500 dark:border-gray-600">回收站是空的</div>
+      <div v-else class="space-y-3">
+        <div v-for="file in trashFiles" :key="file.id" class="flex items-center gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-700">
+            <UIcon :name="file.contentType.startsWith('image/') ? 'i-carbon-image' : 'i-carbon-video'" class="h-5 w-5 text-gray-600 dark:text-gray-300"/>
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-100">{{ file.filename }}</p>
+            <p class="mt-1 text-xs text-gray-500">{{ formatBytes(file.size) }} · {{ $dayjs(file.trashedAt).format('YYYY-MM-DD HH:mm') }}</p>
+          </div>
+          <div class="flex shrink-0 gap-1">
+            <UButton size="xs" color="green" variant="soft" @click="restoreTrashFile(file.id)">恢复</UButton>
+            <Confirm @ok="purgeTrashFile(file.id)">
+              <UButton size="xs" color="red" variant="soft">永久删除</UButton>
+            </Confirm>
+          </div>
+        </div>
+      </div>
+    </div>
   </UModal>
 </template>
 
@@ -157,24 +159,14 @@ const state = reactive({
   css: "",
   js: "",
   rss: "",
-  enableS3: false,
-  s3: {
-    domain: "",
-    bucket: "",
-    region: "",
-    accessKey: "",
-    secretKey: "",
-    endpoint: "",
-    thumbnailSuffix: ""
-  },
-  enableEmail: false,
-  smtpHost: "",
-  smtpPort: "",
-  smtpUsername: "",
-  smtpPassword: "",
 })
 
-const showCleanFileModal = ref<boolean>(false);
+type TrashFile = { id: number; path: string; filename: string; contentType: string; size: number; trashedAt: string }
+const showCleanFileModal = ref(false)
+const showTrashModal = ref(false)
+const trashLoading = ref(false)
+const trashFiles = ref<TrashFile[]>([])
+const trashRetentionDays = ref(7)
 
 const reload = async () => {
   const res = await useMyFetch<SysConfigVO>('/sysConfig/getFull')
@@ -206,11 +198,42 @@ const uploadFavicon = async (files: FileList) => {
 }
 
 const cleanFile = async () => {
-  const res = await useMyFetch<{num: number}>('/file/clean', undefined)
+  const res = await useMyFetch<{num: number; purged: number; retentionDays: number}>('/file/clean')
   if (res) {
-    toast.success(`成功清理 ${res.num} 个未使用的文件`)
+    toast.success(`已将 ${res.num} 个未引用文件移入回收站${res.purged ? `，并清理 ${res.purged} 个到期文件` : ''}`)
+    trashRetentionDays.value = res.retentionDays
     showCleanFileModal.value = false
   }
+}
+
+const loadTrash = async () => {
+  trashLoading.value = true
+  try {
+    const res = await useMyFetch<{list: TrashFile[]; retentionDays: number}>('/file/trash/list')
+    trashFiles.value = res.list || []
+    trashRetentionDays.value = res.retentionDays || 7
+  } finally {
+    trashLoading.value = false
+  }
+}
+const openTrash = async () => {
+  showTrashModal.value = true
+  await loadTrash()
+}
+const restoreTrashFile = async (id: number) => {
+  await useMyFetch(`/file/trash/restore?id=${id}`)
+  toast.success('文件已恢复')
+  await loadTrash()
+}
+const purgeTrashFile = async (id: number) => {
+  await useMyFetch(`/file/trash/purge?id=${id}`)
+  toast.success('文件已永久删除')
+  await loadTrash()
+}
+const formatBytes = (size: number) => {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
 onMounted(async () => {

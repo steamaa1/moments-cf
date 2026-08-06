@@ -5,7 +5,8 @@ const source = await readFile(new URL('../worker/src/index.js', import.meta.url)
 const expected = [
   '/api/user/reg', '/api/file/exist', '/api/file/clean', '/api/file/s3PreSigned',
   '/api/comment/add', '/api/comment/remove', '/api/friend/list', '/api/friend/add',
-  '/api/friend/delete', '/api/memo/getFaviconAndTitle',
+  '/api/friend/delete', '/api/memo/getFaviconAndTitle', '/api/memo/getDoubanBookInfo',
+  '/api/memo/getDoubanMovieInfo', '/api/file/trash/list', '/api/file/trash/restore', '/api/file/trash/purge',
 ];
 for (const route of expected) assert.ok(source.includes(`url.pathname === '${route}'`), `missing route ${route}`);
 assert.match(source, /config\.enableS3 = false/);

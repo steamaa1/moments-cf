@@ -67,7 +67,6 @@ export type SysConfigVO = {
     js: string,
     rss: string,
     enableAutoLoadNextPage: boolean
-    enableS3: boolean
     enableRegister: boolean
     enableGoogleRecaptcha: boolean,
     googleSiteKey: string,
@@ -76,15 +75,7 @@ export type SysConfigVO = {
     maxCommentLength: number,
     memoMaxHeight: number,
     commentOrder: 'desc' | 'asc',
-    timeFormat: 'timeAgo' | 'time',
-    s3:{
-        thumbnailSuffix:string
-    }
-    enableEmail: boolean
-    smtpHost: string
-    smtpPort: string
-    smtpUsername: string
-    smtpPassword: string
+    timeFormat: 'timeAgo' | 'time'
 }
 
 

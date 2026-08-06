@@ -35,6 +35,7 @@ const userId = route.params.id as any as string;
 const state = reactive({
   page: 1,
   size: 10,
+  userId: parseInt(userId),
 });
 
 const memos = ref<Array<MemoVO>>([]);
@@ -47,10 +48,7 @@ const reload = async () => {
     list: Array<MemoVO>;
     total: number;
     hasNext: boolean;
-  }>("/memo/list", {
-    ...state,
-    userId: parseInt(userId),
-  });
+  }>("/memo/list", state);
   memos.value = res.list;
   hasNext.value = res.hasNext;
 };

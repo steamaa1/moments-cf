@@ -420,7 +420,7 @@ const likeMemo = async (id: number) => {
   if (sysConfig.value.enableGoogleRecaptcha) {
     grecaptcha.ready(() => {
       grecaptcha
-        .execute(sysConfig.value.googleSiteKey, { action: "newComment" })
+        .execute(sysConfig.value.googleSiteKey, { action: "likeMemo" })
         .then(async (token) => {
           await doLike(id, token);
         });
