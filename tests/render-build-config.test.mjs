@@ -15,6 +15,6 @@ assert.match(config, /name = "test-worker"/);
 assert.match(config, /database_id = "test-d1-id"/);
 assert.match(config, /bucket_name = "test-media"/);
 assert.match(config, /CLOUDFLARE_ACCOUNT_ID = "test-account"/);
-assert.match(config, /crons = \["0 3 \* \* 0"\]/);
+assert.match(config, /crons = \["0 3 \* \* SUN"\]/);
 await rm(output);
 console.log('Cloudflare Builds renderer tests: PASS');

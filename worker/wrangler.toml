@@ -9,7 +9,7 @@ directory = "../front/.output/public"
 not_found_handling = "single-page-application"
 
 [triggers]
-crons = ["0 3 * * 0"]
+crons = ["0 3 * * SUN"]
 
 [vars]
 CORS_ORIGIN = "*"

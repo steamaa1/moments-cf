@@ -33,6 +33,6 @@ assert.match(source, /renderRssDescription/);
 assert.match(source, /sendNotification/);
 
 const template = await readFile(new URL('../worker/wrangler.toml.template', import.meta.url), 'utf8');
-assert.match(template, /crons = \["0 3 \* \* 0"\]/);
+assert.match(template, /crons = \["0 3 \* \* SUN"\]/);
 assert.match(template, /R2_BUCKET_NAME/);
 console.log('Phase 7 integration tests: PASS');

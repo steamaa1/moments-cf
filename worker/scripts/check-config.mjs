@@ -45,7 +45,7 @@ for (const statement of ['CREATE TRIGGER IF NOT EXISTS trg_comments_insert', 'CR
 for (const statement of ['ALTER TABLE media ADD COLUMN sha256', 'ALTER TABLE media ADD COLUMN thumbnail_key', 'ALTER TABLE media ADD COLUMN upload_state']) {
   if (!phase7Schema.includes(statement)) throw new Error(`Phase 7 schema is missing: ${statement}`);
 }
-for (const value of ['crons = ["0 3 * * 0"]', 'CLOUDFLARE_ACCOUNT_ID = "__CLOUDFLARE_ACCOUNT_ID__"', 'R2_BUCKET_NAME = "__R2_BUCKET_NAME__"']) {
+for (const value of ['crons = ["0 3 * * SUN"]', 'CLOUDFLARE_ACCOUNT_ID = "__CLOUDFLARE_ACCOUNT_ID__"', 'R2_BUCKET_NAME = "__R2_BUCKET_NAME__"']) {
   if (!template.includes(value)) throw new Error(`Phase 7 Wrangler template is missing: ${value}`);
 }
 console.log('Phase 7 Worker configuration guard: PASS');
