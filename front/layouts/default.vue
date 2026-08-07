@@ -100,13 +100,16 @@ useHead({
       innerHTML: sysConfigVO.css || "",
     },
   ],
-  script: [
-    {
-      type: "text/javascript",
-      innerHTML: sysConfigVO.js || "",
-    },
-  ],
 });
+
+// 自定义 JS：SPA 路由切换后新页面 DOM 已渲染，此时执行才能挂载页脚/天气/统计等元素。
+// 管理员脚本自带防重复检查，重复执行是幂等的。
+function runCustomJs() {
+  const code = sysConfigVO.js || "";
+  if (!code) return;
+  try { new Function(code)(); } catch (error) { console.error("自定义 JS 执行失败", error); }
+}
+onMounted(() => { runCustomJs(); const router = useRouter(); router.afterEach(() => { nextTick(() => runCustomJs()); }); });
 
 if (sysConfigVO.enableTurnstile) {
   useHead({
