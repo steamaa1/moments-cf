@@ -29,9 +29,11 @@ export async function s3Request({ endpoint, region, bucket, accessKeyId, secretA
     ? [...new URLSearchParams(query).entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${awsEncode(k)}=${awsEncode(v)}`).join('&')
     : '';
   const contentType = headers['content-type'] || '';
-  const payloadHash = body === null ? 'UNSIGNED-PAYLOAD' : bytesToHex(await sha256(body));
-  const signedHeaders = ['host', ...(contentType ? ['content-type'] : []), ...(headers['x-amz-content-sha256'] ? ['x-amz-content-sha256'] : [])];
-  const canonicalHeaders = `host:${host}\n${contentType ? `content-type:${contentType}\n` : ''}${headers['x-amz-content-sha256'] ? `x-amz-content-sha256:${headers['x-amz-content-sha256']}\n` : ''}`;
+  const bodyIsStream = body !== null && typeof body?.getReader === 'function';
+  const payloadHash = body === null || bodyIsStream ? 'UNSIGNED-PAYLOAD' : bytesToHex(await sha256(body));
+  const amzPayload = bodyIsStream ? 'UNSIGNED-PAYLOAD' : (headers['x-amz-content-sha256'] || null);
+  const signedHeaders = ['host', ...(contentType ? ['content-type'] : []), ...(amzPayload ? ['x-amz-content-sha256'] : [])];
+  const canonicalHeaders = `host:${host}\n${contentType ? `content-type:${contentType}\n` : ''}${amzPayload ? `x-amz-content-sha256:${amzPayload}\n` : ''}`;
   const canonicalRequest = `${method}\n${canonicalUri}\n${sortedQuery}\n${canonicalHeaders}\n${signedHeaders.join(';')}\n${payloadHash}`;
   const stringToSign = `AWS4-HMAC-SHA256\n${date}\n${scope}\n${bytesToHex(await sha256(canonicalRequest))}`;
   const kDate = await hmac(`AWS4${secretAccessKey}`, shortDate);
@@ -44,6 +46,7 @@ export async function s3Request({ endpoint, region, bucket, accessKeyId, secretA
   const requestHeaders = { authorization, host, ...headers };
   if (contentType) requestHeaders['content-type'] = contentType;
   if (payloadHash !== 'UNSIGNED-PAYLOAD') requestHeaders['x-amz-content-sha256'] = payloadHash;
+  if (bodyIsStream) requestHeaders['x-amz-content-sha256'] = 'UNSIGNED-PAYLOAD';
   return fetch(url, { method, headers: requestHeaders, body });
 }
 
@@ -80,13 +83,13 @@ export function s3Backend(config) {
       if (options.range) headers.range = `bytes=${options.range.offset}-${options.range.offset + options.range.length - 1}`;
       const response = await s3Request({ endpoint, region, bucket, accessKeyId, secretAccessKey, method: 'GET', key, headers });
       if (!response.ok) return null;
-      return { body: response.body, size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: () => {} };
+      return { body: response.body, size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: (headers) => { headers.set('content-type', response.headers.get('content-type') || 'application/octet-stream'); } };
     },
     async head(key) {
       requireConfig();
       const response = await s3Request({ endpoint, region, bucket, accessKeyId, secretAccessKey, method: 'HEAD', key });
       if (!response.ok) return null;
-      return { size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: () => {} };
+      return { size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: (headers) => { headers.set('content-type', response.headers.get('content-type') || 'application/octet-stream'); } };
     },
     async delete(key) {
       requireConfig();
@@ -99,8 +102,11 @@ export function s3Backend(config) {
       if (!response.ok) throw new Error(`S3 列表失败（${response.status}）`);
       const xml = await response.text();
       const objects = [];
-      for (const match of xml.matchAll(/<Key>([^<]*)<\/Key>\s*<Size>(\d+)<\/Size>[\s\S]*?<LastModified>([^<]*)<\/LastModified>/g)) {
-        objects.push({ key: match[1], size: Number(match[2]), uploaded: new Date(match[3]) });
+      const keys = [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map(match => match[1]);
+      const sizes = [...xml.matchAll(/<Size>(\d+)<\/Size>/g)].map(match => Number(match[1]));
+      const dates = [...xml.matchAll(/<LastModified>([^<]*)<\/LastModified>/g)].map(match => match[1]);
+      for (let index = 0; index < keys.length; index += 1) {
+        objects.push({ key: keys[index], size: sizes[index] || 0, uploaded: new Date(dates[index] || 0) });
       }
       return objects;
     },
@@ -153,13 +159,13 @@ export function webdavBackend(config) {
       const rangeHeaders = options.range ? { range: `bytes=${options.range.offset}-${options.range.offset + options.range.length - 1}` } : {};
       const response = await fetch(`${base()}/${key}`, { method: 'GET', headers: { ...headers(), ...rangeHeaders } });
       if (!response.ok) return null;
-      return { body: response.body, size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: () => {} };
+      return { body: response.body, size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: (headers) => { headers.set('content-type', response.headers.get('content-type') || 'application/octet-stream'); } };
     },
     async head(key) {
       requireConfig();
       const response = await fetch(`${base()}/${key}`, { method: 'HEAD', headers });
       if (!response.ok) return null;
-      return { size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: () => {} };
+      return { size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: (headers) => { headers.set('content-type', response.headers.get('content-type') || 'application/octet-stream'); } };
     },
     async delete(key) {
       requireConfig();
@@ -173,10 +179,12 @@ export function webdavBackend(config) {
       const xml = await response.text();
       const objects = [];
       for (const match of xml.matchAll(/<D:(?:href|getcontentlength|getlastmodified)>([^<]*)<\/D:\1>/g)) { /* placeholder */ }
+      const baseUrl = base();
       for (const hrefMatch of xml.matchAll(/<D:href>([^<]*)<\/D:href>[\s\S]*?<D:getcontentlength>(\d*)<\/D:getcontentlength>[\s\S]*?<D:getlastmodified>([^<]*)<\/D:getlastmodified>/g)) {
-        const name = decodeURIComponent(hrefMatch[1].split('/').pop() || '');
-        if (!name) continue;
-        objects.push({ key: name, size: Number(hrefMatch[2] || 0), uploaded: new Date(hrefMatch[3]) });
+        const decoded = decodeURIComponent(hrefMatch[1]);
+        const key = decoded.startsWith(baseUrl) ? decoded.slice(baseUrl.length).replace(/^\//, '') : decoded.split('/').pop() || '';
+        if (!key) continue;
+        objects.push({ key, size: Number(hrefMatch[2] || 0), uploaded: new Date(hrefMatch[3]) });
       }
       return objects;
     },

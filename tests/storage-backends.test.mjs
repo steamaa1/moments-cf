@@ -6,10 +6,10 @@ const fakeFetch = async (url, init = {}) => {
   requests.push({ url: String(url), method: init.method || 'GET', headers: init.headers || {}, body: init.body });
   const text = () => '';
   if (String(url).includes('list-type=2')) {
-    return new Response('<ListBucketResult><Contents><Key>media/a.webp</Key><Size>10</Size><LastModified>2026-08-06T00:00:00Z</LastModified></Contents></ListBucketResult>', { status: 200 });
+    return new Response('<ListBucketResult><Contents><Key>media/a.webp</Key><LastModified>2026-08-06T00:00:00Z</LastModified><ETag>\"abc\"</ETag><Size>10</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>', { status: 200 });
   }
   if (String(url).includes('PROPFIND') || (init.headers && init.headers.depth)) {
-    return new Response('<D:multistatus xmlns:D="DAV:"><D:response><D:href>/dav/media/b.webp</D:href><D:propstat><D:prop><D:getcontentlength>20</D:getcontentlength><D:getlastmodified>Thu, 06 Aug 2026 00:00:00 GMT</D:getlastmodified></D:prop></D:propstat></D:response></D:multistatus>', { status: 207 });
+    return new Response('<D:multistatus xmlns:D="DAV:"><D:response><D:href>https://dav.example.com/remote.php/dav/files/user/media/b.webp</D:href><D:propstat><D:prop><D:getcontentlength>20</D:getcontentlength><D:getlastmodified>Thu, 06 Aug 2026 00:00:00 GMT</D:getlastmodified></D:prop></D:propstat></D:response></D:multistatus>', { status: 207 });
   }
   return new Response(null, { status: 200 });
 };
@@ -19,6 +19,11 @@ globalThis.fetch = fakeFetch;
 // S3
 const s3 = s3Backend({ endpoint: 'https://s3.example.com', region: 'us-east-1', bucket: 'bucket', accessKeyId: 'AK', secretAccessKey: 'SK' });
 await s3.put('media/a.webp', new Uint8Array([1, 2, 3]), { httpMetadata: { contentType: 'image/webp' } });
+const streamBody = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([7, 8])); controller.close(); } });
+await s3.put('media/stream.webp', streamBody, { httpMetadata: { contentType: 'image/webp' } });
+const streamReq = requests.find(r => r.method === 'PUT' && r.url.includes('media/stream.webp'));
+assert.ok(streamReq, 'S3 stream PUT not issued');
+assert.equal(streamReq.headers['x-amz-content-sha256'], 'UNSIGNED-PAYLOAD');
 const putReq = requests.find(r => r.method === 'PUT' && r.url.includes('media/a.webp'));
 assert.ok(putReq, 'S3 PUT not issued');
 assert.match(putReq.headers.authorization, /AWS4-HMAC-SHA256 Credential=AK\//);
@@ -28,6 +33,11 @@ assert.ok(putReq.headers['x-amz-content-sha256'], 'S3 payload hash header missin
 const list = await s3.list('media/');
 assert.equal(list[0].key, 'media/a.webp');
 assert.equal(list[0].size, 10);
+const got = await s3.get('media/a.webp');
+assert.equal(got.size, 0); // HEAD/GET 走 fakeFetch 返回 200 空 body
+const metadataHeaders = new Headers();
+got.writeHttpMetadata(metadataHeaders);
+assert.ok(metadataHeaders.get('content-type'), 'S3 get should set content-type');
 
 const presigned = await s3.presignPut({ key: 'media/c.webp', contentType: 'image/webp', now: new Date('2026-08-06T00:00:00Z') });
 assert.match(presigned, /X-Amz-Signature=/);
@@ -40,7 +50,7 @@ const davPut = requests.find(r => r.method === 'PUT' && r.url.includes('media/d.
 assert.ok(davPut, 'WebDAV PUT not issued');
 assert.match(davPut.headers.authorization, /^Basic /);
 const davList = await dav.list('media/');
-assert.equal(davList[0].key, 'b.webp');
+assert.equal(davList[0].key, 'media/b.webp');
 assert.equal(davList[0].size, 20);
 
 // R2 binding
