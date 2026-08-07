@@ -2,6 +2,7 @@ import {
   sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
   sendNotification, createD1Backup, listBackups, restoreD1Backup, renderRssDescription,
   encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
+  startD1Export, pollD1Export, storeD1Backup,
 } from './phase7.js';
 /**
  * Moments Cloudflare Worker.
@@ -1083,6 +1084,7 @@ async function migrationMapping(env, packageId, kind, sourceId) {
 async function saveMigrationMapping(env, packageId, kind, sourceId, targetId = null) {
   await env.DB.prepare('INSERT OR IGNORE INTO migration_items (package_id,kind,source_id,target_id) VALUES (?,?,?,?)').bind(packageId, kind, String(sourceId), targetId).run();
 }
+function migrationSummary(value) { try { return JSON.parse(value || '{}') || {}; } catch { return {}; } }
 async function migrationPrepare(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
   if (access.response) return access.response;
@@ -1090,15 +1092,42 @@ async function migrationPrepare(request, env, headers) {
   if (!body?.password || !(await passwordMatches(String(body.password), access.user.password_hash))) return json(fail('管理员密码错误'), 403, headers);
   const packageId = String(body?.packageId || '');
   if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
-  const existing = await env.DB.prepare('SELECT status FROM migration_runs WHERE package_id=?').bind(packageId).first();
+  const existing = await env.DB.prepare('SELECT status, summary FROM migration_runs WHERE package_id=?').bind(packageId).first();
   if (existing?.status === 'completed') return json(fail('该迁移包已经导入完成'), 409, headers);
-  if (existing?.status === 'importing') return json(ok({ packageId, resumed: true }), 200, headers);
+  const previous = migrationSummary(existing?.summary);
+  if (existing?.status === 'importing' && previous.backupReady) return json(ok({ packageId, ready: true, resumed: true }), 200, headers);
+  if (existing?.status === 'importing' && previous.backupBookmark) return json(ok({ packageId, ready: false, resumed: true }), 200, headers);
   const missing = requireBackupConfig(env, headers);
   if (missing) return missing;
   const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
-  const backup = await createD1Backup(env, {}, clampInt(parseConfig(row?.content).backupRetentionDays, 1, 3650, 90));
-  await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', '{}') ON CONFLICT(package_id) DO UPDATE SET status='importing', summary='{}', updated_at=CURRENT_TIMESTAMP").bind(packageId).run();
-  return json(ok({ backup, packageId, resumed: false }), 200, headers);
+  const retentionDays = clampInt(parseConfig(row?.content).backupRetentionDays, 1, 3650, 90);
+  const exportResult = await startD1Export(env);
+  let summary = { backupBookmark: exportResult.at_bookmark || '', backupReady: false, retentionDays };
+  if (exportResult.signed_url) {
+    summary = { ...summary, backup: await storeD1Backup(env, exportResult, retentionDays), backupReady: true };
+  }
+  if (!summary.backupBookmark && !summary.backupReady) return json(fail('D1 导出未返回 bookmark'), 502, headers);
+  await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?) ON CONFLICT(package_id) DO UPDATE SET status='importing', summary=excluded.summary, updated_at=CURRENT_TIMESTAMP").bind(packageId, JSON.stringify(summary)).run();
+  return json(ok({ packageId, ready: summary.backupReady, resumed: false }), 200, headers);
+}
+async function migrationBackupStatus(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const packageId = String(body?.packageId || '');
+  if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
+  const run = await env.DB.prepare('SELECT status, summary FROM migration_runs WHERE package_id=?').bind(packageId).first();
+  if (!run || run.status !== 'importing') return json(fail('迁移未准备或已经结束'), 409, headers);
+  const summary = migrationSummary(run.summary);
+  if (summary.backupReady) return json(ok({ ready: true, backup: summary.backup }), 200, headers);
+  if (!summary.backupBookmark) return json(fail('迁移备份状态无效，请重新开始'), 409, headers);
+  const result = await pollD1Export(env, summary.backupBookmark);
+  if (result.status === 'error') return json(fail(result.error || 'D1 导出失败'), 502, headers);
+  if (!result.signed_url) return json(ok({ ready: false, status: result.status || 'pending' }), 200, headers);
+  summary.backup = await storeD1Backup(env, result, clampInt(summary.retentionDays, 1, 3650, 90));
+  summary.backupReady = true;
+  await env.DB.prepare('UPDATE migration_runs SET summary=?, updated_at=CURRENT_TIMESTAMP WHERE package_id=?').bind(JSON.stringify(summary), packageId).run();
+  return json(ok({ ready: true, backup: summary.backup }), 200, headers);
 }
 async function migrationImport(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
@@ -1106,8 +1135,9 @@ async function migrationImport(request, env, headers) {
   const body = await readJson(request);
   const packageId = String(body?.packageId || '');
   if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
-  const run = await env.DB.prepare('SELECT status FROM migration_runs WHERE package_id=?').bind(packageId).first();
+  const run = await env.DB.prepare('SELECT status, summary FROM migration_runs WHERE package_id=?').bind(packageId).first();
   if (!run || run.status !== 'importing') return json(fail('迁移未准备或已经结束'), 409, headers);
+  if (!migrationSummary(run.summary).backupReady) return json(fail('导入前备份尚未完成，请稍候'), 409, headers);
   const kind = String(body?.kind || '');
   const rows = Array.isArray(body?.rows) ? body.rows.slice(0, 50) : [];
   if (!['users', 'memos', 'comments', 'friends', 'config'].includes(kind) || !rows.length) return json(fail('迁移批次参数错误'), 400, headers);
@@ -1265,6 +1295,7 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/memo/getDoubanMovieInfo') return await doubanInfo(request, env, headers, 'movie');
     if (url.pathname === '/api/admin/migration/preflight') return await migrationPreflight(request, env, headers);
     if (url.pathname === '/api/admin/migration/prepare') return await migrationPrepare(request, env, headers);
+    if (url.pathname === '/api/admin/migration/backup/status') return await migrationBackupStatus(request, env, headers);
     if (url.pathname === '/api/admin/migration/finish') return await migrationFinish(request, env, headers);
     if (url.pathname === '/api/admin/migration/fail') return await migrationFail(request, env, headers);
     if (url.pathname === '/api/admin/migration/import') return await migrationImport(request, env, headers);

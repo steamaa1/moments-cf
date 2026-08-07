@@ -59,7 +59,7 @@ assert.equal(preflightResponse.status, 200);
 assert.equal(preflightBody.data.packageId, packageId);
 assert.equal(preflightBody.data.backupAvailable, true);
 assert.equal(preflightBody.data.existingRun, null);
-state.runs.set(packageId, { status: 'importing' });
+state.runs.set(packageId, { status: 'importing', summary: JSON.stringify({ backupReady: true, backup: { key: 'backups/d1/ready.sql' } }) });
 const prepareRequest = new Request('https://moments.example/api/admin/migration/prepare', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ packageId, password: 'password123' }) });
 const prepareResponse = await migrationPrepare(prepareRequest, env, {});
 const prepareBody = await prepareResponse.json();
