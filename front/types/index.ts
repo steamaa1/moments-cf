@@ -132,6 +132,7 @@ export type MusicDTO = {
     api?: string,
     url?: string,
     name?: string,
+    artist?: string,
     lrc?: string
 }
 

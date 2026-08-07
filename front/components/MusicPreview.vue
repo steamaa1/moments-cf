@@ -22,7 +22,7 @@ onMounted(() => {
   try {
     player = new APlayer({
       container,
-      audio: [{ name: props.name, artist: 'Audio artist', url: props.url, cover: '', lrc: props.lrc || '' }],
+      audio: [{ name: props.name, artist: props.artist || 'Audio artist', url: props.url, cover: '', lrc: props.lrc || '' }],
       lrcType: props.lrc ? 2 : 0,
       listFolded: true,
     })
