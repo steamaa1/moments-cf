@@ -2,7 +2,9 @@
   <UPopover mode="click" :ui="{ base: 'w-[330px]' }">
     <button type="button" class="status-trigger" :title="status ? status.content : (editable ? '设置状态' : '')">
       <span v-if="status" class="status-emoji">{{ status.icon || '💬' }}</span>
-      <span v-else-if="editable" class="status-add">＋</span>
+      <span v-else-if="editable" class="status-add">
+        <svg viewBox="0 0 1024 1024" class="status-add-svg" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M512 118.153846c61.046154 0 118.153846 13.784615 171.323077 39.384616 25.6 11.815385 35.446154 43.323077 23.630769 66.953846-11.815385 25.6-43.323077 35.446154-66.953846 23.630769-39.384615-19.692308-82.707692-29.538462-128-29.538462-161.476923 0-293.415385 131.938462-293.415385 293.415385S350.523077 805.415385 512 805.415385 805.415385 673.476923 805.415385 512c0-51.2-11.815385-98.461538-37.415385-141.784615-13.784615-23.630769-3.938462-55.138462 19.692308-68.923077s55.138462-3.938462 68.923077 19.692307A393.846154 393.846154 0 0 1 905.846154 512c0 216.615385-177.230769 393.846154-393.846154 393.846154S118.153846 728.615385 118.153846 512 295.384615 118.153846 512 118.153846z" p-id="894"></path></svg>
+      </span>
     </button>
     <template #panel="{ close }">
       <div class="max-h-[440px] space-y-3 overflow-auto p-4">
@@ -94,7 +96,8 @@ async function clear(close: Function) {
 .status-trigger { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 9999px; transition: transform 120ms ease; }
 .status-trigger:hover { transform: scale(1.12); }
 .status-emoji { font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 1px rgba(0,0,0,.4)); }
-.status-add { font-size: 14px; font-weight: 700; color: rgba(255,255,255,.9); background: rgba(255,255,255,.22); border: 1px dashed rgba(255,255,255,.5); }
+.status-add { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 9999px; color: rgba(255,255,255,.92); background: rgba(255,255,255,.22); border: 1px dashed rgba(255,255,255,.5); }
+.status-add-svg { width: 13px; height: 13px; }
 .status-item { display: inline-flex; align-items: center; justify-content: center; height: 34px; font-size: 17px; border-radius: 8px; transition: background 120ms ease, transform 120ms ease; }
 .status-item:hover { background: rgba(159,200,74,.16); transform: scale(1.08); }
 .status-item.active { background: rgba(159,200,74,.28); box-shadow: inset 0 0 0 1.5px #9fc84a; }
