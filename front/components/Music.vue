@@ -21,15 +21,15 @@
                 <span>自定义 Meting API</span>
                 <UIcon :name="open ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'" class="h-4 w-4 text-gray-400"/>
               </button>
-            </template>
-            <div class="space-y-3 px-3 pb-3 pt-1">
-              <UFormGroup label="API 地址" :ui="{label:{base:'font-bold'}}">
-                <UInput v-model="api" placeholder="https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"/>
-              </UFormGroup>
-              <div class="flex justify-end">
-                <UButton size="xs" color="gray" variant="soft" icon="i-heroicons-arrow-path" @click="api = defaultApi">恢复默认</UButton>
+              <div class="space-y-3 px-3 pb-3 pt-1">
+                <UFormGroup label="API 地址" :ui="{label:{base:'font-bold'}}">
+                  <UInput v-model="api" placeholder="https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"/>
+                </UFormGroup>
+                <div class="flex justify-end">
+                  <UButton size="xs" color="gray" variant="soft" icon="i-heroicons-arrow-path" @click="api = defaultApi">恢复默认</UButton>
+                </div>
               </div>
-            </div>
+            </template>
           </UDisclosure>
         </template>
         <MusicPreview v-if="previewing" v-bind="draft"/>
