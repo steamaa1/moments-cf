@@ -15,22 +15,20 @@
           <UFormGroup label="音乐平台" :ui="{label:{base:'font-bold'}}"><USelectMenu v-model="server" :options="servers" value-attribute="value" option-attribute="label"/></UFormGroup>
           <UFormGroup label="类型" :ui="{label:{base:'font-bold'}}"><USelectMenu v-model="type" :options="types" value-attribute="value" option-attribute="label"/></UFormGroup>
           <UFormGroup label="ID" :ui="{label:{base:'font-bold'}}"><UInput v-model="id" placeholder="歌曲/播放列表/专辑 ID"/></UFormGroup>
-          <UDisclosure v-model="customApiOpen" class="rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70">
-            <template #default="{ open }">
-              <button type="button" class="flex w-full items-center justify-between px-3 py-2 text-sm font-medium">
-                <span>自定义 Meting API</span>
-                <UIcon :name="open ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'" class="h-4 w-4 text-gray-400"/>
-              </button>
-              <div class="space-y-3 px-3 pb-3 pt-1">
-                <UFormGroup label="API 地址" :ui="{label:{base:'font-bold'}}">
-                  <UInput v-model="api" placeholder="https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"/>
-                </UFormGroup>
-                <div class="flex justify-end">
-                  <UButton size="xs" color="gray" variant="soft" icon="i-heroicons-arrow-path" @click="api = defaultApi">恢复默认</UButton>
-                </div>
+          <div class="rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/70">
+            <button type="button" class="flex w-full items-center justify-between px-3 py-2 text-sm font-medium" @click="customApiOpen = !customApiOpen">
+              <span>自定义 Meting API</span>
+              <UIcon :name="customApiOpen ? 'i-heroicons-chevron-up' : 'i-heroicons-chevron-down'" class="h-4 w-4 text-gray-400"/>
+            </button>
+            <div v-show="customApiOpen" class="space-y-3 px-3 pb-3 pt-1">
+              <UFormGroup label="API 地址" :ui="{label:{base:'font-bold'}}">
+                <UInput v-model="api" placeholder="https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"/>
+              </UFormGroup>
+              <div class="flex justify-end">
+                <UButton size="xs" color="gray" variant="soft" icon="i-heroicons-arrow-path" @click="api = defaultApi">恢复默认</UButton>
               </div>
-            </template>
-          </UDisclosure>
+            </div>
+          </div>
         </template>
         <MusicPreview v-if="previewing" v-bind="draft"/>
         <div class="flex flex-wrap gap-2">
