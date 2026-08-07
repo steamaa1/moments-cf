@@ -214,15 +214,21 @@ async function cfApi(env, path, body, fetchImpl = fetch) {
 async function sleep(ms) { await new Promise(resolve => setTimeout(resolve, ms)); }
 export async function createD1Backup(env, dependencies = {}, retentionDays = BACKUP_RETENTION_DAYS) {
   const fetchImpl = dependencies.fetch || fetch;
-  let result = await cfApi(env, '/export', { output_format: 'polling' }, fetchImpl);
-  const bookmark = result.at_bookmark;
-  if (!bookmark) throw new Error('D1 导出未返回 bookmark');
-  for (let attempt = 0; attempt < 30 && !result.signed_url; attempt += 1) {
-    if (attempt) await (dependencies.sleep || sleep)(2000);
-    result = await cfApi(env, '/export', { output_format: 'polling', current_bookmark: bookmark }, fetchImpl);
-    if (result.status === 'error') throw new Error(result.error || 'D1 导出失败');
+  let result;
+  try {
+    result = await cfApi(env, '/export', { output_format: 'download' }, fetchImpl);
+  } catch { result = null; }
+  if (!result?.signed_url) {
+    result = await cfApi(env, '/export', { output_format: 'polling' }, fetchImpl);
+    const bookmark = result.at_bookmark;
+    if (!bookmark) throw new Error('D1 导出未返回 bookmark');
+    for (let attempt = 0; attempt < 150 && !result.signed_url; attempt += 1) {
+      if (attempt) await (dependencies.sleep || sleep)(2000);
+      result = await cfApi(env, '/export', { output_format: 'polling', current_bookmark: bookmark }, fetchImpl);
+      if (result.status === 'error') throw new Error(result.error || 'D1 导出失败');
+    }
+    if (!result.signed_url) throw new Error('D1 导出超时（数据库较大或导出服务繁忙，请稍后重试）');
   }
-  if (!result.signed_url) throw new Error('D1 导出超时（数据库较大或导出服务繁忙，请稍后重试）');
   const download = await fetchImpl(result.signed_url);
   if (!download.ok) throw new Error('无法下载 D1 导出文件');
   const key = `${BACKUP_PREFIX}${new Date().toISOString().replace(/[:.]/g, '-')}.sql`;

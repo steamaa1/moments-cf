@@ -68,7 +68,7 @@ const tokenHeaders = () => global.value.userinfo.token ? {'x-api-token': global.
 async function api<T>(path:string, body:unknown) {
   let response: Response
   try {
-    response = await fetch(`/api${path}`, { method:'POST', headers:{'content-type':'application/json',...tokenHeaders()}, body:JSON.stringify(body), signal: AbortSignal.timeout(180000) })
+    response = await fetch(`/api${path}`, { method:'POST', headers:{'content-type':'application/json',...tokenHeaders()}, body:JSON.stringify(body), signal: AbortSignal.timeout(360000) })
   } catch (error) {
     throw new Error(error instanceof Error && error.name === 'TimeoutError' ? '请求超时：导入前 D1 备份可能需要 1-3 分钟，请稍后重新点击导入' : '网络请求失败，请检查网络连接后重试')
   }
