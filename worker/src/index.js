@@ -1097,6 +1097,11 @@ async function migrationPrepare(request, env, headers) {
   const previous = migrationSummary(existing?.summary);
   if (existing?.status === 'importing' && previous.backupReady) return json(ok({ packageId, ready: true, resumed: true }), 200, headers);
   if (existing?.status === 'importing' && previous.backupBookmark) return json(ok({ packageId, ready: false, resumed: true, bookmark: previous.backupBookmark }), 200, headers);
+  if (body?.skipBackup === true) {
+    const summary = { backupReady: true, backup: null, skipped: true, retentionDays: 90 };
+    await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?) ON CONFLICT(package_id) DO UPDATE SET status='importing', summary=excluded.summary, updated_at=CURRENT_TIMESTAMP").bind(packageId, JSON.stringify(summary)).run();
+    return json(ok({ packageId, ready: true, resumed: false, skipped: true }), 200, headers);
+  }
   const missing = requireBackupConfig(env, headers);
   if (missing) return missing;
   const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();

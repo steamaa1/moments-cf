@@ -29,7 +29,11 @@
           <div class="stat"><span>媒体</span><strong>{{ report.manifest.mediaCount || 0 }}</strong></div>
         </div>
         <ul class="mt-4 list-disc space-y-1 pl-5 text-sm text-amber-700 dark:text-amber-300"><li v-for="warning in report.warnings" :key="warning">{{ warning }}</li></ul>
-        <p v-if="!report.backupAvailable" class="mt-3 text-sm text-red-600">当前未配置 D1 备份 API，为避免无备份写入生产数据，导入按钮已禁用。请先配置 D1_BACKUP_API_TOKEN。</p>
+        <p v-if="!report.backupAvailable" class="mt-3 text-sm text-amber-700 dark:text-amber-300">当前未配置 D1 备份 API。可勾选下方“跳过导入前备份”直接导入。</p>
+        <label class="mt-3 flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm dark:border-amber-500/40 dark:bg-amber-900/20">
+          <input v-model="skipBackup" type="checkbox" class="h-4 w-4 accent-amber-600"/>
+          <span>跳过导入前 D1 备份（数据库导出异常或等待太久时勾选；勾选后直接导入，不创建备份）</span>
+        </label>
       </section>
 
       <section v-if="progress.message || progress.error" class="rounded-2xl border border-gray-200 p-5 dark:border-gray-700" aria-live="polite">
@@ -57,13 +61,14 @@ if (global.value.userinfo.id !== 1) await navigateTo('/', { replace: true })
 const selectedFile = ref<File | null>(null)
 const adminPassword = ref('')
 const reading = ref(false), importing = ref(false)
+const skipBackup = ref(false)
 const report = ref<Report | null>(null)
 const packageData = ref<Record<string, unknown>>({})
 const tarData = ref<Uint8Array>(new Uint8Array(0))
 const mediaMetas = ref<TarMeta[]>([])
 const maps = reactive({ users: {} as Record<string,number>, memos: {} as Record<string,number>, media: {} as Record<string,string> })
 const progress = reactive({ message:'', percent:0, error:'', done:'' })
-const canImport = computed(() => Boolean(report.value?.backupAvailable && report.value?.existingRun?.status !== 'completed' && adminPassword.value && !importing.value && packageData.value['tables/users.json']))
+const canImport = computed(() => Boolean((report.value?.backupAvailable || skipBackup.value) && report.value?.existingRun?.status !== 'completed' && adminPassword.value && !importing.value && packageData.value['tables/users.json']))
 const tokenHeaders = () => global.value.userinfo.token ? {'x-api-token': global.value.userinfo.token} : {}
 async function api<T>(path:string, body:unknown) {
   let response: Response
@@ -189,7 +194,7 @@ async function startImport() {
   try {
     progress.message = '创建导入前 D1 安全备份'
     progress.percent = 1
-    const preparedState = await api<{ready:boolean;resumed:boolean;bookmark?:string}>('/admin/migration/prepare', { password: adminPassword.value, packageId: activeReport.packageId })
+    const preparedState = await api<{ready:boolean;resumed:boolean;bookmark?:string;skipped?:boolean}>('/admin/migration/prepare', { password: adminPassword.value, packageId: activeReport.packageId, skipBackup: skipBackup.value })
     const activeBookmark = preparedState.bookmark || ''
     prepared = true
     if (!preparedState.ready) {

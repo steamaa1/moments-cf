@@ -82,6 +82,8 @@ assert.match(source, /startD1Export/);
 assert.match(source, /pollD1Export/);
 assert.match(source, /storeD1Backup/);
 assert.match(migrationPage, /\/admin\/migration\/backup\/status/);
+assert.match(migrationPage, /skipBackup/);
+assert.match(source, /body\?\.skipBackup === true/);
 assert.match(source, /\/api\/admin\/migration\/fail/);
 assert.match(source, /migration_items/);
 assert.match(source, /旧用户密码不会迁移/);
