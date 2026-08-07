@@ -1091,10 +1091,10 @@ function requireBackupConfig(env, headers) {
   const missing = ['CLOUDFLARE_ACCOUNT_ID','D1_DATABASE_ID','D1_BACKUP_API_TOKEN'].filter(key => !env[key]);
   return missing.length ? json(fail(`备份功能未配置：${missing.join(', ')}`),503,headers) : null;
 }
-async function backupList(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; return json(ok({list:await listBackups(env),retentionDays:90}),200,headers); }
-async function backupCreate(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const row=await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(); const config=parseConfig(row?.content); return json(ok(await createD1Backup(env, {}, clampInt(config.backupRetentionDays, 1, 3650, 90))),200,headers); }
-async function backupDownload(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const key=String(new URL(request.url).searchParams.get('key')||''); if(!key.startsWith(BACKUP_PREFIX)||key.includes('..'))return json(fail('备份名称无效'),400,headers); const object=await env.MEDIA.get(key); if(!object)return json(fail('备份不存在'),404,headers); return new Response(object.body,{headers:{'content-type':'application/sql','content-disposition':`attachment; filename="${key.split('/').pop()}"`}}); }
-async function backupRestore(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const body=await readJson(request); const key=String(body?.key||''); if(body?.confirmName!==key.split('/').pop())return json(fail('请输入完整备份名称确认'),400,headers); if(!(await passwordMatches(String(body?.password||''),access.user.password_hash)))return json(fail('管理员密码错误'),403,headers); await createD1Backup(env); return json(ok(await restoreD1Backup(env,key)),200,headers); }
+async function backupList(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const storageConfig=await loadStorageConfig(env); const target=storageConfig.backupTarget; return json(ok({list:await listBackups(env,target,storageConfig),retentionDays:90,target}),200,headers); }
+async function backupCreate(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const storageConfig=await loadStorageConfig(env); const row=await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(); const config=parseConfig(row?.content); return json(ok(await createD1Backup(env, {}, clampInt(config.backupRetentionDays, 1, 3650, 90), storageConfig.backupTarget, storageConfig)),200,headers); }
+async function backupDownload(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const key=String(new URL(request.url).searchParams.get('key')||''); if(!key.startsWith(BACKUP_PREFIX)||key.includes('..'))return json(fail('备份名称无效'),400,headers); const storageConfig=await loadStorageConfig(env); const object=await storageBackend(env, storageConfig, storageConfig.backupTarget).get(key); if(!object)return json(fail('备份不存在'),404,headers); return new Response(object.body,{headers:{'content-type':'application/sql','content-disposition':`attachment; filename="${key.split('/').pop()}"`}}); }
+async function backupRestore(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const body=await readJson(request); const key=String(body?.key||''); if(body?.confirmName!==key.split('/').pop())return json(fail('请输入完整备份名称确认'),400,headers); if(!(await passwordMatches(String(body?.password||''),access.user.password_hash)))return json(fail('管理员密码错误'),403,headers); const storageConfig=await loadStorageConfig(env); await createD1Backup(env, {}, 90, storageConfig.backupTarget, storageConfig); return json(ok(await restoreD1Backup(env,key,{},storageConfig.backupTarget,storageConfig)),200,headers); }
 
 async function migrationPreflight(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
@@ -1166,10 +1166,11 @@ async function migrationPrepare(request, env, headers) {
   if (missing) return missing;
   const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
   const retentionDays = clampInt(parseConfig(row?.content).backupRetentionDays, 1, 3650, 90);
+  const storageConfig = await loadStorageConfig(env);
   const exportResult = await startD1Export(env);
-  let summary = { backupBookmark: exportResult.at_bookmark || '', backupReady: false, retentionDays };
+  let summary = { backupBookmark: exportResult.at_bookmark || '', backupReady: false, retentionDays, backupTarget: storageConfig.backupTarget };
   if (exportResult.signed_url) {
-    summary = { ...summary, backup: await storeD1Backup(env, exportResult, retentionDays), backupReady: true };
+    summary = { ...summary, backup: await storeD1Backup(env, exportResult, retentionDays, fetch, storageConfig.backupTarget, storageConfig), backupReady: true };
   }
   if (!summary.backupBookmark && !summary.backupReady) return json(fail('D1 导出未返回 bookmark'), 502, headers);
   await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?) ON CONFLICT(package_id) DO UPDATE SET status='importing', summary=excluded.summary, updated_at=CURRENT_TIMESTAMP").bind(packageId, JSON.stringify(summary)).run();
@@ -1193,7 +1194,8 @@ async function migrationBackupStatus(request, env, headers) {
   const result = await pollD1Export(env, summary.backupBookmark);
   if (result.status === 'error') return json(fail(result.error || 'D1 导出失败'), 502, headers);
   if (!result.signed_url) return json(ok({ ready: false, status: result.status || 'pending' }), 200, headers);
-  summary.backup = await storeD1Backup(env, result, clampInt(summary.retentionDays, 1, 3650, 90));
+  const storageConfig = await loadStorageConfig(env);
+  summary.backup = await storeD1Backup(env, result, clampInt(summary.retentionDays, 1, 3650, 90), fetch, summary.backupTarget || storageConfig.backupTarget, storageConfig);
   summary.backupReady = true;
   await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?) ON CONFLICT(package_id) DO UPDATE SET status='importing', summary=excluded.summary, updated_at=CURRENT_TIMESTAMP").bind(packageId, JSON.stringify(summary)).run();
   return json(ok({ ready: true, backup: summary.backup }), 200, headers);
@@ -1466,10 +1468,11 @@ export default {
         const config = parseConfig(row?.content);
         const intervalDays = clampInt(config.backupIntervalDays, 1, 365, 7);
         const retentionDays = clampInt(config.backupRetentionDays, 1, 3650, 90);
-        const backups = await listBackups(env);
+        const storageConfig = await loadStorageConfig(env);
+        const backups = await listBackups(env, storageConfig.backupTarget, storageConfig);
         const latest = backups[0] ? new Date(backups[0].uploaded).getTime() : 0;
         if (Date.now() - latest < intervalDays * 86400000) return;
-        await createD1Backup(env, {}, retentionDays);
+        await createD1Backup(env, {}, retentionDays, storageConfig.backupTarget, storageConfig);
       } catch (error) { console.error('Scheduled D1 backup failed', error); }
     })());
   },

@@ -1,6 +1,8 @@
 const encoder = new TextEncoder();
 const SAFE_TAGS = new Set(['a', 'span', 'br', 'strong', 'em', 'img', 'p', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'hr']);
 const VOID_TAGS = new Set(['br', 'img', 'hr']);
+import { storageBackend } from './storage.js';
+
 const BACKUP_PREFIX = 'backups/d1/';
 const BACKUP_RETENTION_DAYS = 90;
 const MAX_DIRECT_UPLOAD_BYTES = 500 * 1024 * 1024;
@@ -223,11 +225,14 @@ export async function storeD1Backup(env, result, retentionDays = BACKUP_RETENTIO
   const download = await fetchImpl(result.signed_url);
   if (!download.ok) throw new Error('无法下载 D1 导出文件');
   const key = `${BACKUP_PREFIX}${new Date().toISOString().replace(/[:.]/g, '-')}.sql`;
-  await env.MEDIA.put(key, download.body, { httpMetadata: { contentType: 'application/sql' }, customMetadata: { source: 'd1-export', databaseId: env.D1_DATABASE_ID } });
-  await purgeOldBackups(env, Date.now(), retentionDays);
+  await backupBackend(env, target, storageConfig).put(key, download.body, { httpMetadata: { contentType: 'application/sql' } });
+  await purgeOldBackups(env, Date.now(), retentionDays, target, storageConfig);
   return { key };
 }
-export async function createD1Backup(env, dependencies = {}, retentionDays = BACKUP_RETENTION_DAYS) {
+function backupBackend(env, target, storageConfig) {
+  return storageBackend(env, storageConfig || { storageType: 'r2', s3Storage: {}, webdavStorage: {} }, target || 'r2');
+}
+export async function createD1Backup(env, dependencies = {}, retentionDays = BACKUP_RETENTION_DAYS, target = 'r2', storageConfig = null) {
   const fetchImpl = dependencies.fetch || fetch;
   let result;
   try {
@@ -247,17 +252,20 @@ export async function createD1Backup(env, dependencies = {}, retentionDays = BAC
   const download = await fetchImpl(result.signed_url);
   if (!download.ok) throw new Error('无法下载 D1 导出文件');
   const key = `${BACKUP_PREFIX}${new Date().toISOString().replace(/[:.]/g, '-')}.sql`;
-  await env.MEDIA.put(key, download.body, { httpMetadata: { contentType: 'application/sql' }, customMetadata: { source: 'd1-export', databaseId: env.D1_DATABASE_ID } });
-  await purgeOldBackups(env, Date.now(), retentionDays);
+  await backupBackend(env, target, storageConfig).put(key, download.body, { httpMetadata: { contentType: 'application/sql' } });
+  await purgeOldBackups(env, Date.now(), retentionDays, target, storageConfig);
   return { key };
 }
-export async function listBackups(env) {
-  const listed = await env.MEDIA.list({ prefix: BACKUP_PREFIX, limit: 1000 });
-  return (listed.objects || []).sort((a, b) => b.uploaded - a.uploaded).map(item => ({ key: item.key, name: item.key.slice(BACKUP_PREFIX.length), size: item.size, uploaded: item.uploaded }));
+export async function listBackups(env, target = 'r2', storageConfig = null) {
+  const objects = await backupBackend(env, target, storageConfig).list(BACKUP_PREFIX);
+  return objects.filter(item => String(item.key || '').startsWith(BACKUP_PREFIX))
+    .sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime())
+    .map(item => ({ key: item.key, name: item.key.slice(BACKUP_PREFIX.length), size: Number(item.size || 0), uploaded: item.uploaded }));
 }
-export async function purgeOldBackups(env, now = Date.now(), retentionDays = BACKUP_RETENTION_DAYS) {
-  const backups = await listBackups(env); let deleted = 0;
-  for (const item of backups) if (now - new Date(item.uploaded).getTime() > retentionDays * 86400000) { await env.MEDIA.delete(item.key); deleted += 1; }
+export async function purgeOldBackups(env, now = Date.now(), retentionDays = BACKUP_RETENTION_DAYS, target = 'r2', storageConfig = null) {
+  const backend = backupBackend(env, target, storageConfig);
+  const backups = await listBackups(env, target, storageConfig); let deleted = 0;
+  for (const item of backups) if (now - new Date(item.uploaded).getTime() > retentionDays * 86400000) { await backend.delete(item.key); deleted += 1; }
   return deleted;
 }
 // Compact MD5 implementation for D1 Import's required file etag.
@@ -276,9 +284,9 @@ export function md5Hex(buffer) {
   }
   return [a0,b0,c0,d0].map(v => [v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255].map(x=>x.toString(16).padStart(2,'0')).join('')).join('');
 }
-export async function restoreD1Backup(env, key, dependencies = {}) {
+export async function restoreD1Backup(env, key, dependencies = {}, target = 'r2', storageConfig = null) {
   if (!key.startsWith(BACKUP_PREFIX) || key.includes('..')) throw new Error('备份名称无效');
-  const object = await env.MEDIA.get(key); if (!object) throw new Error('备份不存在');
+  const object = await backupBackend(env, target, storageConfig).get(key); if (!object) throw new Error('备份不存在');
   const bytes = await object.arrayBuffer(); const etag = md5Hex(bytes); const fetchImpl = dependencies.fetch || fetch;
   const init = await cfApi(env, '/import', { action: 'init', etag }, fetchImpl);
   if (!init.upload_url || !init.filename) throw new Error('D1 Import 初始化失败');
