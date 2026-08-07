@@ -89,6 +89,30 @@
         <UFormGroup label="密码 / 授权码"><UInput v-model="state.smtpPassword" type="password" autocomplete="new-password" :placeholder="state.smtpPasswordConfigured ? '已配置，留空保持不变' : 'SMTP 授权码或 re_ 开头的 Resend API Key'"/></UFormGroup>
       </template>
     </div>
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div class="flex items-start gap-3">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"><UIcon name="i-carbon-data-1" class="h-5 w-5"/></span>
+        <div><p class="font-semibold text-gray-800 dark:text-gray-100">媒体存储</p><p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">上传文件写入所选后端；切换后旧 R2 媒体仍可访问（读旧写新）。S3/WebDAV 凭据加密存储。</p></div>
+      </div>
+      <URadioGroup v-model="state.storageType" :options="[{value:'r2',label:'Cloudflare R2（默认）'},{value:'s3',label:'S3 兼容存储'},{value:'webdav',label:'WebDAV'}]" value-attribute="value"/>
+      <template v-if="state.storageType === 's3'">
+        <UFormGroup label="Endpoint"><UInput v-model="state.s3Storage.endpoint" placeholder="https://s3.example.com"/></UFormGroup>
+        <div class="grid grid-cols-2 gap-3">
+          <UFormGroup label="Region"><UInput v-model="state.s3Storage.region" placeholder="auto"/></UFormGroup>
+          <UFormGroup label="Bucket"><UInput v-model="state.s3Storage.bucket"/></UFormGroup>
+        </div>
+        <UFormGroup label="Access Key"><UInput v-model="state.s3Storage.accessKeyId"/></UFormGroup>
+        <UFormGroup label="Secret Key"><UInput v-model="state.s3Storage.secretAccessKey" type="password" autocomplete="new-password" :placeholder="state.s3Storage.secretAccessKeyConfigured ? '已配置，留空保持不变' : ''"/></UFormGroup>
+      </template>
+      <template v-else-if="state.storageType === 'webdav'">
+        <UFormGroup label="WebDAV URL"><UInput v-model="state.webdavStorage.url" placeholder="https://dav.example.com/remote.php/dav/files/user"/></UFormGroup>
+        <div class="grid grid-cols-2 gap-3">
+          <UFormGroup label="用户名"><UInput v-model="state.webdavStorage.username"/></UFormGroup>
+          <UFormGroup label="密码"><UInput v-model="state.webdavStorage.password" type="password" autocomplete="new-password" :placeholder="state.webdavStorage.passwordConfigured ? '已配置，留空保持不变' : ''"/></UFormGroup>
+        </div>
+        <p class="text-xs text-gray-500">WebDAV 无预签名直传，单文件上限 25MB；大视频请使用 R2 或 S3。</p>
+      </template>
+    </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-neutral-900/40 p-4 space-y-3">
       <div class="flex items-start gap-3">
         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
@@ -96,7 +120,7 @@
         </span>
         <div>
           <p class="font-semibold text-gray-800 dark:text-gray-100">Cloudflare R2 媒体存储</p>
-          <p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">未引用文件会先进入回收站并保留 7 天，期间可恢复；到期文件会在下次清理时永久删除。</p>
+          <p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">未引用文件会先进入回收站并保留 7 天，期间可恢复；到期文件会在下次清理时永久删除。当前存储为 S3/WebDAV 时，回收站同样作用于所选后端。</p>
         </div>
       </div>
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -105,11 +129,12 @@
       </div>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">D1 生产备份</p><p class="mt-1 text-xs text-gray-500">按配置的间隔自动备份到 R2，恢复前会自动再创建一份安全备份。</p></div><UButton size="sm" icon="i-carbon-renew" :loading="backupLoading" @click="createBackup">立即备份</UButton></div>
+      <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">D1 生产备份</p><p class="mt-1 text-xs text-gray-500">按配置的间隔自动备份到所选目标，恢复前会自动再创建一份安全备份。</p></div><UButton size="sm" icon="i-carbon-renew" :loading="backupLoading" @click="createBackup">立即备份</UButton></div>
       <div class="grid grid-cols-2 gap-3">
         <UFormGroup label="自动备份间隔（天）"><UInput v-model.number="state.backupIntervalDays" type="number" min="1" max="365"/></UFormGroup>
         <UFormGroup label="保留天数"><UInput v-model.number="state.backupRetentionDays" type="number" min="1" max="3650"/></UFormGroup>
       </div>
+      <UFormGroup label="备份目标" help="仅显示已配置的存储"><USelectMenu v-model="state.backupTarget" :options="backupTargetOptions" value-attribute="value" option-attribute="label"/></UFormGroup>
       <UButton block color="gray" variant="soft" icon="i-carbon-data-backup" @click="openBackups">管理备份</UButton>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
@@ -201,6 +226,10 @@ const state = reactive({
   enableRegister: true,
   backupIntervalDays: 7,
   backupRetentionDays: 90,
+  storageType: 'r2',
+  backupTarget: 'r2',
+  s3Storage: { endpoint: '', region: 'auto', bucket: '', accessKeyId: '', secretAccessKey: '', secretAccessKeyConfigured: false },
+  webdavStorage: { url: '', username: '', password: '', passwordConfigured: false },
   enableAbout: false,
   aboutContent: "",
   maxCommentLength: 120,
@@ -228,6 +257,12 @@ const showBackupModal = ref(false)
 const backupLoading = ref(false)
 const backups = ref<BackupFile[]>([])
 const restoreBackup = ref<BackupFile | null>(null)
+const backupTargetOptions = computed(() => {
+  const options: Array<{value:string;label:string}> = [{value:'r2',label:'Cloudflare R2'}]
+  if (state.s3Storage.endpoint && state.s3Storage.bucket && state.s3Storage.accessKeyId) options.push({value:'s3',label:'S3 兼容存储'})
+  if (state.webdavStorage.url) options.push({value:'webdav',label:'WebDAV'})
+  return options
+})
 const restoreConfirmName = ref('')
 const restorePassword = ref('')
 const showCleanFileModal = ref(false)
