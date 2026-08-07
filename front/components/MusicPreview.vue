@@ -22,9 +22,8 @@ onMounted(() => {
   try {
     player = new APlayer({
       container,
-      audio: [{ name: props.name, artist: 'Audio artist', url: props.url, cover: '' }],
+      audio: [{ name: props.name, artist: 'Audio artist', url: props.url, cover: '', lrc: props.lrc || '' }],
       lrcType: props.lrc ? 2 : 0,
-      lrc: props.lrc ? { type: 2, text: props.lrc } : undefined,
       listFolded: true,
     })
   } catch (error) {
@@ -41,5 +40,5 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.music-preview-direct { width: 100%; }
+.music-preview-direct { width: 100%; max-height: 240px; overflow-y: auto; }
 </style>

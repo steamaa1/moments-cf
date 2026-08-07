@@ -2,7 +2,7 @@
   <UPopover :ui="{base:'w-[360px]'}" :popper="{ arrow: true }" mode="click">
     <UIcon name="i-carbon-music" class="cursor-pointer w-6 h-6"/>
     <template #panel="{close}">
-      <div class="p-4 flex max-h-[520px] flex-col gap-3 overflow-auto">
+      <div class="max-h-[520px] overflow-y-auto p-4"><div class="flex flex-col gap-3">
         <UFormGroup label="选择平台" :ui="{label:{base:'font-bold'}}">
           <USelectMenu v-model="mode" :options="modes" value-attribute="value" option-attribute="label"/>
         </UFormGroup>
@@ -30,13 +30,13 @@
             </div>
           </div>
         </template>
-        <MusicPreview v-if="previewing" v-bind="draft"/>
+        <MusicPreview v-if="previewing" v-bind="draft" class="shrink-0"/>
         <div class="flex flex-wrap gap-2">
           <UButton color="indigo" variant="soft" :loading="previewLoading" @click="preview">预览</UButton>
           <UButton @click="confirm(close)">确定</UButton>
           <UButton color="white" @click="reset(close)">清空</UButton>
         </div>
-      </div>
+      </div></div>
     </template>
   </UPopover>
 </template>

@@ -49,6 +49,8 @@ assert.match(music, /滚动歌词（LRC）/);
 assert.match(musicPreview, /mode === 'direct'/);
 assert.match(musicPreview, /new APlayer/);
 assert.match(musicPreview, /lrcType: props\.lrc \? 2 : 0/);
+assert.match(musicPreview, /lrc: props\.lrc \|\| ''/);
+assert.match(music, /overflow-y-auto/);
 assert.doesNotMatch(musicPreview, /\{\{ lrc \|\| '' \}\}/);
 const layoutDefault = await readFile(new URL('../front/layouts/default.vue', import.meta.url), 'utf8');
 assert.match(layoutDefault, /runCustomJs/);
