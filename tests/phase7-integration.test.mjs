@@ -47,7 +47,6 @@ assert.match(calendar, /时间轴排列/);
 assert.match(music, /直链播放/);
 assert.match(music, /滚动歌词（LRC）/);
 assert.match(musicPreview, /mode === 'direct'/);
-const musicPreview = await readFile(new URL('../front/components/MusicPreview.vue', import.meta.url), 'utf8');
 assert.match(musicPreview, /new APlayer/);
 assert.match(musicPreview, /lrcType: props\.lrc \? 2 : 0/);
 assert.doesNotMatch(musicPreview, /\{\{ lrc \|\| '' \}\}/);
