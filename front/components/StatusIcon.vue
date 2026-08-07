@@ -7,7 +7,7 @@
     <template #panel>
       <div class="px-3 py-2">
         <p class="whitespace-nowrap text-sm font-semibold">{{ localStatus.icon }} {{ localStatus.content }}</p>
-        <p v-if="localStatus.remark" class="mt-0.5 break-words text-xs leading-5 text-gray-500">{{ localStatus.remark }}</p>
+        <p v-if="localStatus.remark" class="mt-0.5 break-words text-xs leading-5 text-gray-600 dark:text-gray-300">{{ localStatus.remark }}</p>
       </div>
     </template>
   </UPopover>
@@ -23,14 +23,14 @@
     <template #panel="{ close }">
       <div class="max-h-[460px] space-y-3 overflow-auto p-4">
         <div v-if="localStatus" class="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800/70">
-          <span class="truncate text-sm">{{ localStatus.icon }} {{ localStatus.content }}<span v-if="localStatus.remark" class="text-gray-500"> · {{ localStatus.remark }}</span></span>
+          <span class="truncate text-sm font-medium text-gray-800 dark:text-gray-100">{{ localStatus.icon }} {{ localStatus.content }}<span v-if="localStatus.remark" class="font-normal text-gray-500 dark:text-gray-400"> · {{ localStatus.remark }}</span></span>
           <UButton size="xs" color="red" variant="soft" @click="clear(close)">清除</UButton>
         </div>
         <UFormGroup label="持续时间" :ui="{label:{base:'font-bold'}}">
           <USelectMenu v-model="duration" :options="durations" value-attribute="value" option-attribute="label"/>
         </UFormGroup>
         <div v-for="group in builtins" :key="group.group">
-          <p class="mb-1 text-xs text-gray-500">{{ group.group }}</p>
+          <p class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ group.group }}</p>
           <div class="grid grid-cols-6 gap-1">
             <button v-for="item in group.items" :key="item.content" type="button" class="status-item" :class="{ active: selected?.content === item.content }" :title="item.content" @click="pick(item)">
               <span class="status-item-emoji">{{ item.icon }}</span>
