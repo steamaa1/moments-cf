@@ -138,6 +138,7 @@ const defaultState = {
     url: '',
     name: '',
     artist: 'Audio artist',
+    cover: '',
     lrc: '',
     api: 'https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r',
     server: 'netease' as MetingMusicServer,
@@ -189,7 +190,7 @@ const handleDragImage = (imgs: string[]) => {
 
 const updateMusic = (music: MusicDTO) => {
   Object.assign(state.music, {
-    mode: 'platform', id: '', url: '', name: '', artist: 'Audio artist', lrc: '',
+    mode: 'platform', id: '', url: '', name: '', artist: 'Audio artist', cover: '', lrc: '',
     server: 'netease', type: 'song',
     api: 'https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r',
   }, music)
