@@ -4,7 +4,7 @@
     <main class="space-y-4 p-4 pb-12">
       <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-neutral-800">
         <div class="mb-4 flex items-start gap-3">
-          <span class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"><UIcon name="i-carbon-data-transfer" class="h-6 w-6"/></span>
+          <span class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"><UIcon name="i-carbon-import-export" class="h-6 w-6"/></span>
           <div><h1 class="text-xl font-bold">一键导入</h1><p class="mt-1 text-sm leading-6 text-gray-500">上传本地转换器生成的 moments-migration-package.tar.gz（旧 Docker 站），预检后一键导入。</p></div>
         </div>
         <UFormGroup label="迁移包" help="只接受 build-package.py 生成的 .tar.gz 文件">
@@ -16,7 +16,7 @@
         </UFormGroup>
         <div class="mt-4 flex flex-wrap gap-2">
           <UButton :loading="reading" :disabled="!selectedFile" icon="i-carbon-search" @click="inspect">读取并预检</UButton>
-          <UButton v-if="report" color="red" variant="soft" :loading="importing" :disabled="!canImport" icon="i-carbon-data-transfer-down" @click="startImport">确认导入</UButton>
+          <UButton v-if="report" color="red" variant="soft" :loading="importing" :disabled="!canImport" icon="i-carbon-arrow-down" @click="startImport">确认导入</UButton>
         </div>
       </section>
 
