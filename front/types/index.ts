@@ -83,6 +83,7 @@ export type SysConfigVO = {
     timeFormat: 'timeAgo' | 'time',
     backupIntervalDays: number,
     backupRetentionDays: number,
+    enableD1Backup: boolean,
     storageType: string,
     backupTarget: string,
     s3Storage: { endpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string; secretAccessKeyConfigured?: boolean },

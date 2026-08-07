@@ -129,16 +129,28 @@
       </div>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">D1 生产备份</p><p class="mt-1 text-xs text-gray-500">按配置的间隔自动备份到所选目标，恢复前会自动再创建一份安全备份。</p></div><UButton size="sm" icon="i-carbon-renew" :loading="backupLoading" @click="createBackup">立即备份</UButton></div>
-      <div class="grid grid-cols-2 gap-3">
-        <UFormGroup label="自动备份间隔（天）"><UInput v-model.number="state.backupIntervalDays" type="number" min="1" max="365"/></UFormGroup>
-        <UFormGroup label="保留天数"><UInput v-model.number="state.backupRetentionDays" type="number" min="1" max="3650"/></UFormGroup>
+      <div class="flex items-center justify-between gap-3">
+        <div><p class="font-semibold">本地备份</p><p class="mt-1 text-xs text-gray-500">将数据库导出为 SQL 文件，下载到本地保存。</p></div>
+        <UButton size="sm" icon="i-carbon-download" :loading="localBackupLoading" @click="exportLocalBackup">导出文件</UButton>
       </div>
-      <UFormGroup label="备份目标" help="仅显示已配置的存储"><USelectMenu v-model="state.backupTarget" :options="backupTargetOptions" value-attribute="value" option-attribute="label"/></UFormGroup>
-      <UButton block color="gray" variant="soft" icon="i-carbon-data-backup" @click="openBackups">管理备份</UButton>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">旧 Docker 站数据迁移</p><p class="mt-1 text-xs text-gray-500">上传本地转换器生成的迁移包，预检后导入 D1 与 R2。</p></div></div>
+      <div class="flex items-center justify-between gap-3">
+        <div><p class="font-semibold">D1 生产备份</p><p class="mt-1 text-xs text-gray-500">按配置的间隔自动备份到所选目标，恢复前会自动再创建一份安全备份。</p></div>
+        <UToggle v-model="state.enableD1Backup"/>
+      </div>
+      <template v-if="state.enableD1Backup">
+        <div class="flex items-start justify-between gap-3"><UButton size="sm" icon="i-carbon-renew" :loading="backupLoading" @click="createBackup">立即备份</UButton></div>
+        <div class="grid grid-cols-2 gap-3">
+          <UFormGroup label="自动备份间隔（天）"><UInput v-model.number="state.backupIntervalDays" type="number" min="1" max="365"/></UFormGroup>
+          <UFormGroup label="保留天数"><UInput v-model.number="state.backupRetentionDays" type="number" min="1" max="3650"/></UFormGroup>
+        </div>
+        <UFormGroup label="备份目标" help="仅显示已配置的存储"><USelectMenu v-model="state.backupTarget" :options="backupTargetOptions" value-attribute="value" option-attribute="label"/></UFormGroup>
+        <UButton block color="gray" variant="soft" icon="i-carbon-data-backup" @click="openBackups">管理备份</UButton>
+      </template>
+    </div>
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">一键导入</p><p class="mt-1 text-xs text-gray-500">上传本地转换器生成的迁移包（旧 Docker 站），预检后导入 D1 与所选存储。</p></div></div>
       <UButton block color="gray" variant="soft" icon="i-carbon-data-transfer" to="/sys/migration">打开一键导入器</UButton>
     </div>
     <UButton block class="min-h-11 justify-center" @click="save">保存设置</UButton>
@@ -226,6 +238,7 @@ const state = reactive({
   enableRegister: true,
   backupIntervalDays: 7,
   backupRetentionDays: 90,
+  enableD1Backup: true,
   storageType: 'r2',
   backupTarget: 'r2',
   s3Storage: { endpoint: '', region: 'auto', bucket: '', accessKeyId: '', secretAccessKey: '', secretAccessKeyConfigured: false },
@@ -307,6 +320,18 @@ const loadBackups = async () => {
 }
 const openBackups = async () => { showBackupModal.value = true; await loadBackups() }
 const createBackup = async () => { backupLoading.value = true; try { await useMyFetch('/admin/backup/create'); toast.success('备份已创建'); if(showBackupModal.value) await loadBackups() } finally { backupLoading.value = false } }
+const localBackupLoading = ref(false)
+const exportLocalBackup = async () => {
+  localBackupLoading.value = true
+  try {
+    const token = useGlobalState().value.userinfo.token
+    const response = await fetch('/api/admin/backup/export', { method:'POST', headers:{'x-api-token':token} })
+    if (!response.ok) { let message = '备份导出失败'; try { const body = await response.json(); message = body.message || message } catch { /* ignore */ } toast.error(message); return }
+    const blob = await response.blob()
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `moments-backup-${new Date().toISOString().slice(0,10)}.sql`; link.click(); URL.revokeObjectURL(link.href)
+    toast.success('备份已下载到本地')
+  } finally { localBackupLoading.value = false }
+}
 const downloadBackup = async (key: string) => {
   const token = useGlobalState().value.userinfo.token
   const response = await fetch(`/api/admin/backup/download?key=${encodeURIComponent(key)}`, {method:'POST',headers:{'x-api-token':token}})

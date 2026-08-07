@@ -5,7 +5,7 @@
       <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-neutral-800">
         <div class="mb-4 flex items-start gap-3">
           <span class="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"><UIcon name="i-carbon-data-transfer" class="h-6 w-6"/></span>
-          <div><h1 class="text-xl font-bold">旧站数据迁移</h1><p class="mt-1 text-sm leading-6 text-gray-500">上传本地转换器生成的 moments-migration-package.tar.gz。导入前会先预检，且不会覆盖本站管理员密码和安全配置。</p></div>
+          <div><h1 class="text-xl font-bold">一键导入</h1><p class="mt-1 text-sm leading-6 text-gray-500">上传本地转换器生成的 moments-migration-package.tar.gz（旧 Docker 站），预检后一键导入。</p></div>
         </div>
         <UFormGroup label="迁移包" help="只接受 build-package.py 生成的 .tar.gz 文件">
           <input ref="fileInput" type="file" accept=".tar.gz,.tgz,application/gzip" class="block min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-neutral-900" @change="selectPackage"/>
