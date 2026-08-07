@@ -4,6 +4,7 @@ import {
   encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
   startD1Export, pollD1Export, storeD1Backup,
 } from './phase7.js';
+import { storageBackend, r2Backend } from './storage.js';
 /**
  * Moments Cloudflare Worker.
  * Phase 2: D1-backed bootstrap/auth/profile/config and authenticated R2 upload.
@@ -38,6 +39,10 @@ const DEFAULT_CONFIG = {
   enableRegister: false,
   backupIntervalDays: 7,
   backupRetentionDays: 90,
+  storageType: 'r2',
+  backupTarget: 'r2',
+  s3Storage: { endpoint: '', region: 'auto', bucket: '', accessKeyId: '', secretAccessKeyEncrypted: '' },
+  webdavStorage: { url: '', username: '', passwordEncrypted: '' },
   enableEmail: false,
   smtpHost: '',
   smtpPort: '465',
@@ -273,6 +278,10 @@ async function getConfig(request, env, headers, full = false) {
   if (full) {
     delete config.enableS3;
     delete config.s3;
+    const s3Raw = config.s3Storage || {};
+    const davRaw = config.webdavStorage || {};
+    config.s3Storage = { endpoint: s3Raw.endpoint || '', region: s3Raw.region || 'auto', bucket: s3Raw.bucket || '', accessKeyId: s3Raw.accessKeyId || '', secretAccessKeyConfigured: Boolean(s3Raw.secretAccessKeyEncrypted), secretAccessKey: '' };
+    config.webdavStorage = { url: davRaw.url || '', username: davRaw.username || '', passwordConfigured: Boolean(davRaw.passwordEncrypted), password: '' };
     config.smtpPasswordConfigured = Boolean(config.smtpPasswordEncrypted || env.SMTP_PASSWORD || env.RESEND_API_KEY);
     config.smtpPassword = '';
     config.googleSecretKeyConfigured = Boolean(config.googleSecretKey);
@@ -304,6 +313,28 @@ async function saveConfig(request, env, headers) {
   config.turnstileSecretKey = String(body.turnstileSecretKey || previousConfig.turnstileSecretKey || '').trim().slice(0, 300);
   config.backupIntervalDays = clampInt(body.backupIntervalDays, 1, 365, 7);
   config.backupRetentionDays = clampInt(body.backupRetentionDays, 1, 3650, 90);
+  config.storageType = ['r2', 's3', 'webdav'].includes(body.storageType) ? body.storageType : 'r2';
+  const s3Prev = previousConfig.s3Storage || {};
+  const s3Input = body.s3Storage || {};
+  config.s3Storage = {
+    endpoint: String(s3Input.endpoint ?? s3Prev.endpoint ?? '').trim().slice(0, 500),
+    region: String(s3Input.region ?? s3Prev.region ?? 'auto').trim().slice(0, 100) || 'auto',
+    bucket: String(s3Input.bucket ?? s3Prev.bucket ?? '').trim().slice(0, 200),
+    accessKeyId: String(s3Input.accessKeyId ?? s3Prev.accessKeyId ?? '').trim().slice(0, 200),
+    secretAccessKeyEncrypted: s3Input.secretAccessKey ? await encryptConfigSecret(String(s3Input.secretAccessKey).trim(), env.JWT_SECRET) : (s3Prev.secretAccessKeyEncrypted || ''),
+  };
+  const davPrev = previousConfig.webdavStorage || {};
+  const davInput = body.webdavStorage || {};
+  config.webdavStorage = {
+    url: String(davInput.url ?? davPrev.url ?? '').trim().slice(0, 500),
+    username: String(davInput.username ?? davPrev.username ?? '').trim().slice(0, 200),
+    passwordEncrypted: davInput.password ? await encryptConfigSecret(String(davInput.password).trim(), env.JWT_SECRET) : (davPrev.passwordEncrypted || ''),
+  };
+  const storageTypes = ['r2', 's3', 'webdav'];
+  const targetCandidates = ['r2'];
+  if (config.s3Storage.endpoint && config.s3Storage.bucket && config.s3Storage.accessKeyId && config.s3Storage.secretAccessKeyEncrypted) targetCandidates.push('s3');
+  if (config.webdavStorage.url) targetCandidates.push('webdav');
+  config.backupTarget = storageTypes.includes(body.backupTarget) && targetCandidates.includes(body.backupTarget) ? body.backupTarget : 'r2';
   config.smtpPasswordEncrypted = previousConfig.smtpPasswordEncrypted || '';
   const mailSecret = String(body.smtpPassword || '');
   if (mailSecret) config.smtpPasswordEncrypted = await encryptConfigSecret(mailSecret, env.JWT_SECRET);
@@ -349,12 +380,16 @@ async function upload(request, env, headers) {
     const thumbnail = file.type.startsWith('image/') && thumbnailCandidate instanceof File ? thumbnailCandidate : null;
     const thumbnailKey = thumbnail ? `thumbs/${sha}.webp` : null;
     try {
-      await env.MEDIA.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { ownerId: String(access.user.id), originalFilename: file.name.slice(0, 255), sha256: sha } });
-      if (thumbnail) await env.MEDIA.put(thumbnailKey, thumbnail.stream(), { httpMetadata: { contentType: 'image/webp' }, customMetadata: { ownerId: String(access.user.id), sourceKey: key } });
+      const storageConfig = await loadStorageConfig(env);
+      const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+      await backend.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+      if (thumbnail) await backend.put(thumbnailKey, thumbnail.stream(), { httpMetadata: { contentType: 'image/webp' } });
       await env.DB.prepare("INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes, sha256, thumbnail_key, upload_state) VALUES (?, ?, ?, ?, ?, ?, ?, 'ready')")
         .bind(access.user.id, key, file.name.slice(0, 255), file.type, file.size, sha, thumbnailKey).run();
     } catch (error) {
-      await Promise.all([env.MEDIA.delete(key).catch(() => {}), thumbnailKey ? env.MEDIA.delete(thumbnailKey).catch(() => {}) : Promise.resolve()]);
+      const storageConfig = await loadStorageConfig(env);
+      const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+      await Promise.all([backend.delete(key).catch(() => {}), thumbnailKey ? backend.delete(thumbnailKey).catch(() => {}) : Promise.resolve()]);
       throw error;
     }
     urls.push(`/upload/${key}`);
@@ -399,16 +434,19 @@ async function directUploadInit(request, env, headers) {
   try { file = validateDirectUpload(body, ALLOWED_MEDIA_TYPES); } catch (error) { return json(fail(error.message), 400, headers); }
   const duplicate = await env.DB.prepare("SELECT r2_key, thumbnail_key FROM media WHERE owner_id=? AND sha256=? AND trashed_at IS NULL AND upload_state='ready' LIMIT 1").bind(access.user.id, file.sha256).first();
   if (duplicate) return json(ok({ exists: true, path: `/upload/${duplicate.r2_key}`, thumbPath: duplicate.thumbnail_key ? `/upload/${duplicate.thumbnail_key}` : '' }), 200, headers);
-  const signing = { accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: env.R2_BUCKET_NAME || 'moments-media', accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY };
-  if (!signing.accountId || !signing.accessKeyId || !signing.secretAccessKey) return json(fail('R2 直传尚未配置，请在 Worker Secrets 设置 R2_ACCESS_KEY_ID 和 R2_SECRET_ACCESS_KEY'), 503, headers);
+  const storageConfig = await loadStorageConfig(env);
+  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+  if (storageConfig.storageType === 'webdav') return json(fail('WebDAV 存储不支持大文件直传，请使用 25MB 以内的文件直接上传'), 400, headers);
+  const signing = storageConfig.storageType === 's3' ? { ...storageConfig.s3Storage, bucket: storageConfig.s3Storage.bucket } : { accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: env.R2_BUCKET_NAME || 'moments-media', accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY };
+  if (!signing.accessKeyId || !signing.secretAccessKey || (storageConfig.storageType === 'r2' && !signing.accountId)) return json(fail('直传凭据未配置，请在 Worker Secrets 设置对应 Access Key'), 503, headers);
   const extension = mediaExtension(file.filename);
   const key = `media/${new Date().toISOString().slice(0,10).replaceAll('-','/')}/${file.sha256}${extension ? `.${extension}` : ''}`;
   const old = await env.DB.prepare('SELECT id FROM media WHERE owner_id=? AND r2_key=? LIMIT 1').bind(access.user.id, key).first();
   if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, old.id).run();
   else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,upload_state) VALUES (?,?,?,?,?,?,'pending')").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256).run();
-  const uploadUrl = await createR2PresignedPut({ ...signing, key, contentType: file.contentType });
+  const uploadUrl = await backend.presignPut({ key, contentType: file.contentType });
   const thumbnailKey = file.contentType.startsWith('image/') ? `thumbs/${file.sha256}.webp` : '';
-  const thumbnailUploadUrl = thumbnailKey ? await createR2PresignedPut({ ...signing, key: thumbnailKey, contentType: 'image/webp' }) : '';
+  const thumbnailUploadUrl = thumbnailKey ? await backend.presignPut({ key: thumbnailKey, contentType: 'image/webp' }) : '';
   return json(ok({ exists: false, uploadUrl, key, path: `/upload/${key}`, contentType: file.contentType, direct: file.size >= DIRECT_UPLOAD_THRESHOLD, thumbnailKey, thumbnailUploadUrl }), 200, headers);
 }
 async function directUploadComplete(request, env, headers) {
@@ -416,11 +454,13 @@ async function directUploadComplete(request, env, headers) {
   const body = await readJson(request); const key = String(body?.key || '');
   const media = await env.DB.prepare("SELECT * FROM media WHERE owner_id=? AND r2_key=? AND upload_state='pending'").bind(access.user.id,key).first();
   if (!media) return json(fail('待确认上传不存在'),404,headers);
-  const object = await env.MEDIA.head(key); if (!object || Number(object.size)!==Number(media.size_bytes)) return json(fail('R2 文件不存在或大小不一致'),409,headers);
+  const storageConfig = await loadStorageConfig(env);
+  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+  const object = await backend.head(key); if (!object || Number(object.size)!==Number(media.size_bytes)) return json(fail('文件不存在或大小不一致'),409,headers);
   let thumbnailKey = null;
   if (body.thumbnailKey) {
     thumbnailKey = String(body.thumbnailKey);
-    const thumb = await env.MEDIA.head(thumbnailKey); if (!thumb || !String(thumb.httpMetadata?.contentType || '').startsWith('image/')) return json(fail('缩略图不存在'),409,headers);
+    const thumb = await backend.head(thumbnailKey); if (!thumb || !String(thumb.httpMetadata?.contentType || '').startsWith('image/')) return json(fail('缩略图不存在'),409,headers);
   }
   await env.DB.prepare("UPDATE media SET upload_state='ready', thumbnail_key=? WHERE id=?").bind(thumbnailKey,media.id).run();
   return json(ok({ path:`/upload/${key}`, thumbPath:thumbnailKey?`/upload/${thumbnailKey}`:'' }),200,headers);
@@ -1076,6 +1116,26 @@ function clampInt(value, min, max, fallback) {
   const n = Number(value);
   return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
 }
+async function loadStorageConfig(env) {
+  const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
+  const config = parseConfig(row?.content);
+  return {
+    storageType: ['r2', 's3', 'webdav'].includes(config.storageType) ? config.storageType : 'r2',
+    backupTarget: ['r2', 's3', 'webdav'].includes(config.backupTarget) ? config.backupTarget : 'r2',
+    s3Storage: {
+      endpoint: String(config.s3Storage?.endpoint || '').trim(),
+      region: String(config.s3Storage?.region || 'auto').trim() || 'auto',
+      bucket: String(config.s3Storage?.bucket || '').trim(),
+      accessKeyId: String(config.s3Storage?.accessKeyId || '').trim(),
+      secretAccessKey: config.s3Storage?.secretAccessKeyEncrypted ? await decryptConfigSecret(config.s3Storage.secretAccessKeyEncrypted, env.JWT_SECRET).catch(() => '') : '',
+    },
+    webdavStorage: {
+      url: String(config.webdavStorage?.url || '').trim(),
+      username: String(config.webdavStorage?.username || '').trim(),
+      password: config.webdavStorage?.passwordEncrypted ? await decryptConfigSecret(config.webdavStorage.passwordEncrypted, env.JWT_SECRET).catch(() => '') : '',
+    },
+  };
+}
 function migrationText(value, max = 2000) { return String(value ?? '').slice(0, max); }
 function migrationTime(value) { return sqliteTime(value) || sqliteTime(); }
 async function migrationMapping(env, packageId, kind, sourceId) {
@@ -1353,7 +1413,11 @@ async function serveMedia(request, env, key) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
   const media = await env.DB.prepare("SELECT id FROM media WHERE (r2_key=? OR thumbnail_key=?) AND trashed_at IS NULL AND upload_state='ready'").bind(key, key).first();
   if (!media) return new Response('Not Found', { status: 404 });
-  const head = await env.MEDIA.head(key);
+  const storageConfig = await loadStorageConfig(env);
+  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+  let head = await backend.head(key);
+  let reader = backend;
+  if (!head) { head = await env.MEDIA.head(key); reader = r2Backend(env); }
   if (!head) return new Response('Not Found', { status: 404 });
   const etag = head.httpEtag;
   if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers: { etag } });
@@ -1370,13 +1434,13 @@ async function serveMedia(request, env, key) {
   if (rangeHeader) {
     const range = parseRangeHeader(rangeHeader, head.size);
     if (!range) return new Response('Range Not Satisfiable', { status: 416, headers: { 'content-range': `bytes */${head.size}`, 'accept-ranges': 'bytes' } });
-    const object = await env.MEDIA.get(key, { range });
+    const object = await reader.get(key, { range });
     if (!object) return new Response('Not Found', { status: 404 });
     headers.set('content-range', `bytes ${range.offset}-${range.offset + range.length - 1}/${head.size}`);
     headers.set('content-length', String(range.length));
     return new Response(object.body, { status: 206, headers });
   }
-  const object = await env.MEDIA.get(key);
+  const object = await reader.get(key);
   if (!object) return new Response('Not Found', { status: 404 });
   headers.set('content-length', String(head.size));
   return new Response(object.body, { status: 200, headers });

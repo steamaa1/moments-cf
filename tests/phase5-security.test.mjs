@@ -91,5 +91,6 @@ const workerSource = await readFile(new URL('../worker/src/index.js', import.met
 assert.match(workerSource, /service: 'moments-cf', phase: 7/);
 assert.match(workerSource, /memo_id IN \(\$\{placeholders\}\)/);
 assert.match(workerSource, /config\.commentOrder === 'asc' \? 'ASC' : 'DESC'/);
-assert.match(workerSource, /env\.MEDIA\.delete\(key\)\.catch/);
+assert.match(workerSource, /backend\.delete\(key\)\.catch/);
+assert.match(workerSource, /storageBackend\(env, storageConfig, storageConfig\.storageType\)/);
 console.log('Phase 5 security and consistency tests: PASS');

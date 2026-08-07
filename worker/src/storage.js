@@ -52,7 +52,7 @@ export function r2Backend(env) {
   return {
     name: 'r2',
     async put(key, body, metadata = {}) { await env.MEDIA.put(key, body, metadata); return { key }; },
-    async get(key) { return env.MEDIA.get(key); },
+    async get(key, options) { return env.MEDIA.get(key, options); },
     async head(key) { return env.MEDIA.head(key); },
     async delete(key) { await env.MEDIA.delete(key); },
     async list(prefix) { const listed = await env.MEDIA.list({ prefix, limit: 1000 }); return (listed.objects || []); },
@@ -74,9 +74,11 @@ export function s3Backend(config) {
       if (!response.ok) throw new Error(`S3 上传失败（${response.status}）`);
       return { key };
     },
-    async get(key) {
+    async get(key, options = {}) {
       requireConfig();
-      const response = await s3Request({ endpoint, region, bucket, accessKeyId, secretAccessKey, method: 'GET', key });
+      const headers = {};
+      if (options.range) headers.range = `bytes=${options.range.offset}-${options.range.offset + options.range.length - 1}`;
+      const response = await s3Request({ endpoint, region, bucket, accessKeyId, secretAccessKey, method: 'GET', key, headers });
       if (!response.ok) return null;
       return { body: response.body, size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: () => {} };
     },
@@ -146,9 +148,10 @@ export function webdavBackend(config) {
       if (!response.ok && response.status !== 201 && response.status !== 204) throw new Error(`WebDAV 上传失败（${response.status}）`);
       return { key };
     },
-    async get(key) {
+    async get(key, options = {}) {
       requireConfig();
-      const response = await fetch(`${base()}/${key}`, { method: 'GET', headers });
+      const rangeHeaders = options.range ? { range: `bytes=${options.range.offset}-${options.range.offset + options.range.length - 1}` } : {};
+      const response = await fetch(`${base()}/${key}`, { method: 'GET', headers: { ...headers(), ...rangeHeaders } });
       if (!response.ok) return null;
       return { body: response.body, size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: () => {} };
     },
