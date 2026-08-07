@@ -627,7 +627,6 @@ async function listMemos(request, env, headers) {
   const where = ` WHERE ${clauses.join(' AND ')}`;
   const count = await env.DB.prepare(`SELECT COUNT(*) AS total FROM memos m JOIN users u ON u.id=m.user_id${where}`).bind(...values).first();
   const result = await env.DB.prepare(`${MEMO_SELECT}${where} ORDER BY m.pinned DESC, m.created_at DESC LIMIT ? OFFSET ?`).bind(...values, size, (page - 1) * size).all();
-  await attachStatuses(env, (result.results || []).map(row => row.user).filter(Boolean));
   const total = Number(count?.total || 0);
   const rows = result.results || [];
   const commentsByMemo = new Map();
@@ -663,6 +662,7 @@ async function listMemos(request, env, headers) {
     view.comments = commentsByMemo.get(Number(row.id)) || [];
     return view;
   });
+  await attachStatuses(env, list.map(memo => memo.user).filter(Boolean));
   return json(ok({ list, total, hasNext: page * size < total }), 200, headers);
 }
 async function getMemo(request, env, headers) {
