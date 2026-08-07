@@ -32,7 +32,10 @@
         <div v-for="group in builtins" :key="group.group">
           <p class="mb-1 text-xs text-gray-500">{{ group.group }}</p>
           <div class="grid grid-cols-6 gap-1">
-            <button v-for="item in group.items" :key="item.content" type="button" class="status-item" :class="{ active: selected?.content === item.content }" :title="item.content" @click="pick(item)">{{ item.icon }}</button>
+            <button v-for="item in group.items" :key="item.content" type="button" class="status-item" :class="{ active: selected?.content === item.content }" :title="item.content" @click="pick(item)">
+              <span class="status-item-emoji">{{ item.icon }}</span>
+              <span class="status-item-text">{{ item.content }}</span>
+            </button>
           </div>
         </div>
         <UFormGroup label="自定义状态" :ui="{label:{base:'font-bold'}}">
@@ -116,7 +119,12 @@ async function clear(close: Function) {
 .status-emoji { font-size: 15px; line-height: 1; filter: drop-shadow(0 1px 1px rgba(0,0,0,.4)); }
 .status-add { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 9999px; color: rgba(255,255,255,.92); background: rgba(255,255,255,.22); border: 1px dashed rgba(255,255,255,.5); }
 .status-add-svg { width: 13px; height: 13px; }
-.status-item { display: inline-flex; align-items: center; justify-content: center; height: 34px; font-size: 17px; border-radius: 8px; transition: background 120ms ease, transform 120ms ease; }
-.status-item:hover { background: rgba(159,200,74,.16); transform: scale(1.08); }
-.status-item.active { background: rgba(159,200,74,.28); box-shadow: inset 0 0 0 1.5px #9fc84a; }
+.status-item { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 52px; border-radius: 8px; transition: background 120ms ease, transform 120ms ease; }
+.status-item-emoji { font-size: 18px; line-height: 1; }
+.status-item-text { max-width: 100%; overflow: hidden; font-size: 10px; line-height: 1.2; color: #52525b; }
+:global(.dark) .status-item-text { color: #d4d4d8; }
+.status-item:hover { background: rgba(159,200,74,.16); transform: scale(1.06); }
+.status-item.active { background: rgba(159,200,74,.22); box-shadow: inset 0 0 0 1.5px #9fc84a; }
+.status-item.active .status-item-text { font-weight: 600; color: #3f4f2c; }
+:global(.dark) .status-item.active .status-item-text { color: #e4e4e7; }
 </style>
