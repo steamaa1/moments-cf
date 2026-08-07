@@ -189,17 +189,25 @@ async function startImport() {
   try {
     progress.message = '创建导入前 D1 安全备份'
     progress.percent = 1
-    const preparedState = await api<{ready:boolean;resumed:boolean}>('/admin/migration/prepare', { password: adminPassword.value, packageId: activeReport.packageId })
+    const preparedState = await api<{ready:boolean;resumed:boolean;bookmark?:string}>('/admin/migration/prepare', { password: adminPassword.value, packageId: activeReport.packageId })
+    const activeBookmark = preparedState.bookmark || ''
     prepared = true
     if (!preparedState.ready) {
       let waitSeconds = 0
       let backupReady = false
+      let pollErrors = 0
       while (waitSeconds < 600) {
         await new Promise(resolve => setTimeout(resolve, 2500))
         waitSeconds += 2.5
         progress.message = `等待 D1 导出完成（已等待 ${Math.round(waitSeconds)} 秒）`
-        const status = await api<{ready:boolean}>('/admin/migration/backup/status', { packageId: activeReport.packageId })
-        if (status.ready) { backupReady = true; break }
+        try {
+          const status = await api<{ready:boolean}>('/admin/migration/backup/status', { packageId: activeReport.packageId, bookmark: activeBookmark })
+          pollErrors = 0
+          if (status.ready) { backupReady = true; break }
+        } catch (error) {
+          pollErrors += 1
+          if (pollErrors >= 8) throw new Error(`D1 备份状态查询连续失败：${error instanceof Error ? error.message : error}`)
+        }
       }
       if (!backupReady) throw new Error('D1 备份等待超时，请稍后重新点击导入（断点继续，不会重复导入）')
       progress.message = 'D1 安全备份完成'

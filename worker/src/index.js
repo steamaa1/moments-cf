@@ -1096,7 +1096,7 @@ async function migrationPrepare(request, env, headers) {
   if (existing?.status === 'completed') return json(fail('该迁移包已经导入完成'), 409, headers);
   const previous = migrationSummary(existing?.summary);
   if (existing?.status === 'importing' && previous.backupReady) return json(ok({ packageId, ready: true, resumed: true }), 200, headers);
-  if (existing?.status === 'importing' && previous.backupBookmark) return json(ok({ packageId, ready: false, resumed: true }), 200, headers);
+  if (existing?.status === 'importing' && previous.backupBookmark) return json(ok({ packageId, ready: false, resumed: true, bookmark: previous.backupBookmark }), 200, headers);
   const missing = requireBackupConfig(env, headers);
   if (missing) return missing;
   const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
@@ -1108,7 +1108,7 @@ async function migrationPrepare(request, env, headers) {
   }
   if (!summary.backupBookmark && !summary.backupReady) return json(fail('D1 导出未返回 bookmark'), 502, headers);
   await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?) ON CONFLICT(package_id) DO UPDATE SET status='importing', summary=excluded.summary, updated_at=CURRENT_TIMESTAMP").bind(packageId, JSON.stringify(summary)).run();
-  return json(ok({ packageId, ready: summary.backupReady, resumed: false }), 200, headers);
+  return json(ok({ packageId, ready: summary.backupReady, resumed: false, bookmark: summary.backupBookmark }), 200, headers);
 }
 async function migrationBackupStatus(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
@@ -1116,17 +1116,21 @@ async function migrationBackupStatus(request, env, headers) {
   const body = await readJson(request);
   const packageId = String(body?.packageId || '');
   if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
-  const run = await env.DB.prepare('SELECT status, summary FROM migration_runs WHERE package_id=?').bind(packageId).first();
-  if (!run || run.status !== 'importing') return json(fail('迁移未准备或已经结束'), 409, headers);
-  const summary = migrationSummary(run.summary);
-  if (summary.backupReady) return json(ok({ ready: true, backup: summary.backup }), 200, headers);
-  if (!summary.backupBookmark) return json(fail('迁移备份状态无效，请重新开始'), 409, headers);
+  const requestBookmark = String(body?.bookmark || '');
+  let summary = { backupBookmark: requestBookmark, backupReady: false, retentionDays: 90 };
+  if (!requestBookmark) {
+    const run = await env.DB.prepare('SELECT status, summary FROM migration_runs WHERE package_id=?').bind(packageId).first();
+    if (!run || run.status !== 'importing') return json(fail('迁移未准备或已经结束'), 409, headers);
+    summary = migrationSummary(run.summary);
+    if (summary.backupReady) return json(ok({ ready: true, backup: summary.backup }), 200, headers);
+    if (!summary.backupBookmark) return json(fail('迁移备份状态无效，请重新开始'), 409, headers);
+  }
   const result = await pollD1Export(env, summary.backupBookmark);
   if (result.status === 'error') return json(fail(result.error || 'D1 导出失败'), 502, headers);
   if (!result.signed_url) return json(ok({ ready: false, status: result.status || 'pending' }), 200, headers);
   summary.backup = await storeD1Backup(env, result, clampInt(summary.retentionDays, 1, 3650, 90));
   summary.backupReady = true;
-  await env.DB.prepare('UPDATE migration_runs SET summary=?, updated_at=CURRENT_TIMESTAMP WHERE package_id=?').bind(JSON.stringify(summary), packageId).run();
+  await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?) ON CONFLICT(package_id) DO UPDATE SET status='importing', summary=excluded.summary, updated_at=CURRENT_TIMESTAMP").bind(packageId, JSON.stringify(summary)).run();
   return json(ok({ ready: true, backup: summary.backup }), 200, headers);
 }
 async function migrationImport(request, env, headers) {
@@ -1307,12 +1311,12 @@ async function handleApi(request, env, ctx) {
     return json(fail('Cloudflare API migration endpoint not implemented yet', 404), 404, headers);
   } catch (error) {
     console.error('API error', error);
-    let message = '服务暂时不可用，请稍后再试';
+    let message = `服务暂时不可用，请稍后再试（${url.pathname}）`;
     try {
       const me = await currentUser(request, env);
       if (me && Number(me.id) === 1) {
         const safe = String(error?.message || error).slice(0, 300).replace(/https?:\/\/[^\s]+/g, '[url]');
-        message = `服务暂时不可用，请稍后再试（${safe}）`;
+        message = `服务暂时不可用，请稍后再试（${url.pathname}: ${safe}）`;
       }
     } catch { /* keep generic message */ }
     return json(fail(message), 503, headers);
