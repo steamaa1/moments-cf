@@ -159,7 +159,8 @@
     <div class="absolute right-2 bottom-[-40px]">
       <div class="userinfo flex flex-col">
         <div class="flex flex-row items-center gap-4 justify-end">
-          <div class="username text-lg font-bold text-white">
+          <div class="username text-lg font-bold text-white flex items-center gap-1.5">
+            <StatusIcon v-if="props.user" :status="props.user.status || null" :userId="Number(props.user.id)" :editable="Number(global.userinfo.id) === Number(props.user.id)"/>
             {{ props.user.nickname }}
           </div>
           <NuxtLink :to="`/user/${props.user.id}`" :aria-label="`查看${props.user.nickname}的时间轴`">

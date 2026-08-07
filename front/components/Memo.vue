@@ -34,8 +34,9 @@
         <div
           class="username text-[#576b95] mb-1 dark:text-white flex justify-between"
         >
-          <NuxtLink class="cursor-pointer" :to="`/user/${item.user.id}`">
+          <NuxtLink class="cursor-pointer inline-flex items-center gap-1" :to="`/user/${item.user.id}`">
             {{ item.user.nickname }}
+            <StatusIcon v-if="item.user.status" :status="item.user.status" :userId="Number(item.user.id)"/>
           </NuxtLink>
           <div>
             <UIcon v-if="item.pinned" name="i-carbon-pin" />

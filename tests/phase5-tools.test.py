@@ -137,6 +137,26 @@ def test_phase8_migration_runs(database: Path) -> None:
         connection.close()
 
 
+def test_phase9_user_status(database: Path) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        apply_sql(connection, "0008_user_status.sql")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(user_status)")}
+        if not {"user_id", "icon", "content", "remark", "duration_hours", "expires_at"}.issubset(columns):
+            raise AssertionError("user_status columns missing")
+        connection.execute("INSERT INTO user_status (user_id, icon, content, duration_hours, expires_at) VALUES (1, '😄', '美滋滋', 24, datetime('now', '+1 day'))")
+        row = connection.execute("SELECT content FROM user_status WHERE user_id=1 AND expires_at > datetime('now')").fetchone()
+        if row != ("美滋滋",):
+            raise AssertionError("user_status query failed")
+        connection.execute("UPDATE user_status SET content='忙' WHERE user_id=1")
+        row = connection.execute("SELECT content FROM user_status WHERE user_id=1").fetchone()
+        if row != ("忙",):
+            raise AssertionError("user_status upsert failed")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_export_helpers(database: Path, temporary: Path) -> None:
     export_dir = temporary / "export"
     run("scripts/migrate/export-sqlite.py", str(database), "--output", str(export_dir))
@@ -181,6 +201,7 @@ def main() -> None:
         test_phase6_comment_triggers_and_trash(database)
         test_phase7_media_schema(database)
         test_phase8_migration_runs(database)
+        test_phase9_user_status(database)
         test_export_helpers(database, temporary)
     print("Phase 7 migration and release tool functional tests: PASS")
 

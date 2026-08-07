@@ -51,6 +51,12 @@ const DEFAULT_CONFIG = {
   smtpPasswordEncrypted: '',
   s3: { thumbnailSuffix: '' },
 };
+const BUILTIN_STATUSES = [
+  { group: '心情想法', items: [{ icon: '😄', content: '美滋滋' }, { icon: '😞', content: '郁闷' }, { icon: '😴', content: '数羊' }, { icon: '😶', content: '发呆' }, { icon: '🤔', content: '胡思乱想' }, { icon: '🦲', content: '头秃' }, { icon: '😪', content: '疲惫' }, { icon: '💔', content: '裂开' }, { icon: '🌤️', content: '等天晴' }, { icon: '⚡', content: '冲' }, { icon: '🧊', content: '融化' }] },
+  { group: '工作学习', items: [{ icon: '💼', content: '忙' }, { icon: '🐟', content: '摸鱼' }, { icon: '🧱', content: '搬砖' }, { icon: '✈️', content: '出差' }, { icon: '📚', content: '沉迷学习' }, { icon: '🏃', content: '飞奔回家' }, { icon: '💻', content: '写代码' }] },
+  { group: '活动', items: [{ icon: '📝', content: '打卡' }, { icon: '🍽️', content: '聚餐' }, { icon: '☕', content: '喝咖啡' }, { icon: '🍻', content: '喝酒' }, { icon: '🏋️', content: '运动' }, { icon: '🛍️', content: '买买买' }, { icon: '🧋', content: '喝奶茶' }, { icon: '🍚', content: '干饭' }, { icon: '👶', content: '带娃' }, { icon: '🦸', content: '拯救世界' }, { icon: '🌊', content: '浪' }] },
+  { group: '休息', items: [{ icon: '🎧', content: '听歌' }, { icon: '📺', content: '追剧' }, { icon: '🍉', content: '吃瓜' }, { icon: '🎮', content: '玩游戏' }, { icon: '📱', content: '看直播' }, { icon: '😴', content: '睡觉' }, { icon: '🧘', content: '闭关' }, { icon: '🏠', content: '宅' }] },
+];
 const ALLOWED_MEDIA_TYPES = new Set([
   'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/x-icon',
   'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/flac', 'audio/mp4',
@@ -245,7 +251,9 @@ async function getProfile(request, env, headers, username = null) {
     if (me) { user = me; includeEmail = true; }
     else user = await db.prepare('SELECT * FROM users WHERE id = 1').first();
   }
-  return json(ok(publicUser(user, includeEmail)), 200, headers);
+  const view = publicUser(user, includeEmail);
+  if (view && env.DB) view.status = await userStatusView(env, user.id);
+  return json(ok(view), 200, headers);
 }
 async function saveProfile(request, env, headers) {
   const access = await requireUser(request, env, headers);
@@ -619,6 +627,7 @@ async function listMemos(request, env, headers) {
   const where = ` WHERE ${clauses.join(' AND ')}`;
   const count = await env.DB.prepare(`SELECT COUNT(*) AS total FROM memos m JOIN users u ON u.id=m.user_id${where}`).bind(...values).first();
   const result = await env.DB.prepare(`${MEMO_SELECT}${where} ORDER BY m.pinned DESC, m.created_at DESC LIMIT ? OFFSET ?`).bind(...values, size, (page - 1) * size).all();
+  await attachStatuses(env, (result.results || []).map(row => row.user).filter(Boolean));
   const total = Number(count?.total || 0);
   const rows = result.results || [];
   const commentsByMemo = new Map();
@@ -1119,6 +1128,40 @@ async function backupCreate(request, env, headers) { const access=await requireU
 async function backupDownload(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const key=String(new URL(request.url).searchParams.get('key')||''); if(!key.startsWith(BACKUP_PREFIX)||key.includes('..'))return json(fail('备份名称无效'),400,headers); const storageConfig=await loadStorageConfig(env); const object=await storageBackend(env, storageConfig, storageConfig.backupTarget).get(key); if(!object)return json(fail('备份不存在'),404,headers); return new Response(object.body,{headers:{'content-type':'application/sql','content-disposition':`attachment; filename="${key.split('/').pop()}"`}}); }
 async function backupRestore(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const body=await readJson(request); const key=String(body?.key||''); if(body?.confirmName!==key.split('/').pop())return json(fail('请输入完整备份名称确认'),400,headers); if(!(await passwordMatches(String(body?.password||''),access.user.password_hash)))return json(fail('管理员密码错误'),403,headers); const storageConfig=await loadStorageConfig(env); await createD1Backup(env, {}, 90, storageConfig.backupTarget, storageConfig); return json(ok(await restoreD1Backup(env,key,{},storageConfig.backupTarget,storageConfig)),200,headers); }
 
+async function statusSet(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const content = String(body?.content || '').trim().slice(0, 40);
+  if (!content) return json(fail('状态内容不能为空'), 400, headers);
+  const icon = String(body?.icon || '').slice(0, 20);
+  const remark = String(body?.remark || '').trim().slice(0, 200);
+  const durationHours = clampInt(Number(body?.durationHours || 24), 1, 24 * 30, 24);
+  const expiresAt = new Date(Date.now() + durationHours * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+  await env.DB.prepare('INSERT INTO user_status (user_id, icon, content, remark, duration_hours, expires_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET icon=excluded.icon, content=excluded.content, remark=excluded.remark, duration_hours=excluded.duration_hours, expires_at=excluded.expires_at, updated_at=CURRENT_TIMESTAMP')
+    .bind(access.user.id, icon, content, remark, durationHours, expiresAt).run();
+  return json(ok(await userStatusView(env, access.user.id)), 200, headers);
+}
+async function statusClear(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  await env.DB.prepare('DELETE FROM user_status WHERE user_id=?').bind(access.user.id).run();
+  return json(ok({ cleared: true }), 200, headers);
+}
+async function statusGet(request, env, headers) {
+  const userId = Number(new URL(request.url).searchParams.get('userId') || 0);
+  if (!Number.isInteger(userId) || userId < 1) return json(fail('userId 无效'), 400, headers);
+  return json(ok({ status: await userStatusView(env, userId) }), 200, headers);
+}
+async function statusList(request, env, headers) {
+  const body = await readJson(request);
+  const users = (Array.isArray(body?.users) ? body.users : []).map(user => ({ id: Number(user) })).filter(user => user.id > 0).slice(0, 100);
+  if (!users.length) return json(ok({ statuses: {} }), 200, headers);
+  await attachStatuses(env, users);
+  const statuses = {};
+  for (const user of users) statuses[user.id] = user.status;
+  return json(ok({ statuses }), 200, headers);
+}
 async function migrationPreflight(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
   if (access.response) return access.response;
@@ -1158,6 +1201,18 @@ async function loadStorageConfig(env) {
       password: config.webdavStorage?.passwordEncrypted ? await decryptConfigSecret(config.webdavStorage.passwordEncrypted, env.JWT_SECRET).catch(() => '') : '',
     },
   };
+}
+async function userStatusView(env, userId) {
+  const row = await env.DB.prepare("SELECT icon, content, remark, duration_hours, expires_at FROM user_status WHERE user_id=? AND expires_at > datetime('now')").bind(Number(userId)).first();
+  if (!row) return null;
+  return { icon: row.icon || '', content: row.content, remark: row.remark || '', expiresAt: row.expires_at };
+}
+async function attachStatuses(env, users) {
+  const ids = [...new Set(users.map(user => Number(user.id)).filter(id => id > 0))];
+  if (!ids.length) return;
+  const rows = await env.DB.prepare(`SELECT user_id, icon, content, remark, expires_at FROM user_status WHERE expires_at > datetime('now') AND user_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+  const map = new Map((rows.results || []).map(row => [Number(row.user_id), { icon: row.icon || '', content: row.content, remark: row.remark || '', expiresAt: row.expires_at }]));
+  for (const user of users) user.status = map.get(Number(user.id)) || null;
 }
 function migrationText(value, max = 2000) { return String(value ?? '').slice(0, max); }
 function migrationTime(value) { return sqliteTime(value) || sqliteTime(); }
@@ -1357,6 +1412,10 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/admin/initialize') return await initialize(request, env, headers);
     if (url.pathname === '/api/user/login') return await login(request, env, headers);
     if (url.pathname === '/api/user/reg') return await register(request, env, headers);
+    if (url.pathname === '/api/user/status/set') return await statusSet(request, env, headers);
+    if (url.pathname === '/api/user/status/clear') return await statusClear(request, env, headers);
+    if (url.pathname === '/api/user/status/get') return await statusGet(request, env, headers);
+    if (url.pathname === '/api/user/status/list') return await statusList(request, env, headers);
     if (url.pathname === '/api/user/profile') return await getProfile(request, env, headers);
     if (url.pathname.startsWith('/api/user/profile/')) return await getProfile(request, env, headers, url.pathname.slice('/api/user/profile/'.length));
     if (url.pathname === '/api/user/saveProfile') return await saveProfile(request, env, headers);
@@ -1414,7 +1473,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

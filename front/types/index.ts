@@ -47,6 +47,12 @@ export type  MemoVO = {
     }>
 }
 
+export type UserStatusVO = {
+    icon: string
+    content: string
+    remark: string
+    expiresAt: string
+}
 export type UserVO = {
     id: number
     username: string
@@ -55,6 +61,7 @@ export type UserVO = {
     slogan: string
     coverUrl: string
     email: string
+    status?: UserStatusVO | null
 }
 export type SysConfigVO = {
     version: string,
