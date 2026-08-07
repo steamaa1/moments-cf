@@ -14,7 +14,7 @@ for (const route of routes) assert.ok(worker.includes(`url.pathname === '${route
 assert.match(worker, /config\.enableS3 = false/);
 assert.match(worker, /评论过于频繁，请稍后再试/);
 assert.match(worker, /评论字数超过限制长度/);
-assert.match(worker, /env\.MEDIA\.delete\(media\.r2_key\)/);
+assert.match(worker, /backend\.delete\(media\.r2_key\)/);
 assert.match(worker, /no such table: comments|Comments are temporarily unavailable/);
 assert.match(worker, /service: 'moments-cf', phase: 7/);
 

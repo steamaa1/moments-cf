@@ -368,7 +368,8 @@ async function saveConfig(request, env, headers) {
 async function upload(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
-  if (!env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
+  const storageConfig = await loadStorageConfig(env);
+  if (storageConfig.storageType === 'r2' && !env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
   const length = Number(request.headers.get('content-length') || 0);
   if (length > MAX_UPLOAD_BYTES) return json(fail('文件不能超过 25MB'), 413, headers);
   let form;
@@ -390,14 +391,12 @@ async function upload(request, env, headers) {
     const thumbnail = file.type.startsWith('image/') && thumbnailCandidate instanceof File ? thumbnailCandidate : null;
     const thumbnailKey = thumbnail ? `thumbs/${sha}.webp` : null;
     try {
-      const storageConfig = await loadStorageConfig(env);
       const backend = storageBackend(env, storageConfig, storageConfig.storageType);
       await backend.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
       if (thumbnail) await backend.put(thumbnailKey, thumbnail.stream(), { httpMetadata: { contentType: 'image/webp' } });
       await env.DB.prepare("INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes, sha256, thumbnail_key, upload_state) VALUES (?, ?, ?, ?, ?, ?, ?, 'ready')")
         .bind(access.user.id, key, file.name.slice(0, 255), file.type, file.size, sha, thumbnailKey).run();
     } catch (error) {
-      const storageConfig = await loadStorageConfig(env);
       const backend = storageBackend(env, storageConfig, storageConfig.storageType);
       await Promise.all([backend.delete(key).catch(() => {}), thumbnailKey ? backend.delete(thumbnailKey).catch(() => {}) : Promise.resolve()]);
       throw error;
@@ -480,19 +479,23 @@ function collectUploadKeys(value, target) {
   for (const match of String(value || '').matchAll(pattern)) target.add(decodeURIComponent(match[1]));
 }
 async function purgeStalePendingUploads(userId, env) {
+  const storageConfig = await loadStorageConfig(env);
+  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
   const stale = await env.DB.prepare("SELECT id, r2_key, thumbnail_key FROM media WHERE owner_id=? AND upload_state='pending' AND created_at <= datetime('now','-1 day')").bind(userId).all();
   for (const item of stale.results || []) {
-    await Promise.all([env.MEDIA.delete(item.r2_key).catch(() => {}), item.thumbnail_key ? env.MEDIA.delete(item.thumbnail_key).catch(() => {}) : Promise.resolve()]);
+    await Promise.all([backend.delete(item.r2_key).catch(() => {}), item.thumbnail_key ? backend.delete(item.thumbnail_key).catch(() => {}) : Promise.resolve()]);
     await env.DB.prepare("DELETE FROM media WHERE id=? AND owner_id=? AND upload_state='pending'").bind(item.id,userId).run();
   }
   return (stale.results || []).length;
 }
 async function purgeExpiredTrash(userId, env) {
+  const storageConfig = await loadStorageConfig(env);
+  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
   const expired = await env.DB.prepare("SELECT id, r2_key, thumbnail_key FROM media WHERE owner_id=? AND trashed_at IS NOT NULL AND trashed_at <= datetime('now', ?)")
     .bind(userId, `-${TRASH_RETENTION_DAYS} days`).all();
   let purged = 0;
   for (const media of expired.results || []) {
-    await Promise.all([env.MEDIA.delete(media.r2_key), media.thumbnail_key ? env.MEDIA.delete(media.thumbnail_key) : Promise.resolve()]);
+    await Promise.all([backend.delete(media.r2_key), media.thumbnail_key ? backend.delete(media.thumbnail_key) : Promise.resolve()]);
     await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(media.id, userId).run();
     purged += 1;
   }
@@ -501,7 +504,8 @@ async function purgeExpiredTrash(userId, env) {
 async function cleanFiles(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
-  if (!env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
+  const cleanStorageConfig = await loadStorageConfig(env);
+  if (cleanStorageConfig.storageType === 'r2' && !env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
   const referenced = new Set();
   const [memos, users, configRow, mediaRows] = await Promise.all([
     env.DB.prepare('SELECT imgs, ext FROM memos WHERE user_id=?').bind(access.user.id).all(),
@@ -541,11 +545,13 @@ async function restoreTrash(request, env, headers) {
 async function purgeTrash(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
-  if (!env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
+  const storageConfig = await loadStorageConfig(env);
+  if (storageConfig.storageType === 'r2' && !env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
   const id = intParam(new URL(request.url).searchParams.get('id'));
   const media = await env.DB.prepare('SELECT id, r2_key, thumbnail_key FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).first();
   if (!media) return json(fail('回收站文件不存在'), 404, headers);
-  await Promise.all([env.MEDIA.delete(media.r2_key), media.thumbnail_key ? env.MEDIA.delete(media.thumbnail_key) : Promise.resolve()]);
+  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+  await Promise.all([backend.delete(media.r2_key), media.thumbnail_key ? backend.delete(media.thumbnail_key) : Promise.resolve()]);
   await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).run();
   return json(ok({}), 200, headers);
 }
@@ -1494,15 +1500,15 @@ function parseRangeHeader(header, size) {
   return { offset: start, length: end - start + 1 };
 }
 async function serveMedia(request, env, key) {
-  if (!env.MEDIA) return new Response('R2 binding is not configured', { status: 503 });
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
   const media = await env.DB.prepare("SELECT id FROM media WHERE (r2_key=? OR thumbnail_key=?) AND trashed_at IS NULL AND upload_state='ready'").bind(key, key).first();
   if (!media) return new Response('Not Found', { status: 404 });
   const storageConfig = await loadStorageConfig(env);
+  if (storageConfig.storageType === 'r2' && !env.MEDIA) return new Response('R2 binding is not configured', { status: 503 });
   const backend = storageBackend(env, storageConfig, storageConfig.storageType);
   let head = await backend.head(key);
   let reader = backend;
-  if (!head) { head = await env.MEDIA.head(key); reader = r2Backend(env); }
+  if (!head && env.MEDIA) { head = await env.MEDIA.head(key); reader = r2Backend(env); }
   if (!head) return new Response('Not Found', { status: 404 });
   const etag = head.httpEtag;
   if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers: { etag } });
