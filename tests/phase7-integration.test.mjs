@@ -164,11 +164,9 @@ const memoDetail = await readFile(new URL('../front/pages/memo/[id].vue', import
 assert.match(memoDetail, /og:image/);
 assert.match(memoDetail, /canonical/);
 const catchAll = await readFile(new URL('../front/pages/[...slug].vue', import.meta.url), 'utf8');
-assert.match(catchAll, /isSeoPath/);
-assert.match(catchAll, /window\.location\.href = raw/);
-assert.match(catchAll, /sessionStorage\.getItem\(\"__seoRefresh\"\)/);
-assert.doesNotMatch(catchAll, /fetch\(raw\)/);
 assert.match(catchAll, /页面不存在/);
+assert.doesNotMatch(catchAll, /isSeoPath|window\.location|sessionStorage|fetch\(raw\)/);
+assert.match(template, /run_worker_first = \["\/sitemap\.xml", "\/rss", "\/robots\.txt"\]/);
 const userDetail = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userDetail, /watch\(profile/);
 assert.match(userDetail, /canonical/);
