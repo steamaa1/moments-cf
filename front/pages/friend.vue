@@ -147,7 +147,11 @@ const DEFAULT_FRIEND = {
 };
 
 const globalState = useGlobalState();
-const isAdmin = computed(() => Number(currentUser.value?.id) === 1 || Number(globalState.value?.userinfo?.id) === 1);
+// 仅“已登录的管理员（id=1）”可见；未登录访客即使 profile 返回管理员资料也不算
+const isAdmin = computed(() => {
+  const g = globalState.value?.userinfo || {};
+  return Boolean(g.token) && (Number(g.id) === 1 || Number(currentUser.value?.id) === 1);
+});
 const currentUser = useState<UserVO>("userinfo");
 const sysConfigState = useState<SysConfigVO>('sysConfig');
 const friendNotice = computed(() => sysConfigState.value?.friendNotice || '');
