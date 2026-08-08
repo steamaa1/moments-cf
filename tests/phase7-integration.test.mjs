@@ -164,10 +164,10 @@ const weiboEditor = await readFile(new URL('../front/components/Weibo.vue', impo
 const weiboPreview = await readFile(new URL('../front/components/WeiboPreview.vue', import.meta.url), 'utf8');
 const memoEdit = await readFile(new URL('../front/components/MemoEdit.vue', import.meta.url), 'utf8');
 assert.match(weiboEditor, /仅支持 weibo\.com/);
-assert.match(weiboPreview, /widget\.weibo\.com/);
-assert.match(weiboPreview, /loading="lazy"/);
-assert.match(weiboPreview, /sandbox=/);
+assert.match(weiboPreview, /外部引用/);
 assert.match(weiboPreview, /查看原微博/);
+assert.match(weiboPreview, /rel="noopener noreferrer"/);
+assert.doesNotMatch(weiboPreview, /iframe|widget\.weibo\.com|visitor\.passport/);
 assert.match(memoEdit, /updateWeibo/);
 assert.match(source, /仅支持微博链接/);
 const memoDetail = await readFile(new URL('../front/pages/memo/[id].vue', import.meta.url), 'utf8');

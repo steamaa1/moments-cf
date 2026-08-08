@@ -7,7 +7,7 @@
       <div class="space-y-3 p-4">
         <div>
           <p class="font-semibold text-gray-800 dark:text-gray-100">嵌入微博</p>
-          <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">粘贴单条微博链接，将以微博原帖卡片展示。</p>
+          <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">粘贴单条微博链接，将以本站引用卡片展示并可跳转原微博。</p>
         </div>
         <UInput v-model="draft" placeholder="https://weibo.com/..." @keyup.enter="confirm(close)"/>
         <p v-if="draft && !valid" class="text-xs text-red-500">仅支持 weibo.com、m.weibo.cn、weibo.cn 的链接</p>
