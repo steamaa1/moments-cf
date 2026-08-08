@@ -9,7 +9,7 @@
       </div>
     </div>
     <Emoji v-if="emojiShow" @selected="emojiSelected"/>
-    <div v-if="userShow" class="flex gap-1">
+    <div v-if="userShow" class="flex flex-wrap gap-1">
       <template v-if="!global.userinfo.token">
         <UInput placeholder="姓名" v-model="state.username"/>
         <UInput placeholder="网站" v-model="state.website"/>
@@ -42,7 +42,7 @@ const localCommentUserinfo = useStorage('localCommentUserinfo', {
   website: "",
   email: "",
 })
-const userShow = ref(false)
+const userShow = ref(!global.value.userinfo.token)
 const emojiShow = ref(false)
 const currentCommentBox = useState('currentCommentBox')
 const sysConfig = useState<SysConfigVO>('sysConfig')
