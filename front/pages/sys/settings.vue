@@ -93,6 +93,7 @@
       <div class="flex items-center justify-between"><div><p class="font-semibold">Telegram 评论通知</p><p class="text-xs text-gray-500">配置 Bot Token；用户在自己的“用户中心”填写 Telegram User ID 后，评论时通过 Bot 发送提醒（模板与邮件一致）。</p></div><UToggle v-model="state.enableTelegram"/></div>
       <template v-if="state.enableTelegram">
         <UFormGroup label="Bot Token"><UInput v-model="state.telegramBotToken" type="password" autocomplete="new-password" placeholder="123456:ABC-DEF..."/></UFormGroup>
+        <UFormGroup label="Bot 用户名（可选）" help="用于在个人设置中提醒用户关注该 Bot"><UInput v-model="state.telegramBotUsername" placeholder="meimeicomment_bot"/></UFormGroup>
       </template>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
@@ -264,6 +265,7 @@ const state = reactive({
   rss: "",
   enableEmail: false,
   enableTelegram: false,
+  telegramBotUsername: "",
   telegramBotToken: "",
   smtpHost: "",
   smtpPort: "465" as '465' | '587',

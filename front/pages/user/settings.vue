@@ -31,19 +31,22 @@
     </UFormGroup>
     <UFormGroup label="Telegram User ID" name="telegramChatId" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.telegramChatId" placeholder="向 @userinfobot 发送任意消息获取，填数字 ID"/>
-      <p class="text-xs text-gray-500 mt-1">若管理员启用了 Telegram 通知，将在收到评论时通过 Bot 提醒。</p>
+      <p v-if="telegramBotUsername" class="text-xs text-gray-500 mt-1">提醒 Bot：@{{ telegramBotUsername }}。请先向 @{{ telegramBotUsername }} 发送一条消息以接收提醒；若管理员启用 Telegram 通知，评论时将推送。</p>
+      <p v-else class="text-xs text-gray-500 mt-1">向 @userinfobot 发送任意消息获取你的数字 ID；若管理员启用 Telegram 通知，评论时将推送。</p>
     </UFormGroup>
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
 </template>
 
 <script setup lang="ts">
-import type {UserVO} from "~/types";
+import type {SysConfigVO, UserVO} from "~/types";
 import {toast} from "vue-sonner";
 import {useUpload} from "~/utils";
 import {useGlobalState} from "~/store";
 const global = useGlobalState()
 const currentUser = useState<UserVO>('userinfo')
+const sysConfigState = useState<SysConfigVO>('sysConfig')
+const telegramBotUsername = computed(() => sysConfigState.value?.telegramBotUsername || '')
 const state = reactive({
   password: "",
   username: "",

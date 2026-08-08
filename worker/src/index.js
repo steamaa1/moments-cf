@@ -41,6 +41,7 @@ const DEFAULT_CONFIG = {
   backupRetentionDays: 90,
   enableD1Backup: true,
   enableTelegram: false,
+  telegramBotUsername: '',
   telegramBotTokenEncrypted: '',
   storageType: 'r2',
   backupTarget: 'r2',
@@ -69,7 +70,7 @@ const DIRECT_UPLOAD_THRESHOLD = 20 * 1024 * 1024;
 const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
-  'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength',
+  'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength', 'telegramBotUsername',
   'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
@@ -330,6 +331,7 @@ async function saveConfig(request, env, headers) {
   config.turnstileSecretKey = String(body.turnstileSecretKey || previousConfig.turnstileSecretKey || '').trim().slice(0, 300);
   config.enableD1Backup = body.enableD1Backup !== false;
   config.enableTelegram = body.enableTelegram === true;
+  config.telegramBotUsername = String(body.telegramBotUsername || '').trim().replace(/^@/, '').slice(0, 64);
   const telegramBotToken = String(body.telegramBotToken || '').trim();
   if (telegramBotToken) config.telegramBotTokenEncrypted = await encryptConfigSecret(telegramBotToken, env.JWT_SECRET);
   else config.telegramBotTokenEncrypted = previousConfig.telegramBotTokenEncrypted || '';
