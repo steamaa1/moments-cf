@@ -830,12 +830,12 @@ async function sitemap(request, env) {
   for (const user of users.results || []) push(`/user/${Number(user.id)}`, user.updated_at || '', 'weekly', '0.7');
   for (const memo of memos.results || []) push(`/memo/${Number(memo.id)}`, memo.created_at || '', 'weekly', '0.8');
   const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`;
-  return new Response(xml, { headers: { 'content-type': 'application/xml; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
+  return new Response(xml, { headers: { 'content-type': 'application/xml; charset=UTF-8', 'cache-control': 'no-store' } });
 }
 function robots(request) {
   const host = new URL(request.url).origin;
   const text = `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /upload/\nSitemap: ${host}/sitemap.xml\n`;
-  return new Response(text, { headers: { 'content-type': 'text/plain; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
+  return new Response(text, { headers: { 'content-type': 'text/plain; charset=UTF-8', 'cache-control': 'no-store' } });
 }
 async function rss(request, env) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
@@ -854,7 +854,7 @@ async function rss(request, env) {
     return `<item><guid>${host}/memo/${memo.id}</guid><title>${escapeXml(title)}</title><link>${host}/memo/${memo.id}</link><description><![CDATA[${description}]]></description><pubDate>${new Date(memo.createdAt).toUTCString()}</pubDate></item>`;
   }).join('');
   const feed = `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>${escapeXml(config.title)}</title><link>${host}</link><description>${escapeXml(admin?.slogan || '')}</description><lastBuildDate>${new Date().toUTCString()}</lastBuildDate>${items}</channel></rss>`;
-  return new Response(feed, { headers: { 'content-type': 'application/rss+xml; charset=UTF-8', 'cache-control': 'public, max-age=300' } });
+  return new Response(feed, { headers: { 'content-type': 'application/rss+xml; charset=UTF-8', 'cache-control': 'no-store' } });
 }
 
 
