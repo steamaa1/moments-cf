@@ -130,7 +130,7 @@ export type ExtDTO = {
     doubanMovie: DoubanMovie,
     doubanBooks: DoubanBook[],
     doubanMovies: DoubanMovie[],
-    weibo: WeiboEmbed,
+    x: XEmbed,
     video: Video,
 }
 
@@ -173,8 +173,9 @@ export type DoubanMovie = {
     runtime?: string
 }
 
-export type WeiboEmbed = {
+export type XEmbed = {
     url?: string
+    id?: string
 }
 
 export type Video = {

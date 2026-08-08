@@ -909,11 +909,13 @@ function sanitizeMemoExt(input) {
     if (type === 'bilibili' && url?.hostname !== 'player.bilibili.com') throw new Error('B站视频地址无效');
     output.video = { type, value };
   }
-  if (ext.weibo?.url) {
-    const value = safeHttpHref(ext.weibo.url, '微博链接');
+  if (ext.x?.url) {
+    const value = safeHttpHref(ext.x.url, 'X 链接');
     const host = new URL(value).hostname.toLowerCase();
-    if (!['weibo.com', 'www.weibo.com', 'm.weibo.cn', 'weibo.cn', 'www.weibo.cn'].includes(host)) throw new Error('仅支持微博链接');
-    output.weibo = { url: value };
+    if (!['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'].includes(host)) throw new Error('仅支持 X（Twitter）链接');
+    const match = new URL(value).pathname.match(/\/status(?:es)?\/(\d{5,30})(?:\/|$)/);
+    if (!match) throw new Error('仅支持单条 X（Twitter）状态链接');
+    output.x = { url: value, id: match[1] };
   }
   const cleanDouban = (item, isBook) => {
     const clean = {

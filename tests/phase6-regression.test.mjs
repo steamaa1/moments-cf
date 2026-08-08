@@ -19,11 +19,12 @@ const directMusic = sanitizeMemoExt({ music: { mode: 'direct', url: 'https://med
 assert.deepEqual(directMusic, { mode: 'direct', url: 'https://media.example/song.mp3', name: '测试歌曲', artist: '', cover: '', lrc: '[00:01.00]第一句' });
 assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'javascript:alert(1)', name: '坏音乐' } }), /音乐直链/);
 assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'https://media.example/a.mp3', name: '' } }), /歌曲名/);
-const weibo = sanitizeMemoExt({ weibo: { url: 'https://weibo.com/1234567890/AbCdEf' } }).weibo;
-assert.equal(weibo.url, 'https://weibo.com/1234567890/AbCdEf');
-assert.equal(sanitizeMemoExt({ weibo: { url: 'https://m.weibo.cn/detail/123' } }).weibo.url, 'https://m.weibo.cn/detail/123');
-assert.throws(() => sanitizeMemoExt({ weibo: { url: 'https://evil.example/weibo' } }), /仅支持微博链接/);
-assert.throws(() => sanitizeMemoExt({ weibo: { url: 'javascript:alert(1)' } }), /微博链接/);
+const xEmbed = sanitizeMemoExt({ x: { url: 'https://x.com/example/status/1881234567890123456' } }).x;
+assert.deepEqual(xEmbed, { url: 'https://x.com/example/status/1881234567890123456', id: '1881234567890123456' });
+assert.equal(sanitizeMemoExt({ x: { url: 'https://twitter.com/example/status/1881234567890123456' } }).x.id, '1881234567890123456');
+assert.throws(() => sanitizeMemoExt({ x: { url: 'https://evil.example/status/1881234567890123456' } }), /仅支持 X/);
+assert.throws(() => sanitizeMemoExt({ x: { url: 'https://x.com/example/home' } }), /单条 X/);
+assert.throws(() => sanitizeMemoExt({ x: { url: 'javascript:alert(1)' } }), /X 链接/);
 
 const movieHtml = `<!doctype html><html><head>
 <meta property="og:title" content="测试电影"/><meta property="og:description" content="电影简介"/>
