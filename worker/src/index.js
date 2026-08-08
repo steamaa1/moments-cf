@@ -1621,9 +1621,11 @@ export default {
       const key = url.pathname.slice('/upload/'.length);
       return serveMedia(request, env, key);
     }
-    if (url.pathname === '/rss') return rss(request, env);
-    if (url.pathname === '/sitemap.xml') return sitemap(request, env);
-    if (url.pathname === '/robots.txt') return robots(request);
+    // 站外资源路径容忍尾斜杠与大小写，避免落入 SPA 前端 404
+    const normalizedPath = url.pathname.replace(/\/+$/, '').toLowerCase();
+    if (normalizedPath === '/rss') return rss(request, env);
+    if (normalizedPath === '/sitemap.xml') return sitemap(request, env);
+    if (normalizedPath === '/robots.txt') return robots(request);
     if (!env.ASSETS) return new Response('Workers Assets binding is not configured', { status: 503 });
     return env.ASSETS.fetch(request);
   },
