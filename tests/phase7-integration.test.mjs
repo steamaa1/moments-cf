@@ -164,7 +164,7 @@ const memoDetail = await readFile(new URL('../front/pages/memo/[id].vue', import
 assert.match(memoDetail, /og:image/);
 assert.match(memoDetail, /canonical/);
 const catchAll = await readFile(new URL('../front/pages/[...slug].vue', import.meta.url), 'utf8');
-assert.match(catchAll, /sitemap\.xml\|rss\|robots\.txt/);
+assert.match(catchAll, /isSeoPath/);
 assert.match(catchAll, /window\.location\.href = raw/);
 assert.match(catchAll, /sessionStorage\.getItem\(\"__seoRefresh\"\)/);
 assert.match(catchAll, /页面不存在/);
