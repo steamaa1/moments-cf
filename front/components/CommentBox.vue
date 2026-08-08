@@ -9,11 +9,11 @@
       </div>
     </div>
     <Emoji v-if="emojiShow" @selected="emojiSelected"/>
-    <div v-if="userShow" class="grid grid-cols-3 gap-1">
+    <div v-if="userShow" class="flex gap-1">
       <template v-if="!global.userinfo.token">
-        <UInput class="min-w-0" placeholder="姓名" v-model="state.username"/>
-        <UInput class="min-w-0" placeholder="网站" v-model="state.website"/>
-        <UInput class="min-w-0" placeholder="邮箱" v-model="state.email"/>
+        <UInput placeholder="姓名" v-model="state.username"/>
+        <UInput placeholder="网站" v-model="state.website"/>
+        <UInput placeholder="邮箱" v-model="state.email"/>
       </template>
     </div>
   </div>
