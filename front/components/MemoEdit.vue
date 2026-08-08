@@ -15,7 +15,7 @@
       <upload-image v-model:imgs="state.imgs"/>
       <music v-bind="state.music" @confirm="updateMusic"/>
       <upload-video @confirm="handleVideo" v-bind="state.video"/>
-      <douban-edit v-model:type="doubanType" v-model:data="doubanData"/>
+      <douban-edit v-model:books="doubanBooks" v-model:movies="doubanMovies"/>
       <UPopover :popper="{ arrow: true }" mode="click">
         <UIcon name="i-carbon-calendar" class="w-6 h-6" title="自定义时间"/>
         <template #panel="{close}">
@@ -86,8 +86,14 @@
       <external-url-preview :favicon="state.externalFavicon" :title="state.externalTitle" :url="state.externalUrl"/>
       <upload-image-preview :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
       <music-preview v-if="state.music && (state.music.id || state.music.url)" v-bind="state.music"/>
-      <douban-book-preview :book="doubanData" v-if="doubanType === 'book' && doubanData&& doubanData.title"/>
-      <douban-movie-preview :movie="doubanData" v-if="doubanType === 'movie' && doubanData&& doubanData.title"/>
+      <div v-for="(book, index) in doubanBooks" :key="(book.id || index) + '-b'" class="relative">
+        <douban-book-preview :book="book"/>
+        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-1 top-1" @click="removeDouban('book', index)"/>
+      </div>
+      <div v-for="(movie, index) in doubanMovies" :key="(movie.id || index) + '-m'" class="relative">
+        <douban-movie-preview :movie="movie"/>
+        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-1 top-1" @click="removeDouban('movie', index)"/>
+      </div>
       <video-preview-iframe v-if="['bilibili', 'youtube'].includes(state.video.type) && state.video.value" :url="state.video.value"/>
       <video-preview v-if="state.video.type === 'online' && state.video.value" :url="state.video.value"/>
     </div>
@@ -116,8 +122,8 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 dayjs.extend(utc);
 
-const doubanType = ref<'book' | 'movie'>('book')
-const doubanData = ref<DoubanBook | DoubanMovie>({})
+const doubanBooks = ref<DoubanBook[]>([])
+const doubanMovies = ref<DoubanMovie[]>([])
 const contentRef = ref(null)
 const props = defineProps<{ id?: number }>()
 const defaultState = {
@@ -265,8 +271,8 @@ onMounted(async () => {
     const ext = JSON.parse(res.ext) as ExtDTO
     updateMusic(ext.music || {})
     Object.assign(state.video, ext.video)
-    doubanType.value = ext.doubanBook && ext.doubanBook.title ? 'book' : 'movie'
-    doubanData.value = doubanType.value === 'book' ? ext.doubanBook : ext.doubanMovie
+    doubanBooks.value = Array.isArray(ext.doubanBooks) ? ext.doubanBooks : (ext.doubanBook && ext.doubanBook.title ? [ext.doubanBook] : [])
+    doubanMovies.value = Array.isArray(ext.doubanMovies) ? ext.doubanMovies : (ext.doubanMovie && ext.doubanMovie.title ? [ext.doubanMovie] : [])
     selectedLabel.value = res.tags ? res.tags.substring(0,res.tags.length-1).split(',') : []
     state.createdAt = dayjs.utc(res.createdAt).local().format()
   }
@@ -279,15 +285,20 @@ onMounted(async () => {
 //   }
 // }
 
+const removeDouban = (kind: 'book' | 'movie', index: number) => {
+  if (kind === 'book') doubanBooks.value = doubanBooks.value.filter((_, i) => i !== index)
+  else doubanMovies.value = doubanMovies.value.filter((_, i) => i !== index)
+}
+
 const saveMemo = async () => {
 
-  const doubanKey = doubanType.value === 'book' ? 'doubanBook' : 'doubanMovie'
   await useMyFetch('/memo/save', {
     id: state.id,
     content: state.content,
     ext: {
       music: state.music.id || state.music.url ? state.music : {},
-      [doubanKey]: doubanData.value,
+      doubanBooks: doubanBooks.value.filter(book => book && book.title),
+      doubanMovies: doubanMovies.value.filter(movie => movie && movie.title),
       video: state.video.value ? state.video : {},
     },
     showType: state.showType ? 1 : 0,

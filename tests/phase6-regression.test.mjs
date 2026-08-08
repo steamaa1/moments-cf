@@ -16,7 +16,7 @@ assert.throws(() => sanitizeMemoExt({ video: { type: 'online', value: 'javascrip
 assert.equal(sanitizeMemoExt({ video: { type: 'online', value: 'https://media.example/video.mp4' } }).video.value, 'https://media.example/video.mp4');
 assert.throws(() => sanitizeMemoExt({ music: { id: '1', server: 'unknown', type: 'song' } }), /音乐平台/);
 const directMusic = sanitizeMemoExt({ music: { mode: 'direct', url: 'https://media.example/song.mp3', name: '测试歌曲', lrc: '[00:01.00]第一句' } }).music;
-assert.deepEqual(directMusic, { mode: 'direct', url: 'https://media.example/song.mp3', name: '测试歌曲', lrc: '[00:01.00]第一句' });
+assert.deepEqual(directMusic, { mode: 'direct', url: 'https://media.example/song.mp3', name: '测试歌曲', artist: '', cover: '', lrc: '[00:01.00]第一句' });
 assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'javascript:alert(1)', name: '坏音乐' } }), /音乐直链/);
 assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'https://media.example/a.mp3', name: '' } }), /歌曲名/);
 

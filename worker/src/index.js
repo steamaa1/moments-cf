@@ -833,7 +833,12 @@ function sanitizeMemoExt(input) {
     const url = safeHttpHref(ext.music.url, '音乐直链');
     const name = String(ext.music.name || '').trim().slice(0, 200);
     if (!url || !name) throw new Error('直链音乐需要音频链接和歌曲名');
-    output.music = { mode: 'direct', url, name, lrc: String(ext.music.lrc || '').slice(0, 30000) };
+    output.music = {
+      mode: 'direct', url, name,
+      artist: String(ext.music.artist || '').trim().slice(0, 200),
+      cover: safeHttpHref(ext.music.cover, '音乐封面', { allowRelativeUpload: true }) || '',
+      lrc: String(ext.music.lrc || '').slice(0, 30000),
+    };
   } else if (ext.music?.id) {
     const servers = new Set(['netease', 'tencent', 'kugou', 'xiami', 'baidu']);
     const types = new Set(['song', 'playlist', 'album', 'search', 'artist']);
@@ -855,10 +860,7 @@ function sanitizeMemoExt(input) {
     if (type === 'bilibili' && url?.hostname !== 'player.bilibili.com') throw new Error('B站视频地址无效');
     output.video = { type, value };
   }
-  for (const key of ['doubanBook', 'doubanMovie']) {
-    const item = ext[key];
-    if (!item || typeof item !== 'object' || !item.title) continue;
-    const isBook = key === 'doubanBook';
+  const cleanDouban = (item, isBook) => {
     const clean = {
       id: String(item.id || '').replace(/\D/g, '').slice(0, 20),
       url: safeHttpHref(item.url, '豆瓣链接'), title: String(item.title).slice(0, 300),
@@ -867,7 +869,23 @@ function sanitizeMemoExt(input) {
     };
     if (isBook) Object.assign(clean, { isbn: String(item.isbn || '').slice(0, 40), author: String(item.author || '').slice(0, 300), pubDate: String(item.pubDate || '').slice(0, 40), keywords: String(item.keywords || '').slice(0, 1000) });
     else Object.assign(clean, { director: String(item.director || '').slice(0, 300), releaseDate: String(item.releaseDate || '').slice(0, 80), actors: String(item.actors || '').slice(0, 1000), runtime: String(item.runtime || '').slice(0, 40) });
-    output[key] = clean;
+    return clean;
+  };
+  // 多卡片数组（兼容旧单个字段）
+  for (const key of ['doubanBooks', 'doubanMovies']) {
+    const isBook = key === 'doubanBooks';
+    const list = Array.isArray(ext[key]) ? ext[key].slice(0, 10) : [];
+    const cleaned = [];
+    for (const item of list) {
+      if (!item || typeof item !== 'object' || !item.title) continue;
+      cleaned.push(cleanDouban(item, isBook));
+    }
+    if (cleaned.length) output[key] = cleaned;
+  }
+  for (const key of ['doubanBook', 'doubanMovie']) {
+    const item = ext[key];
+    if (!item || typeof item !== 'object' || !item.title) continue;
+    output[key] = cleanDouban(item, key === 'doubanBook');
   }
   return output;
 }

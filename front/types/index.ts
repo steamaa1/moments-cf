@@ -121,6 +121,8 @@ export type ExtDTO = {
     music: MusicDTO,
     doubanBook: DoubanBook,
     doubanMovie: DoubanMovie,
+    doubanBooks: DoubanBook[],
+    doubanMovies: DoubanMovie[],
     video: Video,
 }
 

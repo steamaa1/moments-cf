@@ -96,10 +96,9 @@
             v-if="extJSON.doubanBook && extJSON.doubanBook.title"
             :book="extJSON.doubanBook"
           />
-          <douban-movie-preview
-            v-if="extJSON.doubanMovie && extJSON.doubanMovie.title"
-            :movie="extJSON.doubanMovie"
-          />
+          <div v-for="(movie, index) in extJSON.doubanMovies || (extJSON.doubanMovie && extJSON.doubanMovie.title ? [extJSON.doubanMovie] : [])" :key="(movie.id || index) + '-m'">
+            <douban-movie-preview :movie="movie"/>
+          </div>
           <video-preview-iframe
             v-if="
               extJSON.video &&
