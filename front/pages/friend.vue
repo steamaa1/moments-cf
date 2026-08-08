@@ -1,21 +1,6 @@
 <template>
   <Header v-bind:user="currentUser" @add-friend="showAddModal = true" />
   <div class="bg-white dark:bg-neutral-800">
-    <div class="mx-4 mt-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-      <div class="flex items-center gap-2 mb-2"><UIcon name="i-carbon-link" class="h-5 w-5 text-[#9fc84a]"/><p class="font-semibold">友情链接申请与须知</p></div>
-      <div v-if="friendNotice" class="whitespace-pre-wrap text-sm leading-6 text-gray-600 dark:text-gray-300">{{ friendNotice }}</div>
-      <div v-else class="text-sm text-gray-500">暂未开放友情链接申请。</div>
-      <div v-if="friendEmail" class="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
-        <p class="mb-2 text-sm font-medium">提交申请</p>
-        <div class="grid gap-2 sm:grid-cols-2">
-          <UInput v-model="apply.name" placeholder="站点名称"/>
-          <UInput v-model="apply.url" placeholder="站点网址 https://"/>
-          <UInput v-model="apply.desc" placeholder="一句话简介"/>
-          <UInput v-model="apply.email" type="email" placeholder="你的邮箱"/>
-        </div>
-        <UButton class="mt-2" icon="i-carbon-send" @click="sendApply">发送申请</UButton>
-      </div>
-    </div>
     <div class="grid sm:grid-cols-2 grid-cols gap-4 p-4">
       <div
         v-for="friend in friendList"
@@ -55,6 +40,22 @@
       <span v-else class="text-gray-600 dark:text-gray-300 font-semibold">
         空空如也{{ globalState.userinfo.id === 1 ? '，请点击右上角添加' : '' }}
       </span>
+    </div>
+    <div class="mx-4 mb-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+      <div class="flex items-center gap-2 mb-2"><UIcon name="i-carbon-link" class="h-5 w-5 text-[#9fc84a]"/><p class="font-semibold">友情链接申请与须知</p></div>
+      <div v-if="friendNotice" class="friend-notice text-sm leading-6 text-gray-600 dark:text-gray-300" v-html="friendNoticeHtml"></div>
+      <div v-else class="text-sm text-gray-500">暂未开放友情链接申请。</div>
+      <div v-if="friendEmail" class="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+        <p class="mb-2 text-sm font-medium">提交申请</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <UInput v-model="apply.name" placeholder="站点名称"/>
+          <UInput v-model="apply.url" placeholder="站点网址 https://"/>
+          <UInput v-model="apply.icon" placeholder="站点图标（图片链接）"/>
+          <UInput v-model="apply.desc" placeholder="一句话简介"/>
+          <UInput v-model="apply.email" type="email" placeholder="你的邮箱"/>
+        </div>
+        <UButton class="mt-2" icon="i-carbon-send" @click="sendApply">发送申请</UButton>
+      </div>
     </div>
   </div>
 
@@ -131,6 +132,7 @@
 
 <script setup lang="ts">
 import type { Friend, SysConfigVO, UserVO } from "~/types";
+import { md } from "~/utils";
 import { toast } from "vue-sonner";
 import { useGlobalState } from "~/store";
 
@@ -146,13 +148,14 @@ const currentUser = useState<UserVO>("userinfo");
 const sysConfigState = useState<SysConfigVO>('sysConfig');
 const friendNotice = computed(() => sysConfigState.value?.friendNotice || '');
 const friendEmail = computed(() => sysConfigState.value?.friendEmail || '');
-const apply = reactive({ name: '', url: '', desc: '', email: '' });
+const apply = reactive({ name: '', url: '', icon: '', desc: '', email: '' });
+const friendNoticeHtml = computed(() => friendNotice.value ? md.render(friendNotice.value) : '');
 const sendApply = () => {
   const email = friendEmail.value;
   if (!email) { toast.warning('暂未开放友情链接申请'); return; }
   if (!apply.name.trim() || !apply.url.trim() || !apply.email.trim()) { toast.warning('请填写站点名称、网址和你的邮箱'); return; }
   const subject = encodeURIComponent('友情链接申请 - ' + apply.name.trim());
-  const body = encodeURIComponent(`站点名称：${apply.name.trim()}\n站点网址：${apply.url.trim()}\n一句话简介：${apply.desc.trim()}\n你的邮箱：${apply.email.trim()}\n\n已在本站添加贵站链接，请审核。`);
+  const body = encodeURIComponent(`站点名称：${apply.name.trim()}\n站点网址：${apply.url.trim()}\n站点图标：${apply.icon.trim() || '无'}\n一句话简介：${apply.desc.trim()}\n你的邮箱：${apply.email.trim()}\n\n已在本站添加贵站链接，请审核。`);
   window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
 };
 
@@ -243,4 +246,13 @@ onMounted(() => {
 });
 </script>
 
-<style scoped></style>
+<style scoped>
+.friend-notice :deep(p) { margin: 4px 0; }
+.friend-notice :deep(ul), .friend-notice :deep(ol) { margin: 4px 0; padding-left: 20px; }
+.friend-notice :deep(ul) { list-style: disc; }
+.friend-notice :deep(ol) { list-style: decimal; }
+.friend-notice :deep(h1), .friend-notice :deep(h2), .friend-notice :deep(h3) { margin: 10px 0 4px; font-weight: 700; }
+.friend-notice :deep(a) { color: #576b95; text-decoration: underline; }
+.friend-notice :deep(blockquote) { margin: 6px 0; padding-left: 12px; border-left: 3px solid rgba(161,161,170,.35); color: #71717a; }
+.friend-notice :deep(code) { background: rgba(161,161,170,.15); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
+</style>

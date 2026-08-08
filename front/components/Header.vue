@@ -44,7 +44,7 @@
         <UIcon name="i-carbon-logout" class="w-5 h-5 cursor-pointer" />
       </NuxtLink>
       <span
-        v-if="$route.path === '/friend' && global.userinfo.id === 1"
+        v-if="$route.path === '/friend' && (global.userinfo.id === 1 || Number(props.user?.id) === 1)"
         class="flex"
       >
         <UIcon
