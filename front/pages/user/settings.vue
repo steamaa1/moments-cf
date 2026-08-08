@@ -29,6 +29,10 @@
     <UFormGroup label="邮箱" name="email" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.email" type="email" placeholder="若管理员启用了邮件通知，将在收到评论时发送邮件通知"/>
     </UFormGroup>
+    <UFormGroup label="Telegram User ID" name="telegramChatId" :ui="{label:{base:'font-bold'}}">
+      <UInput v-model="state.telegramChatId" placeholder="向 @userinfobot 发送任意消息获取，填数字 ID"/>
+      <p class="text-xs text-gray-500 mt-1">若管理员启用了 Telegram 通知，将在收到评论时通过 Bot 提醒。</p>
+    </UFormGroup>
     <UButton class="justify-center" @click="save">保存</UButton>
   </div>
 </template>
@@ -48,6 +52,7 @@ const state = reactive({
   avatarUrl: "",
   coverUrl: "",
   email: "",
+  telegramChatId: "",
   css: "",
   js: "",
 })

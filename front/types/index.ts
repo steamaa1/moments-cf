@@ -61,6 +61,7 @@ export type UserVO = {
     slogan: string
     coverUrl: string
     email: string
+    telegramChatId?: string
     status?: UserStatusVO | null
 }
 export type SysConfigVO = {

@@ -2,7 +2,7 @@ import {
   sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
   sendNotification, createD1Backup, listBackups, restoreD1Backup, renderRssDescription,
   encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
-  startD1Export, pollD1Export, storeD1Backup,
+  startD1Export, pollD1Export, storeD1Backup, sendTelegram,
 } from './phase7.js';
 import { storageBackend, r2Backend } from './storage.js';
 /**
@@ -40,6 +40,8 @@ const DEFAULT_CONFIG = {
   backupIntervalDays: 7,
   backupRetentionDays: 90,
   enableD1Backup: true,
+  enableTelegram: false,
+  telegramBotTokenEncrypted: '',
   storageType: 'r2',
   backupTarget: 'r2',
   s3Storage: { endpoint: '', region: 'auto', bucket: '', accessKeyId: '', secretAccessKeyEncrypted: '' },
@@ -205,6 +207,7 @@ function cleanProfile(input, existing) {
     slogan: String(input.slogan ?? existing.slogan ?? '').trim().slice(0, 300),
     coverUrl: String(input.coverUrl ?? existing.cover_url ?? '').trim().slice(0, 1024),
     email: String(input.email ?? existing.email ?? '').trim().slice(0, 254),
+    telegramChatId: String(input.telegramChatId ?? existing.telegram_chat_id ?? '').trim().replace(/\D/g, '').slice(0, 30),
   };
 }
 
@@ -252,7 +255,10 @@ async function getProfile(request, env, headers, username = null) {
     else user = await db.prepare('SELECT * FROM users WHERE id = 1').first();
   }
   const view = publicUser(user, includeEmail);
-  if (view && env.DB) view.status = await userStatusView(env, user.id);
+  if (view && env.DB) {
+    view.status = await userStatusView(env, user.id);
+    if (includeEmail) view.telegramChatId = user.telegram_chat_id || '';
+  }
   return json(ok(view), 200, headers);
 }
 async function saveProfile(request, env, headers) {
@@ -269,8 +275,8 @@ async function saveProfile(request, env, headers) {
     password = await passwordHash(String(body.password), pbkdf2Iterations(env.PBKDF2_ITERATIONS));
     tokenVersion += 1;
   }
-  await env.DB.prepare('UPDATE users SET nickname=?, avatar_url=?, slogan=?, cover_url=?, email=?, password_hash=?, token_version=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-    .bind(profile.nickname, profile.avatarUrl, profile.slogan, profile.coverUrl, profile.email, password, tokenVersion, access.user.id).run();
+  await env.DB.prepare('UPDATE users SET nickname=?, avatar_url=?, slogan=?, cover_url=?, email=?, telegram_chat_id=?, password_hash=?, token_version=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .bind(profile.nickname, profile.avatarUrl, profile.slogan, profile.coverUrl, profile.email, profile.telegramChatId, password, tokenVersion, access.user.id).run();
   return json(ok({}), 200, headers);
 }
 async function getConfig(request, env, headers, full = false) {
@@ -291,6 +297,8 @@ async function getConfig(request, env, headers, full = false) {
     const davRaw = config.webdavStorage || {};
     config.s3Storage = { endpoint: s3Raw.endpoint || '', region: s3Raw.region || 'auto', bucket: s3Raw.bucket || '', accessKeyId: s3Raw.accessKeyId || '', secretAccessKeyConfigured: Boolean(s3Raw.secretAccessKeyEncrypted), secretAccessKey: '' };
     config.webdavStorage = { url: davRaw.url || '', username: davRaw.username || '', passwordConfigured: Boolean(davRaw.passwordEncrypted), password: '' };
+    config.telegramBotTokenConfigured = Boolean(config.telegramBotTokenEncrypted);
+    delete config.telegramBotTokenEncrypted;
     config.smtpPasswordConfigured = Boolean(config.smtpPasswordEncrypted || env.SMTP_PASSWORD || env.RESEND_API_KEY);
     config.smtpPassword = '';
     config.googleSecretKeyConfigured = Boolean(config.googleSecretKey);
@@ -321,6 +329,10 @@ async function saveConfig(request, env, headers) {
   config.turnstileSiteKey = String(body.turnstileSiteKey || '').trim().slice(0, 200);
   config.turnstileSecretKey = String(body.turnstileSecretKey || previousConfig.turnstileSecretKey || '').trim().slice(0, 300);
   config.enableD1Backup = body.enableD1Backup !== false;
+  config.enableTelegram = body.enableTelegram === true;
+  const telegramBotToken = String(body.telegramBotToken || '').trim();
+  if (telegramBotToken) config.telegramBotTokenEncrypted = await encryptConfigSecret(telegramBotToken, env.JWT_SECRET);
+  else config.telegramBotTokenEncrypted = previousConfig.telegramBotTokenEncrypted || '';
   config.backupIntervalDays = clampInt(body.backupIntervalDays, 1, 365, 7);
   config.backupRetentionDays = clampInt(body.backupRetentionDays, 1, 3650, 90);
   config.storageType = ['r2', 's3', 'webdav'].includes(body.storageType) ? body.storageType : 'r2';
@@ -964,8 +976,8 @@ async function addComment(request, env, headers, ctx) {
   const replyTo = String(body.replyTo || '').slice(0, 80); const replyEmail = String(body.replyEmail || '').slice(0, 254);
   await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(content, replyTo, replyEmail, username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash).run();
+  const owner = await env.DB.prepare('SELECT nickname,email,telegram_chat_id FROM users WHERE id=?').bind(memo.user_id).first();
   if (config.enableEmail) {
-    const owner = await env.DB.prepare('SELECT nickname,email FROM users WHERE id=?').bind(memo.user_id).first();
     const target = replyTo ? replyEmail : owner?.email;
     if (target && config.smtpUsername) {
       const email = buildCommentEmail({ title: config.title, host: new URL(request.url).origin, poster: replyTo || owner.nickname, commenter: username || '匿名用户', content, memoId: memo.id, createdAt: new Date().toISOString().slice(0,19).replace('T',' ') });
@@ -975,6 +987,14 @@ async function addComment(request, env, headers, ctx) {
       catch (error) { console.error('Mail credential decrypt failed', error); }
       const task = sendNotification(env, { ...config, mailCredential }, message).catch(error => console.error('Email notification failed', error));
       if (ctx?.waitUntil) ctx.waitUntil(task); else await task;
+    }
+  }
+  if (config.enableTelegram && owner?.telegram_chat_id) {
+    const botToken = config.telegramBotTokenEncrypted ? await decryptConfigSecret(config.telegramBotTokenEncrypted, env.JWT_SECRET).catch(() => '') : '';
+    if (botToken) {
+      const email = buildCommentEmail({ title: config.title, host: new URL(request.url).origin, poster: replyTo || owner.nickname, commenter: username || '匿名用户', content, memoId: memo.id, createdAt: new Date().toISOString().slice(0,19).replace('T',' ') });
+      const telegramTask = sendTelegram({ botToken, chatId: owner.telegram_chat_id, text: `📬 ${email.subject}\n\n${email.text}` }).catch(error => console.error('Telegram notification failed', error));
+      if (ctx?.waitUntil) ctx.waitUntil(telegramTask); else await telegramTask;
     }
   }
   // D1 trigger trg_comments_insert updates comment_count atomically.

@@ -64,8 +64,8 @@ function makeStatement(sql, values = []) {
     },
     async run() {
       if (sql.startsWith('UPDATE users SET nickname=')) {
-        const user = state.users.find(item => item.id === Number(values[7]));
-        Object.assign(user, { nickname: values[0], avatar_url: values[1], slogan: values[2], cover_url: values[3], email: values[4], password_hash: values[5], token_version: values[6] });
+        const user = state.users.find(item => item.id === Number(values[8]));
+        Object.assign(user, { nickname: values[0], avatar_url: values[1], slogan: values[2], cover_url: values[3], email: values[4], telegram_chat_id: values[5], password_hash: values[6], token_version: values[7] });
       } else if (sql.startsWith('INSERT INTO media')) {
         state.media.push({ owner_id: values[0], r2_key: values[1], original_filename: values[2], content_type: values[3], size_bytes: values[4], sha256: values[5], thumbnail_key: values[6], upload_state: 'ready' });
       }

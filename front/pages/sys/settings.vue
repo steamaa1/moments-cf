@@ -90,6 +90,12 @@
       </template>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div class="flex items-center justify-between"><div><p class="font-semibold">Telegram 评论通知</p><p class="text-xs text-gray-500">配置 Bot Token；用户在自己的“用户中心”填写 Telegram User ID 后，评论时通过 Bot 发送提醒（模板与邮件一致）。</p></div><UToggle v-model="state.enableTelegram"/></div>
+      <template v-if="state.enableTelegram">
+        <UFormGroup label="Bot Token"><UInput v-model="state.telegramBotToken" type="password" autocomplete="new-password" placeholder="123456:ABC-DEF..."/></UFormGroup>
+      </template>
+    </div>
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
       <div class="flex items-start gap-3">
         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"><UIcon name="i-carbon-data-1" class="h-5 w-5"/></span>
         <div><p class="font-semibold text-gray-800 dark:text-gray-100">媒体存储</p><p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">上传文件写入所选后端；切换后旧 R2 媒体仍可访问（读旧写新）。S3/WebDAV 凭据加密存储。</p></div>
@@ -257,6 +263,8 @@ const state = reactive({
   js: "",
   rss: "",
   enableEmail: false,
+  enableTelegram: false,
+  telegramBotToken: "",
   smtpHost: "",
   smtpPort: "465" as '465' | '587',
   smtpUsername: "",

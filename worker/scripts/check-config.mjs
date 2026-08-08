@@ -9,6 +9,7 @@ const phase6Schema = await readFile(new URL('../migrations/0005_phase6_consisten
 const phase7Schema = await readFile(new URL('../migrations/0006_phase7_media.sql', import.meta.url), 'utf8');
 const phase8Schema = await readFile(new URL('../migrations/0007_migration_runs.sql', import.meta.url), 'utf8');
 const phase9Schema = await readFile(new URL('../migrations/0008_user_status.sql', import.meta.url), 'utf8');
+const phase10Schema = await readFile(new URL('../migrations/0009_telegram_notify.sql', import.meta.url), 'utf8');
 const template = await readFile(new URL('../wrangler.toml.template', import.meta.url), 'utf8');
 const required = [
   'name = "moments-cf"',
@@ -49,6 +50,9 @@ for (const statement of ['ALTER TABLE media ADD COLUMN sha256', 'ALTER TABLE med
 }
 for (const statement of ['CREATE TABLE IF NOT EXISTS migration_runs', "status TEXT NOT NULL", 'package_id TEXT PRIMARY KEY']) {
   if (!phase8Schema.includes(statement)) throw new Error(`Phase 8 schema is missing: ${statement}`);
+}
+for (const statement of ['ALTER TABLE users ADD COLUMN telegram_chat_id']) {
+  if (!phase10Schema.includes(statement)) throw new Error(`Phase 10 schema is missing: ${statement}`);
 }
 for (const table of ['CREATE TABLE IF NOT EXISTS user_status']) {
   if (!phase9Schema.includes(table)) throw new Error(`Phase 9 schema is missing: ${table}`);

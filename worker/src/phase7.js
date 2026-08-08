@@ -193,6 +193,16 @@ export async function sendResend(apiKey, message, fetchImpl = fetch) {
   if (!response.ok) throw new Error(`Resend ${response.status}: ${(await response.text()).slice(0, 300)}`);
   return response.json().catch(() => ({}));
 }
+export async function sendTelegram({ botToken, chatId, text, fetchImpl = fetch }) {
+  if (!botToken || !chatId) throw new Error('Telegram Bot Token 或 Chat ID 未配置');
+  const response = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: String(chatId), text: String(text).slice(0, 4000), disable_web_page_preview: true }),
+  });
+  if (!response.ok) throw new Error(`Telegram 发送失败（${response.status}）`);
+  return response.json();
+}
 export async function sendNotification(env, config, message, dependencies = {}) {
   const errors = [];
   const credential = config.mailCredential || '';
