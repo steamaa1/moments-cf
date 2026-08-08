@@ -875,6 +875,15 @@ function safeSiteAssetHref(value, label) {
   if (/^\/(?:upload\/|favicon(?:\.|\/))/.test(text) && !text.includes('..')) return text.slice(0, 2048);
   return safeHttpHref(text, label);
 }
+function parseXEmbedUrl(value) {
+  const url = safeHttpHref(value, 'X 链接');
+  const parsed = new URL(url);
+  const host = parsed.hostname.toLowerCase();
+  if (!['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'].includes(host)) throw new Error('仅支持 X（Twitter）链接');
+  const match = parsed.pathname.match(/\/status(?:es)?\/(\d{5,30})(?:\/|$)/);
+  if (!match) throw new Error('仅支持单条 X（Twitter）状态链接');
+  return { url, id: match[1] };
+}
 function sanitizeMemoExt(input) {
   const ext = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const output = { music: {}, video: {}, doubanBook: {}, doubanMovie: {} };
@@ -909,14 +918,7 @@ function sanitizeMemoExt(input) {
     if (type === 'bilibili' && url?.hostname !== 'player.bilibili.com') throw new Error('B站视频地址无效');
     output.video = { type, value };
   }
-  if (ext.x?.url) {
-    const value = safeHttpHref(ext.x.url, 'X 链接');
-    const host = new URL(value).hostname.toLowerCase();
-    if (!['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'].includes(host)) throw new Error('仅支持 X（Twitter）链接');
-    const match = new URL(value).pathname.match(/\/status(?:es)?\/(\d{5,30})(?:\/|$)/);
-    if (!match) throw new Error('仅支持单条 X（Twitter）状态链接');
-    output.x = { url: value, id: match[1] };
-  }
+  if (ext.x?.url) output.x = parseXEmbedUrl(ext.x.url);
   const cleanDouban = (item, isBook) => {
     const clean = {
       id: String(item.id || '').replace(/\D/g, '').slice(0, 20),
@@ -1562,7 +1564,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseXEmbedUrl, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

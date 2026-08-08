@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { parseDouban, parseDoubanMovieJson, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
+import worker, { parseDouban, parseDoubanMovieJson, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
 
 const userPage = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userPage, /const userId = Number\(route\.params\.id\)/);
@@ -25,6 +25,8 @@ assert.equal(sanitizeMemoExt({ x: { url: 'https://twitter.com/example/status/188
 assert.throws(() => sanitizeMemoExt({ x: { url: 'https://evil.example/status/1881234567890123456' } }), /仅支持 X/);
 assert.throws(() => sanitizeMemoExt({ x: { url: 'https://x.com/example/home' } }), /单条 X/);
 assert.throws(() => sanitizeMemoExt({ x: { url: 'javascript:alert(1)' } }), /X 链接/);
+assert.deepEqual(parseXEmbedUrl('https://mobile.twitter.com/example/status/1881234567890123456'), { url: 'https://mobile.twitter.com/example/status/1881234567890123456', id: '1881234567890123456' });
+assert.throws(() => parseXEmbedUrl('https://x.com/example/status/not-a-number'), /单条 X/);
 
 const movieHtml = `<!doctype html><html><head>
 <meta property="og:title" content="测试电影"/><meta property="og:description" content="电影简介"/>
