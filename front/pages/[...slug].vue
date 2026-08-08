@@ -14,10 +14,17 @@ const route = useRoute()
 const currentUser = useState<UserVO | null>("userinfo")
 
 // sitemap/rss/robots 落入 SPA（浏览器缓存旧 index.html 或站内跳转）时，
-// 强制整页刷新交给 Worker 返回正确内容，避免前端 “Page not found” 报错
+// 整页刷新交给 Worker 返回正确内容；用 sessionStorage 标记只重定向一次，
+// 避免 Worker 因边缘缓存仍返回 SPA 时陷入无限刷新循环
 const raw = String(route.path || "")
-if (/^\/(sitemap\.xml|rss|robots\.txt)(\/)?$/i.test(raw)) {
-  if (typeof window !== "undefined") window.location.href = raw
+const isSeoPath = /^\/(sitemap\.xml|rss|robots\.txt)(\/)?$/i.test(raw)
+if (isSeoPath && typeof window !== "undefined") {
+  if (sessionStorage.getItem("__seoRefresh")) {
+    sessionStorage.removeItem("__seoRefresh")
+  } else {
+    sessionStorage.setItem("__seoRefresh", "1")
+    window.location.href = raw
+  }
 }
 </script>
 
