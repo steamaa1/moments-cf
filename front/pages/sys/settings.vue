@@ -33,6 +33,14 @@
         <UTextarea v-model="state.aboutContent" :rows="12" placeholder="# 关于我&#10;&#10;支持 Markdown，也可直接使用 HTML。"/>
       </UFormGroup>
     </div>
+    <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div class="flex items-start gap-3">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"><UIcon name="i-carbon-link" class="h-5 w-5"/></span>
+        <div><p class="font-semibold text-gray-800 dark:text-gray-100">友情链接申请与须知</p><p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">配置友情链接页展示的申请须知与接收申请的邮箱。</p></div>
+      </div>
+      <UFormGroup label="申请须知" :ui="{label:{base:'font-bold'}}"><UTextarea v-model="state.friendNotice" :rows="7"/></UFormGroup>
+      <UFormGroup label="申请邮箱" :ui="{label:{base:'font-bold'}}"><UInput v-model="state.friendEmail" type="email" placeholder="admin@example.com"/></UFormGroup>
+    </div>
     <UFormGroup label="备案信息" name="beiAnNo" :ui="{label:{base:'font-bold'}}">
       <UTextarea v-model="state.beiAnNo" :rows="3" placeholder='<a href="https://beian.miit.gov.cn/" target="_blank">京ICP备...</a>'/>
     </UFormGroup>
@@ -155,14 +163,6 @@
         <UFormGroup label="备份目标" help="仅显示已配置的存储"><USelectMenu v-model="state.backupTarget" :options="backupTargetOptions" value-attribute="value" option-attribute="label"/></UFormGroup>
         <UButton block color="gray" variant="soft" icon="i-carbon-data-backup" @click="openBackups">管理备份</UButton>
       </template>
-    </div>
-    <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div class="flex items-start gap-3">
-        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"><UIcon name="i-carbon-link" class="h-5 w-5"/></span>
-        <div><p class="font-semibold text-gray-800 dark:text-gray-100">友情链接申请与须知</p><p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">配置友情链接页展示的申请须知与接收申请的邮箱。</p></div>
-      </div>
-      <UFormGroup label="申请须知" :ui="{label:{base:'font-bold'}}"><UTextarea v-model="state.friendNotice" :rows="7"/></UFormGroup>
-      <UFormGroup label="申请邮箱" :ui="{label:{base:'font-bold'}}"><UInput v-model="state.friendEmail" type="email" placeholder="admin@example.com"/></UFormGroup>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
       <div class="flex items-start justify-between gap-3"><div><p class="font-semibold">一键导入</p><p class="mt-1 text-xs text-gray-500">上传本地转换器生成的迁移包（旧 Docker 站），预检后导入 D1 与所选存储。</p></div></div>
