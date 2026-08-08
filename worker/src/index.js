@@ -31,6 +31,8 @@ const DEFAULT_CONFIG = {
   turnstileSecretKey: '',
   enableAbout: false,
   aboutContent: '',
+  friendNotice: '感谢您对本站的关注！友情链接申请须知：\n\n1. 请先在贵站添加本站链接\n2. 本站仅收录原创、内容健康、定期更新的网站\n3. 申请时请提供：站点名称、网址、一句话简介、常用邮箱\n4. 审核通过后将在“友情链接”页面展示\n5. 本站保留审核与移除的权利',
+  friendEmail: '',
   enableComment: true,
   maxCommentLength: 300,
   memoMaxHeight: 0,
@@ -70,7 +72,7 @@ const DIRECT_UPLOAD_THRESHOLD = 20 * 1024 * 1024;
 const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
-  'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength', 'telegramBotUsername',
+  'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength', 'telegramBotUsername', 'friendNotice', 'friendEmail',
   'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
@@ -320,6 +322,8 @@ async function saveConfig(request, env, headers) {
   const config = { ...previousConfig, ...body, adminUserName: String(body.adminUserName || access.user.username).trim() };
   config.beiAnNo = sanitizeSafeHtml(body.beiAnNo);
   config.enableAbout = Boolean(body.enableAbout);
+  config.friendNotice = String(body.friendNotice || '').slice(0, 10000);
+  config.friendEmail = String(body.friendEmail || '').trim().slice(0, 254);
   config.aboutContent = String(body.aboutContent || '').slice(0, 100000);
   config.enableEmail = Boolean(body.enableEmail);
   config.smtpHost = String(body.smtpHost || '').trim().slice(0, 253);

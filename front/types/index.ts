@@ -107,7 +107,9 @@ export type SysConfigVO = {
     smtpPassword?: string,
     smtpPasswordConfigured: boolean,
     enableAbout: boolean,
-    aboutContent: string
+    aboutContent: string,
+    friendNotice?: string,
+    friendEmail?: string
 }
 
 

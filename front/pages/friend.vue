@@ -1,6 +1,21 @@
 <template>
   <Header v-bind:user="currentUser" @add-friend="showAddModal = true" />
   <div class="bg-white dark:bg-neutral-800">
+    <div class="mx-4 mt-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+      <div class="flex items-center gap-2 mb-2"><UIcon name="i-carbon-link" class="h-5 w-5 text-[#9fc84a]"/><p class="font-semibold">友情链接申请与须知</p></div>
+      <div v-if="friendNotice" class="whitespace-pre-wrap text-sm leading-6 text-gray-600 dark:text-gray-300">{{ friendNotice }}</div>
+      <div v-else class="text-sm text-gray-500">暂未开放友情链接申请。</div>
+      <div v-if="friendEmail" class="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+        <p class="mb-2 text-sm font-medium">提交申请</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <UInput v-model="apply.name" placeholder="站点名称"/>
+          <UInput v-model="apply.url" placeholder="站点网址 https://"/>
+          <UInput v-model="apply.desc" placeholder="一句话简介"/>
+          <UInput v-model="apply.email" type="email" placeholder="你的邮箱"/>
+        </div>
+        <UButton class="mt-2" icon="i-carbon-send" @click="sendApply">发送申请</UButton>
+      </div>
+    </div>
     <div class="grid sm:grid-cols-2 grid-cols gap-4 p-4">
       <div
         v-for="friend in friendList"
@@ -115,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Friend, UserVO } from "~/types";
+import type { Friend, SysConfigVO, UserVO } from "~/types";
 import { toast } from "vue-sonner";
 import { useGlobalState } from "~/store";
 
@@ -128,6 +143,18 @@ const DEFAULT_FRIEND = {
 
 const globalState = useGlobalState();
 const currentUser = useState<UserVO>("userinfo");
+const sysConfigState = useState<SysConfigVO>('sysConfig');
+const friendNotice = computed(() => sysConfigState.value?.friendNotice || '');
+const friendEmail = computed(() => sysConfigState.value?.friendEmail || '');
+const apply = reactive({ name: '', url: '', desc: '', email: '' });
+const sendApply = () => {
+  const email = friendEmail.value;
+  if (!email) { toast.warning('暂未开放友情链接申请'); return; }
+  if (!apply.name.trim() || !apply.url.trim() || !apply.email.trim()) { toast.warning('请填写站点名称、网址和你的邮箱'); return; }
+  const subject = encodeURIComponent('友情链接申请 - ' + apply.name.trim());
+  const body = encodeURIComponent(`站点名称：${apply.name.trim()}\n站点网址：${apply.url.trim()}\n一句话简介：${apply.desc.trim()}\n你的邮箱：${apply.email.trim()}\n\n已在本站添加贵站链接，请审核。`);
+  window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
+};
 
 const friendList = ref<Friend[]>([]);
 
