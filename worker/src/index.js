@@ -404,10 +404,10 @@ async function upload(request, env, headers) {
     const duplicate = await env.DB.prepare("SELECT r2_key FROM media WHERE owner_id=? AND sha256=? AND trashed_at IS NULL AND upload_state='ready' LIMIT 1").bind(access.user.id, sha).first();
     if (duplicate) { urls.push(`/upload/${duplicate.r2_key}`); continue; }
     const extension = mediaExtension(file.name);
-    const key = `media/${new Date().toISOString().slice(0, 10).replaceAll('-', '/')}/${sha}${extension ? `.${extension}` : ''}`;
+    const key = mediaObjectKey(extension);
     const thumbnailCandidate = form.get(`thumbnail_${index}`);
     const thumbnail = file.type.startsWith('image/') && thumbnailCandidate instanceof File ? thumbnailCandidate : null;
-    const thumbnailKey = thumbnail ? `thumbs/${sha}.webp` : null;
+    const thumbnailKey = thumbnail ? mediaThumbKey() : null;
     try {
       const backend = storageBackend(env, storageConfig, storageConfig.storageType);
       await backend.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
@@ -455,6 +455,11 @@ async function fileExists(request, env, headers) {
   return json(ok({ exist: Boolean(row), path: row ? `/upload/${row.r2_key}` : '', thumbPath: row?.thumbnail_key ? `/upload/${row.thumbnail_key}` : '' }), 200, headers);
 }
 function mediaExtension(filename) { return filename.includes('.') ? filename.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') : ''; }
+// 随机短 id 命名（约 14 字符），替代长 SHA-256 文件名；旧 SHA 命名的对象仍按 DB 索引访问
+function mediaObjectKey(extension = '') {
+  return `media/${new Date().toISOString().slice(0, 10).replaceAll('-', '/')}/${randomToken(10)}${extension ? `.${extension}` : ''}`;
+}
+function mediaThumbKey() { return `thumbs/${randomToken(10)}.webp`; }
 async function directUploadInit(request, env, headers) {
   const access = await requireUser(request, env, headers); if (access.response) return access.response;
   const body = await readJson(request); let file;
@@ -467,12 +472,12 @@ async function directUploadInit(request, env, headers) {
   const signing = storageConfig.storageType === 's3' ? { ...storageConfig.s3Storage, bucket: storageConfig.s3Storage.bucket } : { accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: env.R2_BUCKET_NAME || 'moments-media', accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY };
   if (!signing.accessKeyId || !signing.secretAccessKey || (storageConfig.storageType === 'r2' && !signing.accountId)) return json(fail('直传凭据未配置，请在 Worker Secrets 设置对应 Access Key'), 503, headers);
   const extension = mediaExtension(file.filename);
-  const key = `media/${new Date().toISOString().slice(0,10).replaceAll('-','/')}/${file.sha256}${extension ? `.${extension}` : ''}`;
+  const key = mediaObjectKey(extension);
   const old = await env.DB.prepare('SELECT id FROM media WHERE owner_id=? AND r2_key=? LIMIT 1').bind(access.user.id, key).first();
   if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, old.id).run();
   else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,upload_state) VALUES (?,?,?,?,?,?,'pending')").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256).run();
   const uploadUrl = await backend.presignPut({ key, contentType: file.contentType });
-  const thumbnailKey = file.contentType.startsWith('image/') ? `thumbs/${file.sha256}.webp` : '';
+  const thumbnailKey = file.contentType.startsWith('image/') ? mediaThumbKey() : '';
   const thumbnailUploadUrl = thumbnailKey ? await backend.presignPut({ key: thumbnailKey, contentType: 'image/webp' }) : '';
   return json(ok({ exists: false, uploadUrl, key, path: `/upload/${key}`, contentType: file.contentType, direct: file.size >= DIRECT_UPLOAD_THRESHOLD, thumbnailKey, thumbnailUploadUrl }), 200, headers);
 }
