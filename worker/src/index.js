@@ -1627,7 +1627,15 @@ export default {
     if (normalizedPath === '/sitemap.xml') return sitemap(request, env);
     if (normalizedPath === '/robots.txt') return robots(request);
     if (!env.ASSETS) return new Response('Workers Assets binding is not configured', { status: 503 });
-    return env.ASSETS.fetch(request);
+    const assetsResponse = await env.ASSETS.fetch(request);
+    // SPA fallback（HTML）不缓存：避免 Cloudflare 边缘把 index.html 缓存到
+    // /sitemap.xml、/rss 等动态路径，导致访问者拿到 Nuxt 404 页
+    if (assetsResponse.headers.get('content-type')?.includes('text/html')) {
+      const headers = new Headers(assetsResponse.headers);
+      headers.set('cache-control', 'no-store');
+      return new Response(assetsResponse.body, { status: assetsResponse.status, headers });
+    }
+    return assetsResponse;
   },
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil((async () => {
