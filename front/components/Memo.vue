@@ -92,6 +92,7 @@
             v-if="extJSON.music && (extJSON.music.id || extJSON.music.url)"
             v-bind="extJSON.music"
           />
+          <weibo-preview v-if="extJSON.weibo?.url" v-bind="extJSON.weibo"/>
           <div v-for="(book, index) in extJSON.doubanBooks || (extJSON.doubanBook && extJSON.doubanBook.title ? [extJSON.doubanBook] : [])" :key="(book.id || index) + '-b'">
             <douban-book-preview :book="book"/>
           </div>

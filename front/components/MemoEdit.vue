@@ -14,6 +14,7 @@
 
       <upload-image v-model:imgs="state.imgs"/>
       <music v-bind="state.music" @confirm="updateMusic"/>
+      <weibo v-bind="state.weibo" @confirm="updateWeibo"/>
       <upload-video @confirm="handleVideo" v-bind="state.video"/>
       <douban-edit v-model:books="doubanBooks" v-model:movies="doubanMovies"/>
       <UPopover :popper="{ arrow: true }" mode="click">
@@ -86,6 +87,10 @@
       <external-url-preview :favicon="state.externalFavicon" :title="state.externalTitle" :url="state.externalUrl"/>
       <upload-image-preview :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
       <music-preview v-if="state.music && (state.music.id || state.music.url)" v-bind="state.music"/>
+      <div v-if="state.weibo.url" class="relative">
+        <weibo-preview v-bind="state.weibo"/>
+        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除微博嵌入" @click="updateWeibo({})"/>
+      </div>
       <div v-for="(book, index) in doubanBooks" :key="(book.id || index) + '-b'" class="relative">
         <douban-book-preview :book="book"/>
         <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-1 top-1" @click="removeDouban('book', index)"/>
@@ -113,7 +118,8 @@ import type {
   MetingMusicType,
   MusicDTO,
   Video,
-  VideoType
+  VideoType,
+  WeiboEmbed
 } from "~/types";
 import {toast} from "vue-sonner";
 import UploadImage from "~/components/UploadImage.vue";
@@ -150,6 +156,7 @@ const defaultState = {
     server: 'netease' as MetingMusicServer,
     type: 'song' as MetingMusicType
   },
+  weibo: { url: '' } as WeiboEmbed,
   video: {
     type: 'youtube' as VideoType,
     value: ""
@@ -200,6 +207,10 @@ const updateMusic = (music: MusicDTO) => {
     server: 'netease', type: 'song',
     api: 'https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r',
   }, music)
+}
+
+const updateWeibo = (weibo: WeiboEmbed) => {
+  state.weibo = { url: weibo.url || '' }
 }
 
 const handleVideo = (video: Video) => {
@@ -270,6 +281,7 @@ onMounted(async () => {
     state.showType = res.showType === 1
     const ext = JSON.parse(res.ext) as ExtDTO
     updateMusic(ext.music || {})
+    updateWeibo(ext.weibo || {})
     Object.assign(state.video, ext.video)
     doubanBooks.value = Array.isArray(ext.doubanBooks) ? ext.doubanBooks : (ext.doubanBook && ext.doubanBook.title ? [ext.doubanBook] : [])
     doubanMovies.value = Array.isArray(ext.doubanMovies) ? ext.doubanMovies : (ext.doubanMovie && ext.doubanMovie.title ? [ext.doubanMovie] : [])
@@ -297,6 +309,7 @@ const saveMemo = async () => {
     content: state.content,
     ext: {
       music: state.music.id || state.music.url ? state.music : {},
+      weibo: state.weibo.url ? state.weibo : {},
       doubanBooks: doubanBooks.value.filter(book => book && book.title),
       doubanMovies: doubanMovies.value.filter(movie => movie && movie.title),
       video: state.video.value ? state.video : {},

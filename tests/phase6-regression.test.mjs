@@ -19,6 +19,11 @@ const directMusic = sanitizeMemoExt({ music: { mode: 'direct', url: 'https://med
 assert.deepEqual(directMusic, { mode: 'direct', url: 'https://media.example/song.mp3', name: '测试歌曲', artist: '', cover: '', lrc: '[00:01.00]第一句' });
 assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'javascript:alert(1)', name: '坏音乐' } }), /音乐直链/);
 assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'https://media.example/a.mp3', name: '' } }), /歌曲名/);
+const weibo = sanitizeMemoExt({ weibo: { url: 'https://weibo.com/1234567890/AbCdEf' } }).weibo;
+assert.equal(weibo.url, 'https://weibo.com/1234567890/AbCdEf');
+assert.equal(sanitizeMemoExt({ weibo: { url: 'https://m.weibo.cn/detail/123' } }).weibo.url, 'https://m.weibo.cn/detail/123');
+assert.throws(() => sanitizeMemoExt({ weibo: { url: 'https://evil.example/weibo' } }), /仅支持微博链接/);
+assert.throws(() => sanitizeMemoExt({ weibo: { url: 'javascript:alert(1)' } }), /微博链接/);
 
 const movieHtml = `<!doctype html><html><head>
 <meta property="og:title" content="测试电影"/><meta property="og:description" content="电影简介"/>

@@ -909,6 +909,12 @@ function sanitizeMemoExt(input) {
     if (type === 'bilibili' && url?.hostname !== 'player.bilibili.com') throw new Error('B站视频地址无效');
     output.video = { type, value };
   }
+  if (ext.weibo?.url) {
+    const value = safeHttpHref(ext.weibo.url, '微博链接');
+    const host = new URL(value).hostname.toLowerCase();
+    if (!['weibo.com', 'www.weibo.com', 'm.weibo.cn', 'weibo.cn', 'www.weibo.cn'].includes(host)) throw new Error('仅支持微博链接');
+    output.weibo = { url: value };
+  }
   const cleanDouban = (item, isBook) => {
     const clean = {
       id: String(item.id || '').replace(/\D/g, '').slice(0, 20),
