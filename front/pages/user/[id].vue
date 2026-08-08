@@ -43,6 +43,24 @@ const loadMore = async () => {
   profile.value = res.list[0]?.user || profile.value
   hasNext.value = res.hasNext
 }
+
+
+// SEO：昵称 + 签名
+const userSeoHost = typeof window !== 'undefined' ? window.location.origin : ''
+watch(profile, (value) => {
+  if (!value?.nickname) return
+  const slogan = String(value.slogan || '').slice(0, 120)
+  useHead({
+    title: `${value.nickname} 的空间`,
+    meta: [
+      { name: 'description', content: slogan || `${value.nickname} 的空间` },
+      { property: 'og:title', content: `${value.nickname} 的空间` },
+      { property: 'og:description', content: slogan },
+    ],
+    link: [{ rel: 'canonical', href: `${userSeoHost}/user/${value.id}` }],
+  })
+}, { immediate: false })
+
 onMounted(reload)
 memoReloadEvent.on(reload)
 memoChangedEvent.on(async id => { const value=await useMyFetch<MemoVO>('/memo/get?latest=1&id='+id);const index=memos.value.findIndex(item=>item.id===id);if(index>=0)memos.value[index]=value })

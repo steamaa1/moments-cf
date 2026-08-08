@@ -811,6 +811,32 @@ async function listTags(request, env, headers) {
 }
 function escapeXml(value) { return String(value || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;'); }
 function rssText(value) { return String(value || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[>#*_`~-]/g, '').trim(); }
+async function sitemap(request, env) {
+  const host = new URL(request.url).origin;
+  const [memos, users, configRow] = await Promise.all([
+    env.DB.prepare('SELECT id, created_at FROM memos WHERE show_type=1 LIMIT 50000').all(),
+    env.DB.prepare('SELECT id, updated_at FROM users LIMIT 5000').all(),
+    env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(),
+  ]);
+  const config = parseConfig(configRow?.content);
+  const urls = [];
+  const push = (loc, lastmod, freq, priority) => {
+    const lastmodTag = lastmod ? `<lastmod>${escapeXml(lastmod.replace(' ', 'T') + 'Z')}</lastmod>` : '';
+    urls.push(`<url><loc>${host}${loc}</loc>${lastmodTag}<changefreq>${freq}</changefreq><priority>${priority}</priority></url>`);
+  };
+  push('/', null, 'daily', '1.0');
+  if (config.enableAbout) push('/about', null, 'monthly', '0.6');
+  push('/friend', null, 'weekly', '0.6');
+  for (const user of users.results || []) push(`/user/${Number(user.id)}`, user.updated_at || '', 'weekly', '0.7');
+  for (const memo of memos.results || []) push(`/memo/${Number(memo.id)}`, memo.created_at || '', 'weekly', '0.8');
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`;
+  return new Response(xml, { headers: { 'content-type': 'application/xml; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
+}
+function robots(request) {
+  const host = new URL(request.url).origin;
+  const text = `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /upload/\nSitemap: ${host}/sitemap.xml\n`;
+  return new Response(text, { headers: { 'content-type': 'text/plain; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
+}
 async function rss(request, env) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
   const url = new URL(request.url);
@@ -1596,6 +1622,8 @@ export default {
       return serveMedia(request, env, key);
     }
     if (url.pathname === '/rss') return rss(request, env);
+    if (url.pathname === '/sitemap.xml') return sitemap(request, env);
+    if (url.pathname === '/robots.txt') return robots(request);
     if (!env.ASSETS) return new Response('Workers Assets binding is not configured', { status: 503 });
     return env.ASSETS.fetch(request);
   },

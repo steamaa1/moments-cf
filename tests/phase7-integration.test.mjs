@@ -156,4 +156,14 @@ const template = await readFile(new URL('../worker/wrangler.toml.template', impo
 assert.match(template, /crons = \["0 3 \* \* SUN"\]/);
 assert.match(template, /R2_BUCKET_NAME/);
 assert.match(template, /binding = "ASSETS"/);
+assert.match(source, /sitemap\.xml/);
+assert.match(source, /robots\.txt/);
+assert.match(source, /urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9"/);
+assert.match(layoutDefault, /og:site_name/);
+const memoDetail = await readFile(new URL('../front/pages/memo/[id].vue', import.meta.url), 'utf8');
+assert.match(memoDetail, /og:image/);
+assert.match(memoDetail, /canonical/);
+const userDetail = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
+assert.match(userDetail, /watch\(profile/);
+assert.match(userDetail, /canonical/);
 console.log('Phase 7 integration tests: PASS');

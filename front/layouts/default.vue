@@ -76,6 +76,7 @@ if (currentProfile) {
   sysConfig.value = sysConfigVO;
 }
 const { y } = useWindowScroll();
+const seoDescription = (sysConfigVO.slogan || '') ? `${sysConfigVO.slogan} · ${sysConfigVO.title || 'Moments'}` : '';
 useHead({
   title: sysConfigVO.title,
   link: [
@@ -94,6 +95,17 @@ useHead({
       title: "我的 RSS 订阅",
       href: sysConfigVO.rss || `/rss`,
     },
+  ],
+  meta: [
+    { name: "description", content: seoDescription },
+    { name: "keywords", content: `${sysConfigVO.title || 'Moments'}, 朋友圈, 动态, 博客` },
+    { property: "og:site_name", content: sysConfigVO.title || 'Moments' },
+    { property: "og:type", content: "website" },
+    { property: "og:title", content: sysConfigVO.title || 'Moments' },
+    { property: "og:description", content: seoDescription },
+    { name: "twitter:card", content: "summary" },
+    { name: "twitter:title", content: sysConfigVO.title || 'Moments' },
+    { name: "twitter:description", content: seoDescription },
   ],
   style: [
     {
