@@ -247,12 +247,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.friend-notice { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
 .friend-notice :deep(p) { margin: 4px 0; }
 .friend-notice :deep(ul), .friend-notice :deep(ol) { margin: 4px 0; padding-left: 20px; }
 .friend-notice :deep(ul) { list-style: disc; }
 .friend-notice :deep(ol) { list-style: decimal; }
 .friend-notice :deep(h1), .friend-notice :deep(h2), .friend-notice :deep(h3) { margin: 10px 0 4px; font-weight: 700; }
-.friend-notice :deep(a) { color: #576b95; text-decoration: underline; }
+.friend-notice :deep(a) { color: #576b95; text-decoration: underline; overflow-wrap: anywhere; word-break: break-all; }
 .friend-notice :deep(blockquote) { margin: 6px 0; padding-left: 12px; border-left: 3px solid rgba(161,161,170,.35); color: #71717a; }
 .friend-notice :deep(code) { background: rgba(161,161,170,.15); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
 </style>
