@@ -147,7 +147,7 @@ const DEFAULT_FRIEND = {
 };
 
 const globalState = useGlobalState();
-const isAdmin = computed(() => Number(currentUser.value?.id) === 1 || Number(globalState.value?.userinfo?.id) === 1 || Boolean(globalState.value?.userinfo?.token && currentUser.value?.username === 'admin'));
+const isAdmin = computed(() => Number(currentUser.value?.id) === 1 || Number(globalState.value?.userinfo?.id) === 1);
 const currentUser = useState<UserVO>("userinfo");
 const sysConfigState = useState<SysConfigVO>('sysConfig');
 const friendNotice = computed(() => sysConfigState.value?.friendNotice || '');

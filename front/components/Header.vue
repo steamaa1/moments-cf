@@ -43,16 +43,6 @@
       >
         <UIcon name="i-carbon-logout" class="w-5 h-5 cursor-pointer" />
       </NuxtLink>
-      <span
-        v-if="$route.path === '/friend' && (global.userinfo?.id === 1 || Number(props.user?.id) === 1 || (global.userinfo?.token && Number(props.user?.id) > 0))"
-        class="flex"
-      >
-        <UIcon
-          name="i-carbon-add"
-          class="w-6 h-6 cursor-pointer"
-          @click="$emit('add-friend')"
-        />
-      </span>
     </div>
 
     <div
