@@ -37,6 +37,13 @@
 - **人机验证**：Cloudflare Turnstile（可优先于 Google reCAPTCHA）
 - **安全加固**：PBKDF2 密码、匿名点赞去重、评论限流、SSRF 防护、URL 白名单、错误信息脱敏、音乐直链播放（LRC 滚动歌词）
 - **旧站一键迁移**：本地转换器生成标准迁移包，后台预检后导入 D1 与所选存储，支持断点重试与防重复导入
+- **X 原帖快照卡片**：发表时从 X syndication 抓取作者/头像/正文/图片/互动数据并永久保存，媒体走同域代理，刷新不依赖 iframe 或 X Widget
+- **豆瓣多卡片**：读书/电影各最多 10 个，兼容旧单卡片数据
+- **音乐直链增强**：支持歌手与封面（上传或直链），LRC 滚动歌词
+- **友情链接申请与须知**：系统可配置须知内容与申请邮箱，友链页展示申请表单
+- **Telegram 评论通知**：系统配置 Bot Token/用户名，个人配置 User ID，评论时推送
+- **SEO**：动态 sitemap.xml、全站 og/twitter meta、动态详情页 og:image 与 canonical
+- **体验优化**：上传媒体短随机命名（约 14 字符）、自定义 JS 路由切换后重新执行
 - **其它**：添加关于页面、朋友圈式时间线
 
 ## 快速开始
@@ -119,6 +126,8 @@ curl -X POST "https://your-worker.workers.dev/api/admin/initialize" \
 | POST | `/api/admin/backup/*` | 备份列表/创建/下载/恢复/本地导出 | 管理员 |
 | POST | `/api/admin/migration/*` | 一键导入（预检/准备/导入/状态） | 管理员 |
 | GET | `/rss` | RSS 订阅 | 公开 |
+| GET | `/sitemap.xml` | 站点地图 | 公开 |
+| GET | `/x-media` | X 图片同域代理 | 公开 |
 | GET | `/upload/*` | 媒体代理（R2/S3/WebDAV） | 公开 |
 
 调用示例（登录获取 Token）：
