@@ -8,7 +8,7 @@ compatibility_date = "2026-08-06"
 directory = "../front/.output/public"
 binding = "ASSETS"
 # 动态 API、媒体及站点资源必须先交由 Worker 处理，不能被 SPA Assets 回退吞掉。
-run_worker_first = ["/api/*", "/upload/*", "/douban-cover", "/sitemap.xml", "/rss", "/robots.txt"]
+run_worker_first = ["/api/*", "/upload/*", "/douban-cover", "/x-media", "/sitemap.xml", "/rss", "/robots.txt"]
 not_found_handling = "single-page-application"
 
 [triggers]

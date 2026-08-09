@@ -173,9 +173,28 @@ export type DoubanMovie = {
     runtime?: string
 }
 
+export type XMedia = {
+    type?: 'photo' | 'video' | 'animated_gif'
+    url?: string
+    previewUrl?: string
+    width?: number
+    height?: number
+}
+
 export type XEmbed = {
     url?: string
     id?: string
+    authorName?: string
+    authorUsername?: string
+    authorUrl?: string
+    avatar?: string
+    verified?: boolean
+    text?: string
+    createdAt?: string
+    likes?: number
+    replies?: number
+    reposts?: number
+    media?: XMedia[]
 }
 
 export type Video = {

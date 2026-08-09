@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { parseDouban, parseDoubanMovieJson, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
+import worker, { fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
 
 const userPage = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userPage, /const userId = Number\(route\.params\.id\)/);
@@ -27,6 +27,25 @@ assert.throws(() => sanitizeMemoExt({ x: { url: 'https://x.com/example/home' } }
 assert.throws(() => sanitizeMemoExt({ x: { url: 'javascript:alert(1)' } }), /X 链接/);
 assert.deepEqual(parseXEmbedUrl('https://mobile.twitter.com/example/status/1881234567890123456'), { url: 'https://mobile.twitter.com/example/status/1881234567890123456', id: '1881234567890123456' });
 assert.throws(() => parseXEmbedUrl('https://x.com/example/status/not-a-number'), /单条 X/);
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async () => new Response(JSON.stringify({
+  text: '这是保存到本站的 X 原帖正文',
+  created_at: 'Sun Aug 09 04:00:00 +0000 2026',
+  user: { name: '测试作者', screen_name: 'tester', verified: true, profile_image_url_https: 'https://pbs.twimg.com/profile.jpg' },
+  favorite_count: 321, reply_count: 12, retweet_count: 45,
+  mediaDetails: [{ type: 'photo', media_url_https: 'https://pbs.twimg.com/media/photo.jpg', original_info: { width: 1200, height: 800 } }],
+}), { status: 200, headers: { 'content-type': 'application/json' } });
+try {
+  const xSnapshot = await fetchXSnapshot(parseXEmbedUrl('https://x.com/tester/status/1881234567890123456'));
+  assert.equal(xSnapshot.authorName, '测试作者');
+  assert.equal(xSnapshot.authorUsername, 'tester');
+  assert.equal(xSnapshot.text, '这是保存到本站的 X 原帖正文');
+  assert.equal(xSnapshot.media[0].url, 'https://pbs.twimg.com/media/photo.jpg');
+  assert.equal(xSnapshot.media[0].width, 1200);
+  assert.equal(xSnapshot.likes, 321);
+  assert.equal(xSnapshot.replies, 12);
+  assert.equal(xSnapshot.reposts, 45);
+} finally { globalThis.fetch = originalFetch; }
 
 const movieHtml = `<!doctype html><html><head>
 <meta property="og:title" content="测试电影"/><meta property="og:description" content="电影简介"/>

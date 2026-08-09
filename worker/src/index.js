@@ -751,7 +751,10 @@ async function saveMemo(request, env, headers) {
   catch (error) { return json(fail(error.message), 400, headers); }
   if (body.externalUrl && !externalUrl) return json(fail('外部链接仅支持 http/https'), 400, headers);
   let safeExt;
-  try { safeExt = sanitizeMemoExt(body.ext); } catch (error) { return json(fail(error.message), 400, headers); }
+  try {
+    safeExt = sanitizeMemoExt(body.ext);
+    if (safeExt.x?.id && !safeExt.x.text) safeExt.x = await fetchXSnapshot(safeExt.x);
+  } catch (error) { return json(fail(error.message), 400, headers); }
   const ext = JSON.stringify(safeExt);
   const values = [content, imgs.join(','), String(body.location || '').slice(0, 200), externalUrl?.href || '', String(body.externalTitle || '').slice(0, 300), externalFavicon || '/favicon.png', ext, showType, tagsString(body.tags)];
   if (id) {
@@ -884,6 +887,76 @@ function parseXEmbedUrl(value) {
   if (!match) throw new Error('仅支持单条 X（Twitter）状态链接');
   return { url, id: match[1] };
 }
+function xSyndicationToken(id) {
+  return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
+}
+function xMediaSnapshot(data) {
+  const source = Array.isArray(data?.mediaDetails) ? data.mediaDetails : (Array.isArray(data?.media) ? data.media : []);
+  return source.slice(0, 4).map(item => ({
+    type: ['photo', 'video', 'animated_gif'].includes(item.type) ? item.type : 'photo',
+    url: String(item.media_url_https || item.media_url || item.url || '').slice(0, 2048),
+    previewUrl: String(item.media_url_https || item.media_url || item.preview_image_url || item.url || '').slice(0, 2048),
+    width: Number(item.original_info?.width || item.width || 0) || undefined,
+    height: Number(item.original_info?.height || item.height || 0) || undefined,
+  })).filter(item => item.url);
+}
+function decodeXHtml(value) {
+  return String(value || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&mdash;/g, '—').replace(/&nbsp;/g, ' ').trim();
+}
+function xSnapshotFromSyndication(data, x) {
+  const user = data?.user || data?.author || {};
+  const text = String(data?.text || data?.full_text || '').trim();
+  if (!text) return null;
+  return {
+    ...x,
+    authorName: String(user.name || '').slice(0, 200),
+    authorUsername: String(user.screen_name || user.username || '').slice(0, 100),
+    authorUrl: safeHttpHref(user.screen_name ? `https://x.com/${user.screen_name}` : '', 'X 作者链接') || '',
+    avatar: safeHttpHref(user.profile_image_url_https || user.profile_image_url || '', 'X 头像') || '',
+    verified: Boolean(user.verified || user.is_blue_verified),
+    text: text.slice(0, 10000),
+    createdAt: String(data?.created_at || '').slice(0, 100),
+    likes: clampInt(data?.favorite_count || data?.like_count, 0, 1_000_000_000, 0),
+    replies: clampInt(data?.reply_count, 0, 1_000_000_000, 0),
+    reposts: clampInt(data?.retweet_count || data?.retweet_count, 0, 1_000_000_000, 0),
+    media: xMediaSnapshot(data),
+  };
+}
+function xSnapshotFromOembed(data, x) {
+  const html = String(data?.html || '');
+  const text = decodeXHtml(html.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] || '');
+  if (!text) return null;
+  const authorName = String(data.author_name || '').slice(0, 200);
+  return {
+    ...x,
+    authorName,
+    authorUsername: '',
+    authorUrl: safeHttpHref(data.author_url, 'X 作者链接') || '',
+    avatar: '',
+    verified: false,
+    text: text.slice(0, 10000),
+    createdAt: decodeXHtml(html.match(/<a[^>]*>([^<]+)<\/a>\s*<\/blockquote>/i)?.[1] || '').slice(0, 100),
+    likes: 0,
+    replies: 0,
+    reposts: 0,
+    media: [],
+  };
+}
+async function fetchXSnapshot(x) {
+  try {
+    const token = xSyndicationToken(x.id);
+    const syndication = await fetch(`https://cdn.syndication.twimg.com/tweet-result?id=${encodeURIComponent(x.id)}&token=${encodeURIComponent(token)}&lang=zh-cn`);
+    if (syndication.ok) {
+      const snapshot = xSnapshotFromSyndication(await syndication.json(), x);
+      if (snapshot) return snapshot;
+    }
+  } catch (error) { console.warn('X syndication snapshot failed', error); }
+  const oembed = await fetch(`https://publish.twitter.com/oembed?url=${encodeURIComponent(x.url)}&dnt=true`);
+  if (!oembed.ok) throw new Error(`X 原帖获取失败（${oembed.status}）`);
+  const snapshot = xSnapshotFromOembed(await oembed.json(), x);
+  if (!snapshot) throw new Error('X 原帖没有可保存的文本内容');
+  return snapshot;
+}
 function sanitizeMemoExt(input) {
   const ext = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const output = { music: {}, video: {}, doubanBook: {}, doubanMovie: {} };
@@ -918,7 +991,30 @@ function sanitizeMemoExt(input) {
     if (type === 'bilibili' && url?.hostname !== 'player.bilibili.com') throw new Error('B站视频地址无效');
     output.video = { type, value };
   }
-  if (ext.x?.url) output.x = parseXEmbedUrl(ext.x.url);
+  if (ext.x?.url) {
+    const x = parseXEmbedUrl(ext.x.url);
+    // 已保存的快照在编辑时原样保留，避免每次修改动态都重新请求 X。
+    if (ext.x.text) Object.assign(x, {
+      authorName: String(ext.x.authorName || '').slice(0, 200),
+      authorUsername: String(ext.x.authorUsername || '').replace(/^@/, '').slice(0, 100),
+      authorUrl: safeHttpHref(ext.x.authorUrl, 'X 作者链接') || '',
+      avatar: safeHttpHref(ext.x.avatar, 'X 头像') || '',
+      verified: Boolean(ext.x.verified),
+      text: String(ext.x.text || '').slice(0, 10000),
+      createdAt: String(ext.x.createdAt || '').slice(0, 100),
+      likes: clampInt(ext.x.likes, 0, 1_000_000_000, 0),
+      replies: clampInt(ext.x.replies, 0, 1_000_000_000, 0),
+      reposts: clampInt(ext.x.reposts, 0, 1_000_000_000, 0),
+      media: (Array.isArray(ext.x.media) ? ext.x.media : []).slice(0, 4).map(item => ({
+        type: ['photo', 'video', 'animated_gif'].includes(item?.type) ? item.type : 'photo',
+        url: safeHttpHref(item?.url, 'X 媒体') || '',
+        previewUrl: safeHttpHref(item?.previewUrl, 'X 媒体预览') || '',
+        width: clampInt(item?.width, 1, 10000, 0) || undefined,
+        height: clampInt(item?.height, 1, 10000, 0) || undefined,
+      })).filter(item => item.url),
+    });
+    output.x = x;
+  }
   const cleanDouban = (item, isBook) => {
     const clean = {
       id: String(item.id || '').replace(/\D/g, '').slice(0, 20),
@@ -1175,6 +1271,16 @@ async function serveDoubanCover(request) {
     if (!response.ok || !contentType.startsWith('image/')) return new Response('Cover unavailable', { status: 502 });
     return new Response(response.body, { headers: { 'content-type': contentType, 'cache-control': 'public, max-age=604800, stale-while-revalidate=86400', 'x-content-type-options': 'nosniff' } });
   } catch { return new Response('Cover unavailable', { status: 502 }); }
+}
+async function serveXMedia(request) {
+  const source = validHttpUrl(new URL(request.url).searchParams.get('url'));
+  if (!source || !/(^|\.)twimg\.com$/.test(source.hostname)) return new Response('Not Found', { status: 404 });
+  try {
+    const response = await fetch(source.href, { redirect: 'manual', signal: AbortSignal.timeout(8000) });
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || !contentType.startsWith('image/')) return new Response('X media unavailable', { status: 502 });
+    return new Response(response.body, { headers: { 'content-type': contentType, 'cache-control': 'public, max-age=604800, stale-while-revalidate=86400', 'x-content-type-options': 'nosniff' } });
+  } catch { return new Response('X media unavailable', { status: 502 }); }
 }
 async function externalInfo(request, env, headers) {
   const access = await requireUser(request, env, headers);
@@ -1564,7 +1670,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseXEmbedUrl, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;
@@ -1626,6 +1732,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/douban-cover') return serveDoubanCover(request);
+    if (url.pathname === '/x-media') return serveXMedia(request);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env, ctx);
     if (url.pathname.startsWith('/upload/')) {
       const key = url.pathname.slice('/upload/'.length);

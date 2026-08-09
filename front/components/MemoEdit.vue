@@ -88,7 +88,8 @@
       <upload-image-preview :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
       <music-preview v-if="state.music && (state.music.id || state.music.url)" v-bind="state.music"/>
       <div v-if="state.x.url && state.x.id" class="relative">
-        <x-preview v-bind="state.x"/>
+        <x-preview v-if="state.x.text" v-bind="state.x"/>
+        <p v-else class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:bg-gray-800">X 原帖将在发表时抓取并保存为静态卡片。</p>
         <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除 X 嵌入" @click="updateX({})"/>
       </div>
       <div v-for="(book, index) in doubanBooks" :key="(book.id || index) + '-b'" class="relative">
@@ -210,7 +211,7 @@ const updateMusic = (music: MusicDTO) => {
 }
 
 const updateX = (x: XEmbed) => {
-  state.x = { url: x.url || '', id: x.id || '' }
+  state.x = { ...x, url: x.url || '', id: x.id || '' }
 }
 
 const handleVideo = (video: Video) => {
