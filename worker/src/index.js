@@ -753,7 +753,10 @@ async function saveMemo(request, env, headers) {
   let safeExt;
   try {
     safeExt = sanitizeMemoExt(body.ext);
-    if (safeExt.x?.id && !safeExt.x.text) safeExt.x = await fetchXSnapshot(safeExt.x);
+    if (safeExt.x?.id) {
+      const needsRefresh = !safeExt.x.text || !safeExt.x.avatar || (String(safeExt.x.text).includes('pic.twitter.com') && !safeExt.x.media?.length);
+      if (needsRefresh) safeExt.x = await fetchXSnapshot(safeExt.x);
+    }
   } catch (error) { return json(fail(error.message), 400, headers); }
   const ext = JSON.stringify(safeExt);
   const values = [content, imgs.join(','), String(body.location || '').slice(0, 200), externalUrl?.href || '', String(body.externalTitle || '').slice(0, 300), externalFavicon || '/favicon.png', ext, showType, tagsString(body.tags)];
@@ -892,7 +895,9 @@ function xSyndicationToken(id) {
 }
 function xMediaSnapshot(data) {
   const source = Array.isArray(data?.mediaDetails) ? data.mediaDetails : (Array.isArray(data?.media) ? data.media : []);
-  return source.slice(0, 4).map(item => ({
+  const photoFallback = Array.isArray(data?.photos) ? data.photos.map(item => ({ ...item, type: 'photo', media_url_https: item.url })) : [];
+  const entries = source.length ? source : photoFallback;
+  return entries.slice(0, 4).map(item => ({
     type: ['photo', 'video', 'animated_gif'].includes(item.type) ? item.type : 'photo',
     url: String(item.media_url_https || item.media_url || item.url || '').slice(0, 2048),
     previewUrl: String(item.media_url_https || item.media_url || item.preview_image_url || item.url || '').slice(0, 2048),
@@ -905,7 +910,9 @@ function decodeXHtml(value) {
 }
 function xSnapshotFromSyndication(data, x) {
   const user = data?.user || data?.author || {};
-  const text = String(data?.text || data?.full_text || '').trim();
+  const rawText = String(data?.text || data?.full_text || '').trim();
+  const mediaLinks = new Set((Array.isArray(data?.mediaDetails) ? data.mediaDetails : []).map(item => String(item.url || '').trim()).filter(Boolean));
+  const text = rawText.replace(/\s+https?:\/\/t\.co\/[A-Za-z0-9_]+/g, match => mediaLinks.has(match.trim()) ? '' : match).trim();
   if (!text) return null;
   return {
     ...x,

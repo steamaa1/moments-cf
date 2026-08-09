@@ -29,11 +29,11 @@ assert.deepEqual(parseXEmbedUrl('https://mobile.twitter.com/example/status/18812
 assert.throws(() => parseXEmbedUrl('https://x.com/example/status/not-a-number'), /单条 X/);
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => new Response(JSON.stringify({
-  text: '这是保存到本站的 X 原帖正文',
+  text: '这是保存到本站的 X 原帖正文 https://t.co/photo123',
   created_at: 'Sun Aug 09 04:00:00 +0000 2026',
   user: { name: '测试作者', screen_name: 'tester', verified: true, profile_image_url_https: 'https://pbs.twimg.com/profile.jpg' },
   favorite_count: 321, reply_count: 12, retweet_count: 45,
-  mediaDetails: [{ type: 'photo', media_url_https: 'https://pbs.twimg.com/media/photo.jpg', original_info: { width: 1200, height: 800 } }],
+  mediaDetails: [{ type: 'photo', url: 'https://t.co/photo123', media_url_https: 'https://pbs.twimg.com/media/photo.jpg', original_info: { width: 1200, height: 800 } }],
 }), { status: 200, headers: { 'content-type': 'application/json' } });
 try {
   const xSnapshot = await fetchXSnapshot(parseXEmbedUrl('https://x.com/tester/status/1881234567890123456'));
