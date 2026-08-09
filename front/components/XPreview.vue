@@ -5,7 +5,7 @@
       <div v-else class="x-card__avatar x-card__avatar--fallback" aria-hidden="true">𝕏</div>
       <div class="min-w-0 flex-1 leading-tight">
         <div class="flex items-center gap-1"><span class="truncate font-bold">{{ authorName || 'X 用户' }}</span><span v-if="verified" class="x-card__verified" aria-label="已认证">✓</span></div>
-        <div class="mt-1 flex items-center gap-1 text-gray-500"><span v-if="authorUsername" class="truncate">@{{ authorUsername }}</span><span v-if="authorUsername && createdAt">·</span><time v-if="createdAt" :datetime="createdAt">{{ createdAt }}</time></div>
+        <div class="mt-1 flex items-center gap-1 text-gray-500"><span v-if="authorUsername" class="truncate">@{{ authorUsername }}</span><span v-if="authorUsername && createdAt">·</span><time v-if="createdAt" class="whitespace-nowrap" :datetime="createdAt">{{ formatDate(createdAt) }}</time></div>
       </div>
       <a :href="url" target="_blank" rel="noopener noreferrer" class="x-card__logo" aria-label="在 X 中查看原帖">𝕏</a>
     </header>
@@ -18,7 +18,7 @@
     </div>
     <footer class="x-card__footer">
       <div v-if="likes || replies || reposts" class="x-card__metrics" aria-label="互动数据">
-        <span>♡ {{ formatCount(likes) }}</span><span>↻ {{ formatCount(reposts) }}</span><span>◌ {{ formatCount(replies) }}</span>
+        <span v-if="likes">♡ {{ formatCount(likes) }}</span><span v-if="reposts">↻ {{ formatCount(reposts) }}</span><span v-if="replies">◌ {{ formatCount(replies) }}</span>
       </div>
       <a :href="url" target="_blank" rel="noopener noreferrer" class="x-card__origin">在 X 中查看 <UIcon name="i-carbon-launch" class="h-3.5 w-3.5"/></a>
     </footer>
@@ -34,6 +34,14 @@ const mediaSource = (value?: string) => value ? `/x-media?url=${encodeURICompone
 const formatCount = (value?: number) => {
   const count = Number(value || 0)
   return count >= 10000 ? `${(count / 10000).toFixed(count >= 100000 ? 0 : 1)}万` : String(count)
+}
+const formatDate = (value?: string) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const now = new Date().getFullYear()
+  return `${year === now ? '' : year + '年'}${date.getMonth() + 1}月${date.getDate()}日`
 }
 </script>
 

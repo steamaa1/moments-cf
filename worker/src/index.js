@@ -754,7 +754,8 @@ async function saveMemo(request, env, headers) {
   try {
     safeExt = sanitizeMemoExt(body.ext);
     if (safeExt.x?.id) {
-      const needsRefresh = !safeExt.x.text || !safeExt.x.avatar || (String(safeExt.x.text).includes('pic.twitter.com') && !safeExt.x.media?.length);
+      const metricsAllZero = !safeExt.x.likes && !safeExt.x.replies && !safeExt.x.reposts;
+      const needsRefresh = !safeExt.x.text || !safeExt.x.avatar || metricsAllZero || (String(safeExt.x.text).includes('pic.twitter.com') && !safeExt.x.media?.length);
       if (needsRefresh) safeExt.x = await fetchXSnapshot(safeExt.x);
     }
   } catch (error) { return json(fail(error.message), 400, headers); }
@@ -924,8 +925,9 @@ function xSnapshotFromSyndication(data, x) {
     text: text.slice(0, 10000),
     createdAt: String(data?.created_at || '').slice(0, 100),
     likes: clampInt(data?.favorite_count || data?.like_count, 0, 1_000_000_000, 0),
-    replies: clampInt(data?.reply_count, 0, 1_000_000_000, 0),
-    reposts: clampInt(data?.retweet_count || data?.retweet_count, 0, 1_000_000_000, 0),
+    replies: clampInt(data?.conversation_count || data?.reply_count, 0, 1_000_000_000, 0),
+    // X syndication 不返回转发数；缺少时置 undefined，由 JSON 序列化省略，前端不显示
+    reposts: undefined,
     media: xMediaSnapshot(data),
   };
 }

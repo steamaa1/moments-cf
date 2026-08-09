@@ -170,6 +170,8 @@ assert.match(xPreview, /authorUsername/);
 assert.match(xPreview, /x-card__media/);
 assert.match(xPreview, /x-media\?url=/);
 assert.match(xPreview, /formatCount/);
+assert.match(xPreview, /formatDate/);
+assert.match(xPreview, /whitespace-nowrap/);
 assert.match(xPreview, /在 X 中查看/);
 assert.match(xPreview, /loading="lazy"/);
 assert.doesNotMatch(xPreview, /<iframe|widgets\.js|Nitter|nitter|CF-IPCountry|sessionStorage/);

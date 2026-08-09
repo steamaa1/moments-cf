@@ -32,7 +32,7 @@ globalThis.fetch = async () => new Response(JSON.stringify({
   text: '这是保存到本站的 X 原帖正文 https://t.co/photo123',
   created_at: 'Sun Aug 09 04:00:00 +0000 2026',
   user: { name: '测试作者', screen_name: 'tester', verified: true, profile_image_url_https: 'https://pbs.twimg.com/profile.jpg' },
-  favorite_count: 321, reply_count: 12, retweet_count: 45,
+  favorite_count: 321, conversation_count: 12,
   mediaDetails: [{ type: 'photo', url: 'https://t.co/photo123', media_url_https: 'https://pbs.twimg.com/media/photo.jpg', original_info: { width: 1200, height: 800 } }],
 }), { status: 200, headers: { 'content-type': 'application/json' } });
 try {
@@ -44,7 +44,7 @@ try {
   assert.equal(xSnapshot.media[0].width, 1200);
   assert.equal(xSnapshot.likes, 321);
   assert.equal(xSnapshot.replies, 12);
-  assert.equal(xSnapshot.reposts, 45);
+  assert.equal(xSnapshot.reposts, undefined);
 } finally { globalThis.fetch = originalFetch; }
 
 const movieHtml = `<!doctype html><html><head>
