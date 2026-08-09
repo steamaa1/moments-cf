@@ -949,16 +949,29 @@ function xSnapshotFromOembed(data, x) {
     media: [],
   };
 }
+function xSyndicationUrl(x) {
+  const features = [
+    'tfw_timeline_list:', 'tfw_follower_count_sunset:true', 'tfw_tweet_edit_backend:on',
+    'tfw_refsrc_session:on', 'tfw_fosnr_soft_interventions_enabled:on',
+    'tfw_show_birdwatch_pivots_enabled:on', 'tfw_show_business_verified_badge:on',
+    'tfw_duplicate_scribes_to_settings:on', 'tfw_use_profile_image_shape_enabled:on',
+    'tfw_show_blue_verified_badge:on', 'tfw_legacy_timeline_sunset:true', 'tfw_tweet_edit_frontend:on',
+  ].join(',');
+  return `https://cdn.syndication.twimg.com/tweet-result?id=${encodeURIComponent(x.id)}&token=${encodeURIComponent(xSyndicationToken(x.id))}&lang=zh-cn&features=${encodeURIComponent(features)}`;
+}
 async function fetchXSnapshot(x) {
-  try {
-    const token = xSyndicationToken(x.id);
-    const syndication = await fetch(`https://cdn.syndication.twimg.com/tweet-result?id=${encodeURIComponent(x.id)}&token=${encodeURIComponent(token)}&lang=zh-cn`);
-    if (syndication.ok) {
-      const snapshot = xSnapshotFromSyndication(await syndication.json(), x);
-      if (snapshot) return snapshot;
-    }
-  } catch (error) { console.warn('X syndication snapshot failed', error); }
-  const oembed = await fetch(`https://publish.twitter.com/oembed?url=${encodeURIComponent(x.url)}&dnt=true`);
+  const headers = { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const syndication = await fetch(xSyndicationUrl(x), { headers, signal: AbortSignal.timeout(10000) });
+      if (syndication.ok) {
+        const data = await syndication.json();
+        const snapshot = xSnapshotFromSyndication(data, x);
+        if (snapshot) return snapshot;
+      }
+    } catch (error) { console.warn(`X syndication snapshot failed (attempt ${attempt + 1})`, error); }
+  }
+  const oembed = await fetch(`https://publish.twitter.com/oembed?url=${encodeURIComponent(x.url)}&dnt=true`, { headers, signal: AbortSignal.timeout(10000) });
   if (!oembed.ok) throw new Error(`X 原帖获取失败（${oembed.status}）`);
   const snapshot = xSnapshotFromOembed(await oembed.json(), x);
   if (!snapshot) throw new Error('X 原帖没有可保存的文本内容');
