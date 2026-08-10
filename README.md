@@ -60,8 +60,8 @@
 | 项目 | 值 |
 | --- | --- |
 | Root directory | `worker` |
-| Build command | `npm run build:cf` |
-| Deploy command | `npm run deploy:cf` |
+| Build command | `npm run build` |
+| Deploy command | `npm run deploy` |
 
 部署脚本会按名称查询 D1 `moments-db`，自动应用 Migration、设置 R2 CORS 并部署 Worker。**构建 API Token** 至少需要 D1 Read/Write、Workers Scripts Edit 和 R2 权限。
 
