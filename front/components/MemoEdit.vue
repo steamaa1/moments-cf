@@ -51,9 +51,10 @@
 
       <UContextMenu v-model="isOpen" :virtual-element="virtualElement">
         <div class="px-2 py-1 flex flex-col gap-2 text-xs">
-          <div class="mb-2 text-gray-300">点击标签插入</div>
-          <div v-for="(tag,index) in existTags" :key="index" class="cursor-pointer">
-            <UBadge size="xs" color="gray" variant="solid" @click="clickTag(tag)">{{ tag }}</UBadge>
+          <div class="mb-2 text-gray-300" tabindex="0">点击标签插入</div>
+          <div v-if="!existTags.length" class="text-gray-400" tabindex="0">暂无标签</div>
+          <div v-for="(tag,index) in existTags" :key="index" class="cursor-pointer" role="button" tabindex="0" @click="clickTag(tag)" @keydown.enter.prevent="clickTag(tag)">
+            <UBadge size="xs" color="gray" variant="solid">{{ tag }}</UBadge>
           </div>
         </div>
       </UContextMenu>

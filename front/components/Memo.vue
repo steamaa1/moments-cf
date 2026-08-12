@@ -193,9 +193,16 @@
               }"
             >
               <div
-                class="flex items-center justify-center pt-4 text-gray-500 dark:text-white"
+                class="flex items-center justify-between pt-4 pl-4 pr-2 text-gray-500 dark:text-white"
               >
-                基本操作
+                <div>基本操作</div>
+                <UButton
+                  color="gray"
+                  variant="ghost"
+                  icon="i-carbon-close"
+                  aria-label="关闭"
+                  @click="moreToolbar = false"
+                />
               </div>
               <div
                 class="flex items-center justify-center gap-8 p-4 text-gray-500 dark:text-white h-[200px]"
@@ -203,7 +210,11 @@
                 <template v-if="global.userinfo.id === 1">
                   <div
                     class="flex flex-col gap-1 cursor-pointer items-center"
+                    role="button"
+                    tabindex="0"
                     @click="setPinned(item.id)"
+                    @keydown.enter.prevent="setPinned(item.id)"
+                    @keydown.space.prevent="setPinned(item.id)"
                   >
                     <span
                       class="flex items-center bg-gray-200/75 dark:bg-gray-800/75 p-3 rounded-full"
@@ -218,7 +229,11 @@
                 <template v-if="global && global.userinfo.id === item.userId">
                   <div
                     class="flex flex-col gap-1 cursor-pointer items-center"
+                    role="button"
+                    tabindex="0"
                     @click="go2Edit(item.id)"
+                    @keydown.enter.prevent="go2Edit(item.id)"
+                    @keydown.space.prevent="go2Edit(item.id)"
                   >
                     <span
                       class="flex items-center bg-gray-200/75 dark:bg-gray-800/75 p-3 rounded-full"
@@ -240,6 +255,8 @@
                   >
                     <div
                       class="flex flex-col gap-1 cursor-pointer items-center"
+                      role="button"
+                      tabindex="0"
                     >
                       <span
                         class="flex items-center bg-gray-200/75 dark:bg-gray-800/75 p-3 rounded-full"
