@@ -231,4 +231,12 @@ const uploadPreviewImg = await readFile(new URL('../front/components/UploadImage
 assert.match(uploadPreviewImg, /loading="lazy"/, '动态图片应懒加载');
 const mdUtilsSrc = await readFile(new URL('../front/utils/index.ts', import.meta.url), 'utf8');
 assert.match(mdUtilsSrc, /export function loadMusicAssets/, '应导出音乐资源按需加载函数');
+
+// 状态 emoji 与首页加载文案
+assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
+assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
+assert.match(statusIcon, /customIcon/, '自定义状态应记录 emoji');
+const indexPage = await readFile(new URL('../front/pages/index.vue', import.meta.url), 'utf8');
+assert.match(indexPage, /客官勿急 正在加载中…/, '加载中应显示提示文案');
+assert.match(indexPage, /const loading = ref\(false\)/, '应有加载状态标记');
 console.log('Phase 7 integration tests: PASS');

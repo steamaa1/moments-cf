@@ -43,6 +43,12 @@
             <UInput v-model="custom" placeholder="输入状态文字，如：在看海" @keyup.enter="useCustom"/>
             <UButton variant="soft" @click="useCustom">使用</UButton>
           </div>
+          <div class="mt-2 flex flex-wrap items-center gap-1">
+            <button v-for="e in quickEmojis" :key="e" type="button" class="status-quick-emoji" :class="{ active: customIcon === e }" :title="e" @click="customIcon = e">{{ e }}</button>
+            <UButton size="xs" color="gray" variant="soft" icon="i-carbon-smile-add" :label="emojiOpen ? '收起' : '更多'" @click="emojiOpen = !emojiOpen"/>
+          </div>
+          <Emoji v-if="emojiOpen" class="mt-2" @selected="onEmojiSelected"/>
+          <p class="mt-1 text-xs text-gray-500">已选 emoji：<span class="text-base align-middle">{{ customIcon || '💬' }}</span></p>
         </UFormGroup>
         <UFormGroup label="备注（可选）" :ui="{label:{base:'font-bold'}}">
           <UInput v-model="remark" placeholder="附加说明，如：和朋友一起"/>
@@ -57,6 +63,7 @@
 import type { UserStatusVO } from '~/types'
 import { useGlobalState } from '~/store'
 import { toast } from 'vue-sonner'
+import Emoji from '~/components/Emoji.vue'
 
 const props = withDefaults(defineProps<{ status?: UserStatusVO | null; userId: number; editable?: boolean }>(), { status: null, editable: false })
 const emit = defineEmits<{ refresh: [] }>()
@@ -73,6 +80,13 @@ const localStatus = ref<UserStatusVO | null>(props.status)
 watch(() => props.status, value => { localStatus.value = value || null })
 const selected = ref<{ icon: string; content: string } | null>(props.status ? { icon: props.status.icon || '', content: props.status.content } : null)
 const custom = ref('')
+const customIcon = ref('')
+const emojiOpen = ref(false)
+const quickEmojis = ['😀', '😄', '🤔', '💻', '🏃', '🍚', '🎧', '😴', '❤️', '🔥']
+function onEmojiSelected(icon: string) {
+  customIcon.value = icon
+  emojiOpen.value = false
+}
 const remark = ref(props.status?.remark || '')
 const duration = ref(24)
 const saving = ref(false)
@@ -87,7 +101,7 @@ function pick(item: { icon: string; content: string }) { selected.value = item; 
 function useCustom() {
   const content = custom.value.trim()
   if (!content) { toast.error('请输入状态内容'); return }
-  selected.value = { icon: '', content }
+  selected.value = { icon: customIcon.value, content }
 }
 async function save(close: Function) {
   if (!selected.value) { toast.error('请选择或输入状态'); return }
@@ -122,6 +136,9 @@ async function clear(close: Function) {
 .status-item { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 52px; border-radius: 8px; transition: background 120ms ease, transform 120ms ease; }
 .status-item-emoji { font-size: 18px; line-height: 1; }
 .status-item-text { max-width: 100%; overflow: hidden; font-size: 10px; line-height: 1.2; color: #52525b; }
+.status-quick-emoji { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; font-size: 16px; transition: background 120ms ease, transform 120ms ease; }
+.status-quick-emoji:hover { background: rgba(159,200,74,.16); transform: scale(1.1); }
+.status-quick-emoji.active { background: rgba(159,200,74,.22); box-shadow: inset 0 0 0 1.5px #9fc84a; }
 :global(.dark) .status-item-text { color: #d4d4d8; }
 .status-item:hover { background: rgba(159,200,74,.16); transform: scale(1.06); }
 .status-item.active { background: rgba(159,200,74,.22); box-shadow: inset 0 0 0 1.5px #9fc84a; }

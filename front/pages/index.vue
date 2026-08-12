@@ -3,7 +3,8 @@
   <div class="flex flex-col divide-y divide-[#C0BEBF]/20 ">
     <Memo v-bind:memo="m" v-for="m in memos" :key="m.id" />
   </div>
-  <div ref="loadMoreEle" class="text-xs text-center text-gray-500 py-2 cursor-pointer" @click="loadMore" v-if="hasNext">点击加载更多</div>
+  <div v-if="loading" class="text-xs text-center text-gray-500 py-2">客官勿急 正在加载中…</div>
+  <div ref="loadMoreEle" class="text-xs text-center text-gray-500 py-2 cursor-pointer" @click="loadMore" v-else-if="hasNext">点击加载更多</div>
   <div class="text-xs text-center text-gray-500 py-2" v-else>已经到底啦</div>
 </template>
 
@@ -24,6 +25,7 @@ watch(targetIsVisible, async (visible) => {
   }
 })
 const hasNext = ref(false)
+const loading = ref(false)
 const state = reactive({
   page: 1,
   size: 10,
@@ -35,25 +37,37 @@ onMounted(async () => {
 })
 
 const reload = async () => {
+  if (loading.value) return
+  loading.value = true
   state.page = 1
-  const res = await useMyFetch<{
-    list: Array<MemoVO>,
-    total: number,
-    hasNext: boolean
-  }>('/memo/list', state)
-  memos.value = res.list
-  hasNext.value = res.hasNext
+  try {
+    const res = await useMyFetch<{
+      list: Array<MemoVO>,
+      total: number,
+      hasNext: boolean
+    }>('/memo/list', state)
+    memos.value = res.list
+    hasNext.value = res.hasNext
+  } finally {
+    loading.value = false
+  }
 }
 
 const loadMore = async () => {
+  if (loading.value) return
+  loading.value = true
   state.page = state.page + 1
-  const res = await useMyFetch<{
-    list: Array<MemoVO>,
-    total: number,
-    hasNext: boolean
-  }>('/memo/list', state)
-  memos.value = [...memos.value, ...res.list]
-  hasNext.value = res.hasNext
+  try {
+    const res = await useMyFetch<{
+      list: Array<MemoVO>,
+      total: number,
+      hasNext: boolean
+    }>('/memo/list', state)
+    memos.value = [...memos.value, ...res.list]
+    hasNext.value = res.hasNext
+  } finally {
+    loading.value = false
+  }
 }
 
 memoReloadEvent.on(async () => {
