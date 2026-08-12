@@ -111,7 +111,7 @@
       <NuxtLink v-if="sysConfig.enableAbout && $route.path !== '/about'" to="/about" title="关于">
         <UIcon name="i-carbon-information" class="text-[#9fc84a] w-5 h-5 cursor-pointer"/>
       </NuxtLink>
-      <NuxtLink v-if="$route.path === '/'" to="/friend" title="友情链接">
+      <NuxtLink v-if="$route.path !== '/friend'" to="/friend" title="友情链接">
         <UIcon
           name="i-carbon-friendship"
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"

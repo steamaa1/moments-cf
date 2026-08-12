@@ -4,7 +4,7 @@
 
 本分支不是 Docker/SQLite 版本。需要原版自托管方案时，请查看上游仓库的 `dev` 分支。
 
-> 🎮 在线演示：<https://wb.353536.xyz>
+> 🎮 在线演示：<https://wb.me-i.top>
 
 >本项目使用**GPT-5.6-Sol** 和 **DeepSeek-V4-Flash**进行开发
 

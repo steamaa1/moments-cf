@@ -98,7 +98,7 @@
         <span class="text-sm mt-1">关于</span>
       </div>
       <div
-        v-if="$route.path == '/'"
+        v-if="$route.path !== '/friend'"
         class="flex flex-col items-center"
         @click="navigate('/friend')"
         title="友情链接"

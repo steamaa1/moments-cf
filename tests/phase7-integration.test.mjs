@@ -212,4 +212,10 @@ assert.match(template, /run_worker_first = \["\/\*"\]/);
 const userDetail = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userDetail, /watch\(profile/);
 assert.match(userDetail, /canonical/);
+
+// 友链入口在非友链页（关于页/系统页等）均应显示，不限于首页
+const headerNav = await readFile(new URL('../front/components/Header.vue', import.meta.url), 'utf8');
+assert.match(headerNav, /\$route\.path !== '\/friend'/, '桌面端友链入口应在非友链页显示');
+const mobileNav = await readFile(new URL('../front/components/MobileNav.vue', import.meta.url), 'utf8');
+assert.match(mobileNav, /\$route\.path !== '\/friend'/, '移动端友链入口应在非友链页显示');
 console.log('Phase 7 integration tests: PASS');
