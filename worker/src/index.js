@@ -39,6 +39,8 @@ const DEFAULT_CONFIG = {
   commentOrder: 'desc',
   timeFormat: 'timeAgo',
   enableRegister: false,
+  seoDescription: '',
+  seoKeywords: '',
   backupIntervalDays: 7,
   backupRetentionDays: 90,
   enableD1Backup: true,
@@ -73,7 +75,7 @@ const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
   'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength', 'telegramBotUsername', 'friendNotice', 'friendEmail',
-  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister',
+  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister', 'seoDescription', 'seoKeywords',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
 const MAX_PBKDF2_ITERATIONS = 100000;
@@ -333,6 +335,8 @@ async function saveConfig(request, env, headers) {
   config.enableTurnstile = Boolean(body.enableTurnstile);
   config.turnstileSiteKey = String(body.turnstileSiteKey || '').trim().slice(0, 200);
   config.turnstileSecretKey = String(body.turnstileSecretKey || previousConfig.turnstileSecretKey || '').trim().slice(0, 300);
+  config.seoDescription = String(body.seoDescription || '').trim().slice(0, 300);
+  config.seoKeywords = String(body.seoKeywords || '').trim().slice(0, 500);
   config.enableD1Backup = body.enableD1Backup !== false;
   config.enableTelegram = body.enableTelegram === true;
   config.telegramBotUsername = String(body.telegramBotUsername || '').trim().replace(/^@/, '').slice(0, 64);
@@ -831,6 +835,29 @@ async function listTags(request, env, headers) {
   return json(ok({ tags }), 200, headers);
 }
 function escapeXml(value) { return String(value || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;'); }
+// 静态 SEO 默认文案：与 front/site.config.ts 保持一致，供爬虫读取兜底。
+const DEFAULT_SEO = {
+  title: '极简朋友圈',
+  description: '极简朋友圈 - 记录生活的每个瞬间，分享日常、心情与见闻的个人博客。',
+  keywords: '朋友圈, 动态, 博客, 极简朋友圈, 个人博客, 生活记录',
+};
+// 把后台配置的 SEO 信息动态注入 SPA index.html，
+// 让不执行 JS 的爬虫（Bing 等）也能读到站点标题/描述/关键词。
+export function injectSeoMeta(html, config) {
+  const title = escapeXml(String(config?.title || DEFAULT_SEO.title));
+  const description = escapeXml(String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${config.title || DEFAULT_SEO.title}` : DEFAULT_SEO.description)));
+  const keywords = escapeXml(String(config?.seoKeywords || DEFAULT_SEO.keywords));
+  let output = String(html || '');
+  output = output.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
+  output = output.replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${description}">`);
+  output = output.replace(/<meta name="keywords"[^>]*>/, `<meta name="keywords" content="${keywords}">`);
+  output = output.replace(/<meta property="og:site_name"[^>]*>/, `<meta property="og:site_name" content="${title}">`);
+  output = output.replace(/<meta property="og:title"[^>]*>/, `<meta property="og:title" content="${title}">`);
+  output = output.replace(/<meta property="og:description"[^>]*>/, `<meta property="og:description" content="${description}">`);
+  output = output.replace(/<meta name="twitter:title"[^>]*>/, `<meta name="twitter:title" content="${title}">`);
+  output = output.replace(/<meta name="twitter:description"[^>]*>/, `<meta name="twitter:description" content="${description}">`);
+  return output;
+}
 function rssText(value) { return String(value || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[>#*_`~-]/g, '').trim(); }
 async function sitemap(request, env) {
   const host = new URL(request.url).origin;
@@ -1533,7 +1560,7 @@ async function migrationImport(request, env, headers) {
     const current = parseConfig(old?.content);
     let legacy = rows[0]?.content ?? rows[0] ?? {};
     if (typeof legacy === 'string') { try { legacy = JSON.parse(legacy); } catch { legacy = {}; } }
-    const keys = ['title','favicon','beiAnNo','css','js','rss','enableAutoLoadNextPage','enableComment','maxCommentLength','memoMaxHeight','commentOrder','timeFormat','enableRegister'];
+    const keys = ['title','favicon','beiAnNo','css','js','rss','enableAutoLoadNextPage','enableComment','maxCommentLength','memoMaxHeight','commentOrder','timeFormat','enableRegister','seoDescription','seoKeywords'];
     for (const key of keys) if (Object.hasOwn(legacy, key)) current[key] = legacy[key];
     current.beiAnNo = sanitizeSafeHtml(current.beiAnNo);
     current.enableS3 = false;
@@ -1795,8 +1822,13 @@ export default {
     // /sitemap.xml、/rss 等动态路径，导致访问者拿到 Nuxt 404 页
     if (assetsResponse.headers.get('content-type')?.includes('text/html')) {
       const headers = new Headers(assetsResponse.headers);
+      headers.set('content-type', 'text/html; charset=UTF-8');
       headers.set('cache-control', 'no-store');
-      return new Response(assetsResponse.body, { status: assetsResponse.status, headers });
+      // 注入后台配置的 SEO meta，让不执行 JS 的爬虫读取到动态标题/描述/关键词
+      const row = env.DB ? await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : null;
+      const config = parseConfig(row?.content);
+      const injected = injectSeoMeta(await assetsResponse.text(), config);
+      return new Response(injected, { status: assetsResponse.status, headers });
     }
     return assetsResponse;
   },

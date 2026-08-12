@@ -78,7 +78,8 @@ if (currentProfile) {
 }
 const { y } = useWindowScroll();
 const seoTitle = sysConfigVO.title || site.title;
-const seoDescription = sysConfigVO.slogan ? `${sysConfigVO.slogan} · ${seoTitle}` : site.description;
+const seoDescription = sysConfigVO.seoDescription || (sysConfigVO.slogan ? `${sysConfigVO.slogan} · ${seoTitle}` : site.description);
+const seoKeywords = sysConfigVO.seoKeywords || site.keywords;
 useHead({
   title: seoTitle,
   link: [
@@ -100,7 +101,7 @@ useHead({
   ],
   meta: [
     { name: "description", content: seoDescription },
-    { name: "keywords", content: `${seoTitle}, 朋友圈, 动态, 博客` },
+    { name: "keywords", content: seoKeywords },
     { property: "og:site_name", content: seoTitle },
     { property: "og:type", content: "website" },
     { property: "og:title", content: seoTitle },

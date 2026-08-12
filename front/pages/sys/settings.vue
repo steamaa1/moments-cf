@@ -11,6 +11,12 @@
     <UFormGroup label="网站标题" name="title" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.title"/>
     </UFormGroup>
+    <UFormGroup label="SEO 描述" name="seoDescription" :ui="{label:{base:'font-bold'}}" help="搜索引擎展示的站点描述，留空则使用签名或默认文案">
+      <UInput v-model="state.seoDescription" placeholder="例如：记录生活的每个瞬间…"/>
+    </UFormGroup>
+    <UFormGroup label="SEO 关键词" name="seoKeywords" :ui="{label:{base:'font-bold'}}" help="逗号分隔，留空使用默认">
+      <UInput v-model="state.seoKeywords" placeholder="朋友圈, 动态, 博客"/>
+    </UFormGroup>
     <UFormGroup label="Favicon" name="favicon"
                 :ui="{label:{base:'font-bold'}}">
       <UInput type="file" size="sm" icon="i-heroicons-folder" accept="image/*" @change="uploadFavicon"/>
@@ -268,6 +274,8 @@ const state = reactive({
   timeFormat: 'timeAgo',
   adminUserName: "admin",
   title: "极简朋友圈",
+  seoDescription: "",
+  seoKeywords: "",
   favicon: "/favicon.ico",
   beiAnNo: "",
   css: "",
