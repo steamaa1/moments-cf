@@ -208,7 +208,7 @@ assert.match(memoDetail, /canonical/);
 const catchAll = await readFile(new URL('../front/pages/[...slug].vue', import.meta.url), 'utf8');
 assert.match(catchAll, /页面不存在/);
 assert.doesNotMatch(catchAll, /isSeoPath|window\.location|sessionStorage|fetch\(raw\)/);
-assert.match(template, /run_worker_first = \["\/api\/\*", "\/upload\/\*", "\/douban-cover", "\/x-media", "\/sitemap\.xml", "\/rss", "\/robots\.txt"\]/);
+assert.match(template, /run_worker_first = \["\/\*"\]/);
 const userDetail = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userDetail, /watch\(profile/);
 assert.match(userDetail, /canonical/);
