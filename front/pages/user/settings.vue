@@ -18,16 +18,16 @@
       <UInput v-model="state.username" disabled />
     </UFormGroup>
     <UFormGroup label="昵称" name="nickname" :ui="{label:{base:'font-bold'}}">
-      <UInput v-model="state.nickname"/>
+      <UInput v-model="state.nickname" autocomplete="nickname"/>
     </UFormGroup>
     <UFormGroup label="心情状态" name="slogan" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.slogan"/>
     </UFormGroup>
     <UFormGroup label="密码" name="slogan" :ui="{label:{base:'font-bold'}}">
-      <UInput v-model="state.password" type="password" placeholder="留空则不修改密码"/>
+      <UInput v-model="state.password" type="password" placeholder="留空则不修改密码" autocomplete="new-password"/>
     </UFormGroup>
     <UFormGroup label="邮箱" name="email" :ui="{label:{base:'font-bold'}}">
-      <UInput v-model="state.email" type="email" placeholder="若管理员启用了邮件通知，将在收到评论时发送邮件通知"/>
+      <UInput v-model="state.email" type="email" placeholder="若管理员启用了邮件通知，将在收到评论时发送邮件通知" autocomplete="email"/>
     </UFormGroup>
     <UFormGroup label="Telegram User ID" name="telegramChatId" :ui="{label:{base:'font-bold'}}">
       <UInput v-model="state.telegramChatId" placeholder="向 @userinfobot 发送任意消息获取，填数字 ID"/>

@@ -7,11 +7,11 @@
      <p class="text-center text-2xl font-sans"> 登录</p>
      <UForm class="space-y-4" size="sm" :state="state" @keyup.enter="doLogin" >
        <UFormGroup label="用户名" name="email">
-         <UInput v-model="state.username"/>
+         <UInput v-model="state.username" autocomplete="username"/>
        </UFormGroup>
 
        <UFormGroup label="密码" name="password">
-         <UInput type="password" v-model="state.password"/>
+         <UInput type="password" v-model="state.password" autocomplete="current-password"/>
        </UFormGroup>
        <UButtonGroup size="sm">
          <UButton @click="doLogin" :disabled="pending" :loading="pending">登录</UButton>

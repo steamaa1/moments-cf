@@ -7,14 +7,14 @@
       <p class="text-center text-2xl font-sans">注册用户</p>
       <UForm class="space-y-4" size="sm" :state="state">
         <UFormGroup label="用户名" name="email">
-          <UInput v-model="state.username"/>
+          <UInput v-model="state.username" autocomplete="username"/>
         </UFormGroup>
 
         <UFormGroup label="密码" name="password">
-          <UInput type="password" v-model="state.password"/>
+          <UInput type="password" v-model="state.password" autocomplete="new-password"/>
         </UFormGroup>
         <UFormGroup label="重复密码" name="repeatPassword">
-          <UInput type="password" v-model="state.repeatPassword"/>
+          <UInput type="password" v-model="state.repeatPassword" autocomplete="new-password"/>
         </UFormGroup>
         <UButtonGroup size="sm">
           <UButton @click="doReg" :disabled="pending" :loading="pending">注册</UButton>

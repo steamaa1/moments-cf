@@ -455,6 +455,10 @@ async function fileExists(request, env, headers) {
   return json(ok({ exist: Boolean(row), path: row ? `/upload/${row.r2_key}` : '', thumbPath: row?.thumbnail_key ? `/upload/${row.thumbnail_key}` : '' }), 200, headers);
 }
 function mediaExtension(filename) { return filename.includes('.') ? filename.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') : ''; }
+function mediaContentType(key) {
+  const map = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac', m4a: 'audio/mp4' };
+  return map[mediaExtension(key)] || '';
+}
 // 随机短 id 命名（约 14 字符），替代长 SHA-256 文件名；旧 SHA 命名的对象仍按 DB 索引访问
 function mediaObjectKey(extension = '') {
   return `media/${new Date().toISOString().slice(0, 10).replaceAll('-', '/')}/${randomToken(10)}${extension ? `.${extension}` : ''}`;
@@ -588,6 +592,14 @@ function tagsString(tags) {
   const unique = [...new Set(tags.map(tag => String(tag).trim().replaceAll(',', '').slice(0, 40)).filter(Boolean))];
   return unique.length ? `${unique.join(',')},` : '';
 }
+// 本站媒体（/upload/ 前缀）的绝对 URL 规范化为相对路径，
+// 避免历史数据或手动粘贴的绝对地址在绑定新域名后跨域加载触发 CORB。
+function normalizeMediaUrls(imgs) {
+  return String(imgs || '').split(',').filter(Boolean).map(url => {
+    if (/^https?:\/\/[^/]+\/upload\//.test(url)) return url.replace(/^https?:\/\/[^/]+/, '');
+    return url;
+  }).join(',');
+}
 function imgConfigs(imgs, thumbnails = new Map()) {
   return String(imgs || '').split(',').filter(Boolean).map(url => {
     const key = url.startsWith('/upload/') ? url.slice('/upload/'.length) : '';
@@ -596,12 +608,13 @@ function imgConfigs(imgs, thumbnails = new Map()) {
 }
 function memoView(row) {
   if (!row) return null;
+  const imgs = normalizeMediaUrls(row.imgs);
   return {
-    id: Number(row.id), content: row.content, imgs: row.imgs, favCount: Number(row.fav_count),
+    id: Number(row.id), content: row.content, imgs, favCount: Number(row.fav_count),
     commentCount: Number(row.comment_count), userId: Number(row.user_id), createdAt: row.created_at,
     updatedAt: row.updated_at, location: row.location, externalUrl: row.external_url,
     externalTitle: row.external_title, externalFavicon: row.external_favicon, pinned: Boolean(row.pinned),
-    ext: row.ext, showType: Number(row.show_type), tags: row.tags, imgConfigs: imgConfigs(row.imgs),
+    ext: row.ext, showType: Number(row.show_type), tags: row.tags, imgConfigs: imgConfigs(imgs),
     comments: [], user: {
       id: Number(row.user_id), username: row.username, nickname: row.nickname,
       avatarUrl: row.avatar_url, slogan: row.slogan, coverUrl: row.cover_url,
@@ -760,7 +773,8 @@ async function saveMemo(request, env, headers) {
     }
   } catch (error) { return json(fail(error.message), 400, headers); }
   const ext = JSON.stringify(safeExt);
-  const values = [content, imgs.join(','), String(body.location || '').slice(0, 200), externalUrl?.href || '', String(body.externalTitle || '').slice(0, 300), externalFavicon || '/favicon.png', ext, showType, tagsString(body.tags)];
+  const imgsValue = normalizeMediaUrls(imgs.join(','));
+  const values = [content, imgsValue, String(body.location || '').slice(0, 200), externalUrl?.href || '', String(body.externalTitle || '').slice(0, 300), externalFavicon || '/favicon.png', ext, showType, tagsString(body.tags)];
   if (id) {
     const existing = await env.DB.prepare('SELECT * FROM memos WHERE id=?').bind(id).first();
     if (!existing) return json(fail('动态不存在'), 404, headers);
@@ -1696,7 +1710,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;
@@ -1731,6 +1745,12 @@ async function serveMedia(request, env, key) {
   if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers: { etag } });
   const headers = new Headers();
   head.writeHttpMetadata(headers);
+  // 存储元数据缺失 Content-Type 时按扩展名兜底，避免浏览器嗅探误判（防 CORB/裂图）。
+  if (!headers.get('content-type')) {
+    const inferred = mediaContentType(key);
+    if (inferred) headers.set('content-type', inferred);
+  }
+  headers.set('x-content-type-options', 'nosniff');
   headers.set('etag', etag);
   headers.set('cache-control', 'public, max-age=31536000, immutable');
   headers.set('accept-ranges', 'bytes');
