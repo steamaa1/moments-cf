@@ -1,4 +1,6 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import site from './site.config'
+
 export default defineNuxtConfig({
     compatibilityDate: '2024-04-03',
     devtools: {enabled: false},
@@ -30,9 +32,20 @@ export default defineNuxtConfig({
     },
     app: {
         head: {
+            title: site.title,
             meta: [
                 { name: "viewport", content: "width=device-width, initial-scale=1, user-scalable=no" },
                 { charset: "utf-8" },
+                { name: "description", content: site.description },
+                { name: "keywords", content: site.keywords },
+                { property: "og:site_name", content: site.title },
+                { property: "og:type", content: "website" },
+                { property: "og:title", content: site.title },
+                { property: "og:description", content: site.description },
+                { property: "og:image", content: site.ogImage },
+                { name: "twitter:card", content: "summary" },
+                { name: "twitter:title", content: site.title },
+                { name: "twitter:description", content: site.description },
             ],
             link: [
                 {href: `/css/APlayer.min.css`, rel: 'stylesheet'},

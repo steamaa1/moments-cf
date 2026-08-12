@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import markdownit from 'markdown-it'
 import type { SysConfigVO, UserVO } from '~/types'
+import site from '~/site.config'
 
 const config = useState<SysConfigVO>('sysConfig')
 const currentUser = useState<UserVO>('userinfo')
@@ -29,7 +30,7 @@ renderer.renderer.rules.image = (tokens: any, idx: number, options: any, env: an
   return defaultAboutImage(tokens, idx, options, env, self)
 }
 const content = computed(() => renderer.render(config.value.aboutContent || ''))
-useHead({ title: `关于 - ${config.value.title || 'Moments'}` })
+useHead({ title: `关于 - ${config.value.title || site.title}` })
 </script>
 
 <style scoped>

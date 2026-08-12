@@ -64,6 +64,7 @@
 <script lang="ts" setup>
 import type { SysConfigVO, UserVO } from "~/types";
 import { useGlobalState } from "~/store";
+import site from "~/site.config";
 
 const global = useGlobalState();
 const open = useState<boolean>("sidebarOpen", () => false);
@@ -76,9 +77,10 @@ if (currentProfile) {
   sysConfig.value = sysConfigVO;
 }
 const { y } = useWindowScroll();
-const seoDescription = (sysConfigVO.slogan || '') ? `${sysConfigVO.slogan} · ${sysConfigVO.title || 'Moments'}` : '';
+const seoTitle = sysConfigVO.title || site.title;
+const seoDescription = sysConfigVO.slogan ? `${sysConfigVO.slogan} · ${seoTitle}` : site.description;
 useHead({
-  title: sysConfigVO.title,
+  title: seoTitle,
   link: [
     {
       rel: "shortcut icon",
@@ -98,13 +100,13 @@ useHead({
   ],
   meta: [
     { name: "description", content: seoDescription },
-    { name: "keywords", content: `${sysConfigVO.title || 'Moments'}, 朋友圈, 动态, 博客` },
-    { property: "og:site_name", content: sysConfigVO.title || 'Moments' },
+    { name: "keywords", content: `${seoTitle}, 朋友圈, 动态, 博客` },
+    { property: "og:site_name", content: seoTitle },
     { property: "og:type", content: "website" },
-    { property: "og:title", content: sysConfigVO.title || 'Moments' },
+    { property: "og:title", content: seoTitle },
     { property: "og:description", content: seoDescription },
     { name: "twitter:card", content: "summary" },
-    { name: "twitter:title", content: sysConfigVO.title || 'Moments' },
+    { name: "twitter:title", content: seoTitle },
     { name: "twitter:description", content: seoDescription },
   ],
   style: [

@@ -96,6 +96,20 @@ const storeSource = await readFile(new URL('../front/store.ts', import.meta.url)
 assert.match(storeSource, /get: \(\) => \{\s*const value = storage\.value/);
 assert.doesNotMatch(storeSource, /get: \(\) => \(\{ userinfo: \{\}, \.\.\.\(storage\.value/);
 assert.match(userSettings, /Telegram User ID/);
+// 静态 SEO meta：爬虫（Bing）不执行 JS，index.html 必须预置 description/title/og
+const siteConfig = await readFile(new URL('../front/site.config.ts', import.meta.url), 'utf8');
+assert.match(siteConfig, /description: '极简朋友圈 - 记录生活的每个瞬间/);
+assert.match(siteConfig, /title: '极简朋友圈'/);
+const nuxtConfig = await readFile(new URL('../front/nuxt.config.ts', import.meta.url), 'utf8');
+assert.match(nuxtConfig, /import site from '\.\/site\.config'/);
+assert.match(nuxtConfig, /name: "description", content: site\.description/);
+assert.match(nuxtConfig, /title: site\.title/);
+assert.match(nuxtConfig, /property: "og:image", content: site\.ogImage/);
+assert.match(nuxtConfig, /name: "twitter:card", content: "summary"/);
+assert.match(layoutDefault, /import site from "~\/site\.config"/);
+assert.match(layoutDefault, /site\.description/, 'slogan 为空时应回退默认 description');
+assert.match(layoutDefault, /site\.title/, 'title 为空时应回退默认 title');
+assert.match(about, /site\.title/);
 assert.match(userSettings, /telegramChatId/);
 assert.match(userSettings, /telegramBotUsername/);
 assert.match(source, /\/api\/user\/status\/set/);
