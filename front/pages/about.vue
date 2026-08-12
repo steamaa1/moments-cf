@@ -21,6 +21,13 @@ const publicConfig = await useMyFetch<SysConfigVO>('/sysConfig/get')
 Object.assign(config.value, publicConfig)
 if (!config.value.enableAbout) await navigateTo('/', { replace: true })
 const renderer = markdownit({ html: true, linkify: true, typographer: true, breaks: true })
+// 本站媒体（/upload/ 前缀）绝对 URL 规范化为相对路径（防止跨域 CORB）。
+const defaultAboutImage = renderer.renderer.rules.image || ((tokens: any, idx: number, options: any, env: any, self: any) => self.renderToken(tokens, idx, options))
+renderer.renderer.rules.image = (tokens: any, idx: number, options: any, env: any, self: any) => {
+  const src = tokens[idx].attrGet('src') || ''
+  if (/^https?:\/\/[^/]+\/upload\//.test(src)) tokens[idx].attrSet('src', src.replace(/^https?:\/\/[^/]+/, ''))
+  return defaultAboutImage(tokens, idx, options, env, self)
+}
 const content = computed(() => renderer.render(config.value.aboutContent || ''))
 useHead({ title: `关于 - ${config.value.title || 'Moments'}` })
 </script>

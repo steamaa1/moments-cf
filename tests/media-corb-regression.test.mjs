@@ -42,4 +42,11 @@ const userSettings = await readFile(new URL('../front/pages/user/settings.vue', 
 assert.match(userSettings, /autocomplete="email"/);
 assert.match(userSettings, /autocomplete="new-password"/);
 
+// 正文 Markdown 图片的绝对 URL 也要相对化（动态正文 + 关于页）
+const mdUtils = await readFile(new URL('../front/utils/index.ts', import.meta.url), 'utf8');
+assert.match(mdUtils, /md\.renderer\.rules\.image/, '动态正文 Markdown 图片应规范化');
+assert.match(mdUtils, /attrSet\('src'/, 'image 规则应重写 src 为相对路径');
+const about = await readFile(new URL('../front/pages/about.vue', import.meta.url), 'utf8');
+assert.match(about, /renderer\.renderer\.rules\.image/, '关于页 Markdown 图片应规范化');
+
 console.log('Media CORB and autocomplete regression tests: PASS');

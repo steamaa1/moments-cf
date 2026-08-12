@@ -48,6 +48,15 @@ export const md = markdownit({
   breaks: true,
 })
 
+// 本站媒体（/upload/ 前缀）绝对 URL 规范化为相对路径，
+// 避免动态正文 Markdown 外链图片跨域加载触发 CORB。
+const defaultImage = md.renderer.rules.image || ((tokens: any, idx: number, options: any, env: any, self: any) => self.renderToken(tokens, idx, options))
+md.renderer.rules.image = (tokens: any, idx: number, options: any, env: any, self: any) => {
+  const src = tokens[idx].attrGet('src') || ''
+  if (/^https?:\/\/[^/]+\/upload\//.test(src)) tokens[idx].attrSet('src', src.replace(/^https?:\/\/[^/]+/, ''))
+  return defaultImage(tokens, idx, options, env, self)
+}
+
 createHighlighterCore({
   themes: [import("shiki/themes/github-dark.mjs")],
   langs: [
