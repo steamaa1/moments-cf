@@ -90,6 +90,11 @@ assert.match(settings, /Telegram 评论通知/);
 assert.match(settings, /telegramBotToken/);
 assert.match(settings, /telegramBotUsername/);
 const userSettings = await readFile(new URL('../front/pages/user/settings.vue', import.meta.url), 'utf8');
+// 登录态持久化回归：global 的 get 必须直接返回 storage.value 引用，
+// 否则属性赋值不会触发 useStorage deep watch 写回 localStorage，刷新后登录态丢失。
+const storeSource = await readFile(new URL('../front/store.ts', import.meta.url), 'utf8');
+assert.match(storeSource, /get: \(\) => \{\s*const value = storage\.value/);
+assert.doesNotMatch(storeSource, /get: \(\) => \(\{ userinfo: \{\}, \.\.\.\(storage\.value/);
 assert.match(userSettings, /Telegram User ID/);
 assert.match(userSettings, /telegramChatId/);
 assert.match(userSettings, /telegramBotUsername/);
