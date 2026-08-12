@@ -1142,9 +1142,13 @@ async function addComment(request, env, headers, ctx) {
   await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(content, replyTo, replyEmail, username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash).run();
   const owner = await env.DB.prepare('SELECT nickname,email,telegram_chat_id FROM users WHERE id=?').bind(memo.user_id).first();
+  // 评论者是动态作者本人时，不向作者自己发送评论通知；
+  // 作者回复他人评论时，仍通知被回复人（replyEmail）。
+  const selfComment = Boolean(user && Number(user.id) === Number(memo.user_id));
   if (config.enableEmail) {
     const target = replyTo ? replyEmail : owner?.email;
-    if (target && config.smtpUsername) {
+    // 非回复场景的通知对象即作者本人：作者自评时跳过，避免通知自己。
+    if (target && config.smtpUsername && !(!replyTo && selfComment)) {
       const email = buildCommentEmail({ title: config.title, host: new URL(request.url).origin, poster: replyTo || owner.nickname, commenter: username || '匿名用户', content, memoId: memo.id, createdAt: new Date().toISOString().slice(0,19).replace('T',' ') });
       const message = { from: config.smtpUsername, to: target, ...email };
       let mailCredential = '';
@@ -1154,7 +1158,7 @@ async function addComment(request, env, headers, ctx) {
       if (ctx?.waitUntil) ctx.waitUntil(task); else await task;
     }
   }
-  if (config.enableTelegram && owner?.telegram_chat_id) {
+  if (config.enableTelegram && owner?.telegram_chat_id && !selfComment) {
     const botToken = config.telegramBotTokenEncrypted ? await decryptConfigSecret(config.telegramBotTokenEncrypted, env.JWT_SECRET).catch(() => '') : '';
     if (botToken) {
       const email = buildCommentEmail({ title: config.title, host: new URL(request.url).origin, poster: replyTo || owner.nickname, commenter: username || '匿名用户', content, memoId: memo.id, createdAt: new Date().toISOString().slice(0,19).replace('T',' ') });
