@@ -218,4 +218,17 @@ const headerNav = await readFile(new URL('../front/components/Header.vue', impor
 assert.match(headerNav, /\$route\.path !== '\/friend'/, '桌面端友链入口应在非友链页显示');
 const mobileNav = await readFile(new URL('../front/components/MobileNav.vue', import.meta.url), 'utf8');
 assert.match(mobileNav, /\$route\.path !== '\/friend'/, '移动端友链入口应在非友链页显示');
+
+// 加载性能：并行 API、静态资源缓存、音乐按需、图片懒加载
+assert.match(source, /url\.pathname\.startsWith\('\/_nuxt\/'\)/, 'Worker 应对 _nuxt 构建产物设置缓存');
+assert.match(source, /max-age=31536000, immutable/, '构建产物应永久缓存');
+assert.match(layoutDefault, /Promise\.all\(\[\s*useMyFetch/, '首页 profile/sysConfig 应并行请求');
+const nuxtConfigSrc = await readFile(new URL('../front/nuxt.config.ts', import.meta.url), 'utf8');
+assert.doesNotMatch(nuxtConfigSrc, /APlayer|Meting/, '音乐库不应全局加载');
+assert.match(musicPreview, /loadMusicAssets/, '音乐组件应按需加载 APlayer/Meting');
+assert.match(musicPreview, /loadMusicAssets/, '音乐组件应按需加载 APlayer/Meting');
+const uploadPreviewImg = await readFile(new URL('../front/components/UploadImagePreview.vue', import.meta.url), 'utf8');
+assert.match(uploadPreviewImg, /loading="lazy"/, '动态图片应懒加载');
+const mdUtilsSrc = await readFile(new URL('../front/utils/index.ts', import.meta.url), 'utf8');
+assert.match(mdUtilsSrc, /export function loadMusicAssets/, '应导出音乐资源按需加载函数');
 console.log('Phase 7 integration tests: PASS');

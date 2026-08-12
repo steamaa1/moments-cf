@@ -85,3 +85,37 @@ createHighlighterCore({
     }),
   )
 })
+
+// APlayer / Meting 按需加载：仅音乐组件挂载时注入，
+// 避免全局加载占用所有页面的首屏带宽与请求。
+function injectScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return }
+    const el = document.createElement('script')
+    el.src = src
+    el.async = true
+    el.onload = () => resolve()
+    el.onerror = () => reject(new Error(`加载失败: ${src}`))
+    document.head.appendChild(el)
+  })
+}
+function injectStyle(href: string): void {
+  if (document.querySelector(`link[href="${href}"]`)) return
+  const el = document.createElement('link')
+  el.rel = 'stylesheet'
+  el.href = href
+  document.head.appendChild(el)
+}
+let musicAssetsPromise: Promise<void> | null = null
+export function loadMusicAssets(): Promise<void> {
+  if (!musicAssetsPromise) {
+    musicAssetsPromise = (async () => {
+      injectStyle('/css/APlayer.min.css')
+      await Promise.all([
+        injectScript('/js/APlayer.min.js'),
+        injectScript('/js/Meting.min.js'),
+      ])
+    })()
+  }
+  return musicAssetsPromise
+}

@@ -1830,6 +1830,19 @@ export default {
       const injected = injectSeoMeta(await assetsResponse.text(), config);
       return new Response(injected, { status: assetsResponse.status, headers });
     }
+    // 静态资源缓存：_nuxt/ 构建产物按内容 hash 命名，可永久缓存；
+    // 其它静态资源（favicon/头像/外部 js css 等）短缓存 1 天；
+    // HTML 已在上方处理（no-store，SEO 动态注入）。
+    if (url.pathname.startsWith('/_nuxt/')) {
+      const headers = new Headers(assetsResponse.headers);
+      headers.set('cache-control', 'public, max-age=31536000, immutable');
+      return new Response(assetsResponse.body, { status: assetsResponse.status, headers });
+    }
+    if (request.method === 'GET' && assetsResponse.status === 200) {
+      const headers = new Headers(assetsResponse.headers);
+      headers.set('cache-control', 'public, max-age=86400');
+      return new Response(assetsResponse.body, { status: assetsResponse.status, headers });
+    }
     return assetsResponse;
   },
   async scheduled(_controller, env, ctx) {

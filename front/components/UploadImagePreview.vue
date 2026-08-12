@@ -18,7 +18,7 @@
           : 'full-cover-image-mult'
       "
     >
-      <img :src="img.url" class="cursor-move rounded" />
+      <img :src="img.url" class="cursor-move rounded" loading="lazy" decoding="async" />
       <div
         class="absolute top-0 right-0 px-1 bg-white dark:bg-gray-900 m-2 rounded hover:text-red-500 cursor-pointer"
         @click="removeImage(i)"
@@ -43,6 +43,8 @@
         <img
           class="cursor-zoom-in rounded"
           :src="imageConfig.thumbUrl"
+          loading="lazy"
+          decoding="async"
           :onerror="`javascript:this.src='${imageConfig.url}';this.onerror=null`"
         />
       </div>

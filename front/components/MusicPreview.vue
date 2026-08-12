@@ -6,6 +6,7 @@
 <script setup lang="ts">
 import type { MusicDTO } from '@/types'
 import { onBeforeUnmount, onMounted } from 'vue'
+import { loadMusicAssets } from '~/utils'
 
 const props = defineProps<MusicDTO>()
 let container: HTMLElement | null = null
@@ -15,8 +16,10 @@ function setContainer(el: unknown) {
   container = el as HTMLElement | null
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (props.mode !== 'direct' || !container || !props.url || !props.name) return
+  // APlayer/Meting 按需加载：仅音乐组件挂载时注入
+  try { await loadMusicAssets() } catch { return }
   const APlayer = (window as unknown as Record<string, any>).APlayer
   if (!APlayer) return
   try {

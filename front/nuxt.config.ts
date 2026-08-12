@@ -47,14 +47,6 @@ export default defineNuxtConfig({
                 { name: "twitter:title", content: site.title },
                 { name: "twitter:description", content: site.description },
             ],
-            link: [
-                {href: `/css/APlayer.min.css`, rel: 'stylesheet'},
-            ],
-            script: [
-                {src: `/js/APlayer.min.js`, type: 'text/javascript', async: true, defer: true},
-                {src: `/js/Meting.min.js`, type: 'text/javascript', async: true, defer: true},
-                {src: `/js/main.js`, type: 'text/javascript', async: true, defer: true},
-            ]
         }
     },
     vite: {
