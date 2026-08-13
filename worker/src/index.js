@@ -974,7 +974,7 @@ function rssText(value) { return String(value || '').replace(/!\[[^\]]*\]\([^)]*
 async function sitemap(request, env) {
   const host = new URL(request.url).origin;
   const [memos, users, configRow] = await Promise.all([
-    env.DB.prepare('SELECT id, created_at FROM memos WHERE show_type=1 LIMIT 50000').all(),
+    env.DB.prepare('SELECT id, created_at FROM memos WHERE show_type=1 AND created_at<=CURRENT_TIMESTAMP LIMIT 50000').all(),
     env.DB.prepare('SELECT id, updated_at FROM users LIMIT 5000').all(),
     env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(),
   ]);
