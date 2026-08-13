@@ -315,6 +315,9 @@ assert.match(musicPreview, /loadMusicAssets/, '音乐组件应按需加载 APlay
 assert.match(musicPreview, /loadMusicAssets/, '音乐组件应按需加载 APlayer/Meting');
 const uploadPreviewImg = await readFile(new URL('../front/components/UploadImagePreview.vue', import.meta.url), 'utf8');
 assert.match(uploadPreviewImg, /loading="lazy"/, '动态图片应懒加载');
+assert.match(uploadPreviewImg, /@error="fallbackToOriginal\(\$event, imageConfig\.url\)"/, '缩略图失败应使用 Vue 事件回退');
+assert.match(uploadPreviewImg, /dataset\.fallbackApplied/, '图片回退应避免错误循环');
+assert.doesNotMatch(uploadPreviewImg, /:onerror=|javascript:this\.src/, '不得把图片 URL 拼入内联 JavaScript');
 const mdUtilsSrc = await readFile(new URL('../front/utils/index.ts', import.meta.url), 'utf8');
 assert.match(mdUtilsSrc, /export function loadMusicAssets/, '应导出音乐资源按需加载函数');
 

@@ -45,7 +45,7 @@
           :src="imageConfig.thumbUrl"
           loading="lazy"
           decoding="async"
-          :onerror="`javascript:this.src='${imageConfig.url}';this.onerror=null`"
+          @error="fallbackToOriginal($event, imageConfig.url)"
         />
       </div>
     </MyFancyBox>
@@ -92,6 +92,13 @@ watchEffect(() => {
 
 const removeImage = async (index: number) => {
   emit("removeImage", index);
+};
+
+const fallbackToOriginal = (event: Event, url: string) => {
+  const image = event.currentTarget as HTMLImageElement | null;
+  if (!image || image.dataset.fallbackApplied === "1") return;
+  image.dataset.fallbackApplied = "1";
+  image.src = url;
 };
 
 onMounted(() => {
