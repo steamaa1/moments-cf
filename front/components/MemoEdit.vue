@@ -292,7 +292,7 @@ onMounted(async () => {
     const res = await useMyFetch<MemoVO>('/memo/get?id=' + state.id)
     Object.assign(state, res)
     state.showType = res.showType === 1
-    const ext = JSON.parse(res.ext) as ExtDTO
+    const ext = (() => { try { return JSON.parse(res.ext) as ExtDTO } catch { return {} as ExtDTO } })()
     updateMusic(ext.music || {})
     updateX(ext.x || {})
     updateGit(ext.git || {})

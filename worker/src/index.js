@@ -321,7 +321,8 @@ async function saveConfig(request, env, headers) {
   if (!body || typeof body !== 'object') return json(fail('参数错误'), 400, headers);
   const old = await env.DB.prepare('SELECT content FROM sys_config WHERE id = 1').first();
   const previousConfig = parseConfig(old?.content);
-  const config = { ...previousConfig, ...body, adminUserName: String(body.adminUserName || access.user.username).trim() };
+  const adminUserName = String(body.adminUserName || '').trim() || access.user.username;
+  const config = { ...previousConfig, ...body, adminUserName };
   config.beiAnNo = sanitizeSafeHtml(body.beiAnNo);
   config.enableAbout = Boolean(body.enableAbout);
   config.friendNotice = String(body.friendNotice || '').slice(0, 10000);
@@ -767,7 +768,6 @@ async function saveMemo(request, env, headers) {
   try {
     imgs = (Array.isArray(body.imgs) ? body.imgs : []).map(value => safeHttpHref(value, '图片地址', { allowRelativeUpload: true })).filter(Boolean).slice(0, 9);
   } catch (error) { return json(fail(error.message), 400, headers); }
-  if (!content && !imgs.length && !body.externalUrl && !body.ext?.video?.value && !body.ext?.git?.url) return json(fail('动态内容不能为空'), 400, headers);
   if (content.length > 10000) return json(fail('动态内容不能超过 10000 字'), 400, headers);
   try { await verifyMemoMedia(imgs, access.user, env); } catch (error) { return json(fail(error.message), 403, headers); }
   const id = intParam(body.id);
@@ -789,6 +789,11 @@ async function saveMemo(request, env, headers) {
       if (needsRefresh) safeExt.x = await fetchXSnapshot(safeExt.x);
     }
   } catch (error) { return json(fail(error.message), 400, headers); }
+  const hasExt = safeExt.music?.url || safeExt.music?.id || safeExt.x?.id || safeExt.git?.url || safeExt.video?.value
+    || (Array.isArray(safeExt.doubanBooks) && safeExt.doubanBooks.length > 0)
+    || (Array.isArray(safeExt.doubanMovies) && safeExt.doubanMovies.length > 0)
+    || Boolean(safeExt.doubanBook?.title) || Boolean(safeExt.doubanMovie?.title);
+  if (!content && !imgs.length && !externalUrl && !hasExt) return json(fail('动态内容不能为空'), 400, headers);
   const ext = JSON.stringify(safeExt);
   const imgsValue = normalizeMediaUrls(imgs.join(','));
   const values = [content, imgsValue, String(body.location || '').slice(0, 200), externalUrl?.href || '', String(body.externalTitle || '').slice(0, 300), externalFavicon || '/favicon.png', ext, showType, tagsString(body.tags)];
@@ -945,10 +950,15 @@ function parseXEmbedUrl(value) {
   if (!match) throw new Error('仅支持单条 X（Twitter）状态链接');
   return { url, id: match[1] };
 }
+function isIpLiteralHost(host) {
+  const h = String(host || '').toLowerCase();
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true; // IPv4 字面量
+  return h.includes(':'); // IPv6 字面量（URL.hostname 已去除方括号）
+}
 function parseGitEmbedUrl(value) {
   const href = safeHttpHref(value, 'Git 链接');
   const url = new URL(href);
-  if (forbiddenHost(url.hostname)) throw new Error('不允许访问本地或内网 Git 地址');
+  if (forbiddenHost(url.hostname) || isIpLiteralHost(url.hostname)) throw new Error('不允许访问本地、内网或 IP 地址');
   const parts = url.pathname.split('/').filter(Boolean);
   if (parts.length < 2) throw new Error('Git 链接必须包含仓库所有者和仓库名');
   const host = url.hostname.toLowerCase();

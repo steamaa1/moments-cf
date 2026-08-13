@@ -52,10 +52,6 @@ const mergeMemos = (incoming: MemoVO[]) => {
   memos.value = [...memos.value, ...incoming.filter(memo => !existing.has(memo.id))]
 }
 
-onMounted(async () => {
-
-})
-
 const reload = async () => {
   const generation = ++requestGeneration
   loading.value = true

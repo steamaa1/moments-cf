@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { migrationFinish, migrationImport, migrationPreflight, migrationPrepare, passwordHash, previewUnfurl, signJwt } from '../worker/src/index.js';
+import worker from '../worker/src/index.js';
 
 const secret = 'migration-test-secret-at-least-sixteen-characters';
 const packageId = 'a'.repeat(64);
@@ -129,4 +130,14 @@ const finishRequest = new Request('https://moments.example/api/admin/migration/f
 const finishResponse = await migrationFinish(finishRequest, env, {});
 assert.equal(finishResponse.status, 200);
 assert.equal(state.runs.get(packageId).status, 'completed');
+
+// BUG-06 回归：纯音乐/纯豆瓣嵌入动态不应被判为「内容为空」
+const musicSave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '', ext: { music: { mode: 'direct', url: 'https://media.example/a.mp3', name: '测试歌曲' } } }) }), env);
+const musicSaveBody = await musicSave.json();
+assert.equal(musicSave.status, 200, musicSaveBody.message);
+const doubanSave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '', ext: { doubanBooks: [{ title: '测试书', url: 'https://book.douban.com/subject/1' }] } }) }), env);
+const doubanSaveBody = await doubanSave.json();
+assert.equal(doubanSave.status, 200, doubanSaveBody.message);
+const emptySave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '' }) }), env);
+assert.equal(emptySave.status, 400, '真正空内容仍应拒绝');
 console.log('Migration import idempotency tests: PASS');

@@ -62,7 +62,7 @@
     <div ref="loadMoreEle" class="text-xs text-center text-gray-500 py-2" @click="loadMore" v-if="hasNext">
       点击加载更多
     </div>
-    <div class="text-xs text-center text-gray-500 py-2" @click="loadMore" v-else>
+    <div class="text-xs text-center text-gray-500 py-2" v-else>
       已经到底啦
     </div>
   </div>

@@ -343,7 +343,8 @@ const props = defineProps<{
   memo: MemoVO;
 }>();
 const extJSON = computed(() => {
-  return JSON.parse(props.memo.ext || "{}") as ExtDTO;
+  try { return JSON.parse(props.memo.ext || "{}") as ExtDTO; }
+  catch { return {} as ExtDTO; }
 });
 const item = computed(() => {
   return props.memo;
