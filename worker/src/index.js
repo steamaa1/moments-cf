@@ -4,7 +4,7 @@ import {
   encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
   startD1Export, pollD1Export, storeD1Backup, sendTelegram,
 } from './phase7.js';
-import { storageBackend, r2Backend } from './storage.js';
+import { storageBackend } from './storage.js';
 /**
  * Moments Cloudflare Worker.
  * Phase 2: D1-backed bootstrap/auth/profile/config and authenticated R2 upload.
