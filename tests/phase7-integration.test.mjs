@@ -46,7 +46,7 @@ const timeline = await readFile(new URL('../front/components/TimelineList.vue', 
 const userTimeline = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 const tagTimeline = await readFile(new URL('../front/pages/tags/[username]/[tag].vue', import.meta.url), 'utf8');
 const calendar = await readFile(new URL('../front/pages/user/calendar.vue', import.meta.url), 'utf8');
-// 翻页回归：用户页、标签页、日历页必须防止并发重复请求，失败不提前推进页码，旧 reload 结果不能覆盖新状态。
+// 翻页回归：首页、用户页、标签页、日历页必须防止并发重复请求，失败不提前推进页码，旧 reload 结果不能覆盖新状态。
 const memoDetailForBus = await readFile(new URL('../front/pages/memo/[id].vue', import.meta.url), 'utf8');
 const indexPageForBus = await readFile(new URL('../front/pages/index.vue', import.meta.url), 'utf8');
 // 事件总线回归：所有注册的监听必须保存取消函数，并在页面卸载时移除。
@@ -57,7 +57,7 @@ for (const page of [indexPageForBus, userTimeline, tagTimeline, calendar, memoDe
   if (reloadSubscriptions) assert.match(page, /stopMemoReload/);
   if (changedSubscriptions) assert.match(page, /stopMemoChanged/);
 }
-for (const page of [userTimeline, tagTimeline, calendar]) {
+for (const page of [indexPageForBus, userTimeline, tagTimeline, calendar]) {
   assert.match(page, /const loading = ref\(false\)/);
   assert.match(page, /let requestGeneration = 0/);
   assert.match(page, /if \(loading\.value \|\| !hasNext\.value\) return/);
