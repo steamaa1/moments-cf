@@ -58,7 +58,16 @@ export function r2Backend(env) {
     async get(key, options) { return env.MEDIA.get(key, options); },
     async head(key) { return env.MEDIA.head(key); },
     async delete(key) { await env.MEDIA.delete(key); },
-    async list(prefix) { const listed = await env.MEDIA.list({ prefix, limit: 1000 }); return (listed.objects || []); },
+    async list(prefix) {
+      const objects = [];
+      let cursor;
+      do {
+        const listed = await env.MEDIA.list({ prefix, limit: 1000, ...(cursor ? { cursor } : {}) });
+        objects.push(...(listed.objects || []));
+        cursor = listed.truncated ? listed.cursor : undefined;
+      } while (cursor);
+      return objects;
+    },
     async presignPut({ key, contentType, expires = 900, now = new Date() }) {
       const { createR2PresignedPut } = await import('./phase7.js');
       return createR2PresignedPut({ accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: env.R2_BUCKET_NAME || 'moments-media', key, accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, contentType, expires, now });
@@ -98,16 +107,27 @@ export function s3Backend(config) {
     },
     async list(prefix) {
       requireConfig();
-      const response = await s3Request({ endpoint, region, bucket, accessKeyId, secretAccessKey, method: 'GET', query: `list-type=2&prefix=${encodeURIComponent(prefix || '')}` });
-      if (!response.ok) throw new Error(`S3 列表失败（${response.status}）`);
-      const xml = await response.text();
       const objects = [];
-      const keys = [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map(match => match[1]);
-      const sizes = [...xml.matchAll(/<Size>(\d+)<\/Size>/g)].map(match => Number(match[1]));
-      const dates = [...xml.matchAll(/<LastModified>([^<]*)<\/LastModified>/g)].map(match => match[1]);
-      for (let index = 0; index < keys.length; index += 1) {
-        objects.push({ key: keys[index], size: sizes[index] || 0, uploaded: new Date(dates[index] || 0) });
-      }
+      let continuationToken = '';
+      do {
+        const query = new URLSearchParams({ 'list-type': '2', prefix: prefix || '' });
+        if (continuationToken) query.set('continuation-token', continuationToken);
+        const response = await s3Request({ endpoint, region, bucket, accessKeyId, secretAccessKey, method: 'GET', query: query.toString() });
+        if (!response.ok) throw new Error(`S3 列表失败（${response.status}）`);
+        const xml = await response.text();
+        const decodeXml = (value) => String(value || '').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'");
+        for (const match of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/gi)) {
+          const block = match[1];
+          const key = decodeXml(block.match(/<Key>([\s\S]*?)<\/Key>/i)?.[1] || '');
+          if (!key) continue;
+          const size = Number(block.match(/<Size>(\d+)<\/Size>/i)?.[1] || 0);
+          const uploaded = new Date(decodeXml(block.match(/<LastModified>([\s\S]*?)<\/LastModified>/i)?.[1] || ''));
+          objects.push({ key, size, uploaded });
+        }
+        const truncated = /<IsTruncated>\s*true\s*<\/IsTruncated>/i.test(xml);
+        continuationToken = truncated ? decodeXml(xml.match(/<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/i)?.[1] || '') : '';
+        if (truncated && !continuationToken) throw new Error('S3 列表分页缺少 continuation token');
+      } while (continuationToken);
       return objects;
     },
     async presignPut({ key, contentType, expires = 900, now = new Date() }) {

@@ -2,11 +2,17 @@ import assert from 'node:assert/strict';
 import { s3Backend, webdavBackend, r2Backend } from '../worker/src/storage.js';
 
 const requests = [];
+let s3ListPage = 0;
 const fakeFetch = async (url, init = {}) => {
   requests.push({ url: String(url), method: init.method || 'GET', headers: init.headers || {}, body: init.body });
   const text = () => '';
   if (String(url).includes('list-type=2')) {
-    return new Response('<ListBucketResult><Contents><Key>media/a.webp</Key><LastModified>2026-08-06T00:00:00Z</LastModified><ETag>\"abc\"</ETag><Size>10</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>', { status: 200 });
+    s3ListPage += 1;
+    if (s3ListPage === 1) {
+      return new Response('<ListBucketResult><IsTruncated>true</IsTruncated><Contents><Key>media/a.webp</Key><LastModified>2026-08-06T00:00:00Z</LastModified><Size>10</Size></Contents><NextContinuationToken>next&amp;token</NextContinuationToken></ListBucketResult>', { status: 200 });
+    }
+    assert.match(String(url), /continuation-token=next%26token/, 'S3 second page must use continuation token');
+    return new Response('<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>media/b.webp</Key><LastModified>2026-08-07T00:00:00Z</LastModified><Size>11</Size></Contents></ListBucketResult>', { status: 200 });
   }
   if ((init.method || '').toUpperCase() === 'PROPFIND' || (init.headers && init.headers.depth)) {
     if (String(url).includes('backups/d1')) {
@@ -34,8 +40,9 @@ assert.match(putReq.headers['content-type'], /image\/webp/);
 assert.ok(putReq.headers['x-amz-content-sha256'], 'S3 payload hash header missing');
 
 const list = await s3.list('media/');
-assert.equal(list[0].key, 'media/a.webp');
+assert.deepEqual(list.map(item => item.key), ['media/a.webp', 'media/b.webp']);
 assert.equal(list[0].size, 10);
+assert.equal(list[1].size, 11);
 const got = await s3.get('media/a.webp');
 assert.equal(got.size, 0); // HEAD/GET 走 fakeFetch 返回 200 空 body
 const metadataHeaders = new Headers();
@@ -77,15 +84,21 @@ assert.equal(davBackupList[0].size, 30);
 
 // R2 binding
 const stored = new Map();
+const r2ListCalls = [];
 const r2 = r2Backend({ MEDIA: {
   async put(key, body) { stored.set(key, body); },
   async get(key) { return stored.has(key) ? { body: stored.get(key) } : null; },
   async head(key) { return stored.has(key) ? { size: 1 } : null; },
   async delete(key) { stored.delete(key); },
-  async list({ prefix }) { return { objects: [...stored.keys()].filter(k => k.startsWith(prefix)).map(k => ({ key: k })) }; },
+  async list(options) {
+    r2ListCalls.push(options);
+    if (!options.cursor) return { objects: [{ key: 'media/r1.webp' }], truncated: true, cursor: 'next-page' };
+    return { objects: [{ key: 'media/r2.webp' }], truncated: false };
+  },
 }, R2_BUCKET_NAME: 'moments-media' });
 await r2.put('media/r.webp', 'data');
-assert.equal((await r2.list('media/')).length, 1);
+assert.deepEqual((await r2.list('media/')).map(item => item.key), ['media/r1.webp', 'media/r2.webp']);
+assert.equal(r2ListCalls[1].cursor, 'next-page');
 
 globalThis.fetch = originalFetch;
 console.log('Storage backends tests: PASS');
