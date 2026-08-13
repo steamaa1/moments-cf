@@ -46,9 +46,17 @@ assert.match(presigned, /X-Amz-Credential=AK\//);
 // WebDAV
 const dav = webdavBackend({ url: 'https://dav.example.com/remote.php/dav/files/user', username: 'u', password: 'p' });
 await dav.put('media/d.mp4', new Uint8Array([4, 5]), { httpMetadata: { contentType: 'video/mp4' } });
+const davMediaCollection = requests.find(r => r.method === 'MKCOL' && r.url.endsWith('/media'));
+assert.ok(davMediaCollection, 'WebDAV media collection should be created before PUT');
+assert.match(new Headers(davMediaCollection.headers).get('authorization') || '', /^Basic /);
 const davPut = requests.find(r => r.method === 'PUT' && r.url.includes('media/d.mp4'));
 assert.ok(davPut, 'WebDAV PUT not issued');
 assert.match(davPut.headers.authorization, /^Basic /);
+await dav.put('backups/d1/backup.sql', new Uint8Array([6]), { httpMetadata: { contentType: 'application/sql' } });
+const collectionUrls = requests.filter(r => r.method === 'MKCOL').map(r => r.url);
+assert.ok(collectionUrls.some(url => url.endsWith('/backups')), 'WebDAV backups collection should be created');
+assert.ok(collectionUrls.some(url => url.endsWith('/backups/d1')), 'WebDAV nested d1 collection should be created');
+assert.ok(requests.some(r => r.method === 'PUT' && r.url.endsWith('/backups/d1/backup.sql')), 'WebDAV nested backup PUT not issued');
 const davHead = await dav.head('media/d.mp4');
 assert.ok(davHead, 'WebDAV HEAD should succeed');
 await dav.delete('media/d.mp4');

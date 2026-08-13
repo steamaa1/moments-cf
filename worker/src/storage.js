@@ -146,11 +146,22 @@ export function webdavBackend(config) {
   const requireConfig = () => { if (!url) throw new Error('WebDAV 存储凭据未配置'); };
   const base = () => String(url).replace(/\/+$/, '');
   const headers = () => ({ authorization: basicAuth(username || '', password || ''), ...(username ? {} : {}) });
+  const objectUrl = (key) => `${base()}/${String(key).split('/').filter(Boolean).map(encodeURIComponent).join('/')}`;
+  const ensureParentCollections = async (key) => {
+    const parts = String(key).split('/').filter(Boolean).slice(0, -1);
+    let path = '';
+    for (const part of parts) {
+      path += `${path ? '/' : ''}${encodeURIComponent(part)}`;
+      const response = await fetch(`${base()}/${path}`, { method: 'MKCOL', headers: headers() });
+      if (![200, 201, 204, 405].includes(response.status)) throw new Error(`WebDAV 创建目录失败（${response.status}）`);
+    }
+  };
   return {
     name: 'webdav',
     async put(key, body, metadata = {}) {
       requireConfig();
-      const response = await fetch(`${base()}/${key}`, { method: 'PUT', headers: { ...headers(), 'content-type': metadata.httpMetadata?.contentType || 'application/octet-stream' }, body });
+      await ensureParentCollections(key);
+      const response = await fetch(objectUrl(key), { method: 'PUT', headers: { ...headers(), 'content-type': metadata.httpMetadata?.contentType || 'application/octet-stream' }, body });
       if (!response.ok && response.status !== 201 && response.status !== 204) throw new Error(`WebDAV 上传失败（${response.status}）`);
       return { key };
     },
