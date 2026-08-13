@@ -23,25 +23,47 @@ const state = reactive({ page: 1, size: 10, userId })
 const memos = ref<MemoVO[]>([])
 const profile = ref<UserVO | null>(null)
 const hasNext = ref(false)
+const loading = ref(false)
+let requestGeneration = 0
 const viewMode = ref<'timeline' | 'cards'>('timeline')
 const loadMoreEle = ref<HTMLElement | null>(null)
 const targetIsVisible = useElementVisibility(loadMoreEle)
 watch(targetIsVisible, visible => { if (visible && hasNext.value) void loadMore() })
 
+const mergeMemos = (incoming: MemoVO[]) => {
+  const existing = new Set(memos.value.map(memo => memo.id))
+  memos.value.push(...incoming.filter(memo => !existing.has(memo.id)))
+}
+
 const reload = async () => {
-  state.page = 1
-  const res = await useMyFetch<{list:MemoVO[];total:number;hasNext:boolean}>('/memo/list', state)
-  memos.value = res.list
-  profile.value = res.list[0]?.user || profile.value
-  hasNext.value = res.hasNext
+  const generation = ++requestGeneration
+  loading.value = true
+  try {
+    const res = await useMyFetch<{list:MemoVO[];total:number;hasNext:boolean}>('/memo/list', { ...state, page: 1 })
+    if (generation !== requestGeneration) return
+    state.page = 1
+    memos.value = res.list
+    profile.value = res.list[0]?.user || profile.value
+    hasNext.value = res.hasNext
+  } finally {
+    if (generation === requestGeneration) loading.value = false
+  }
 }
 const loadMore = async () => {
-  if (!hasNext.value) return
-  state.page += 1
-  const res = await useMyFetch<{list:MemoVO[];total:number;hasNext:boolean}>('/memo/list', state)
-  memos.value.push(...res.list)
-  profile.value = res.list[0]?.user || profile.value
-  hasNext.value = res.hasNext
+  if (loading.value || !hasNext.value) return
+  const generation = requestGeneration
+  const page = state.page + 1
+  loading.value = true
+  try {
+    const res = await useMyFetch<{list:MemoVO[];total:number;hasNext:boolean}>('/memo/list', { ...state, page })
+    if (generation !== requestGeneration) return
+    mergeMemos(res.list)
+    state.page = page
+    profile.value = res.list[0]?.user || profile.value
+    hasNext.value = res.hasNext
+  } finally {
+    if (generation === requestGeneration) loading.value = false
+  }
 }
 
 

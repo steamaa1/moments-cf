@@ -37,6 +37,8 @@ watch(targetIsVisible, async (visible) => {
   }
 })
 const hasNext = ref(false)
+const loading = ref(false)
+let requestGeneration = 0
 const state = reactive({
   page: 1,
   size: 10,
@@ -44,30 +46,52 @@ const state = reactive({
 })
 
 const memos = ref<Array<MemoVO>>([])
+
+const mergeMemos = (incoming: MemoVO[]) => {
+  const existing = new Set(memos.value.map(memo => memo.id))
+  memos.value = [...memos.value, ...incoming.filter(memo => !existing.has(memo.id))]
+}
+
 onMounted(async () => {
 
 })
 
 const reload = async () => {
-  state.page = 1
-  const res = await useMyFetch<{
-    list: Array<MemoVO>,
-    total: number,
-    hasNext: boolean
-  }>('/memo/list', state)
-  memos.value = res.list
-  hasNext.value = res.hasNext
+  const generation = ++requestGeneration
+  loading.value = true
+  try {
+    const res = await useMyFetch<{
+      list: Array<MemoVO>,
+      total: number,
+      hasNext: boolean
+    }>('/memo/list', { ...state, page: 1 })
+    if (generation !== requestGeneration) return
+    state.page = 1
+    memos.value = res.list
+    hasNext.value = res.hasNext
+  } finally {
+    if (generation === requestGeneration) loading.value = false
+  }
 }
 
 const loadMore = async () => {
-  state.page = state.page + 1
-  const res = await useMyFetch<{
-    list: Array<MemoVO>,
-    total: number,
-    hasNext: boolean
-  }>('/memo/list', state)
-  memos.value = [...memos.value, ...res.list]
-  hasNext.value = res.hasNext
+  if (loading.value || !hasNext.value) return
+  const generation = requestGeneration
+  const page = state.page + 1
+  loading.value = true
+  try {
+    const res = await useMyFetch<{
+      list: Array<MemoVO>,
+      total: number,
+      hasNext: boolean
+    }>('/memo/list', { ...state, page })
+    if (generation !== requestGeneration) return
+    mergeMemos(res.list)
+    state.page = page
+    hasNext.value = res.hasNext
+  } finally {
+    if (generation === requestGeneration) loading.value = false
+  }
 }
 
 memoReloadEvent.on(async () => {

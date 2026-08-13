@@ -5,7 +5,8 @@ import worker, { fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseXEmbedU
 const userPage = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userPage, /const userId = Number\(route\.params\.id\)/);
 assert.match(userPage, /reactive\(\{ page: 1, size: 10, userId \}\)/);
-assert.match(userPage, /['"]\/memo\/list['"], state/);
+assert.match(userPage, /['"]\/memo\/list['"], \{ \.\.\.state, page: 1 \}/);
+assert.match(userPage, /const page = state\.page \+ 1/);
 assert.match(userPage, /ref<'timeline' \| 'cards'>\('timeline'\)/);
 
 const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');

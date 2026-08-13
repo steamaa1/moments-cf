@@ -44,7 +44,19 @@ assert.match(moviePreview, /douban-cover/);
 const about = await readFile(new URL('../front/pages/about.vue', import.meta.url), 'utf8');
 const timeline = await readFile(new URL('../front/components/TimelineList.vue', import.meta.url), 'utf8');
 const userTimeline = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
+const tagTimeline = await readFile(new URL('../front/pages/tags/[username]/[tag].vue', import.meta.url), 'utf8');
 const calendar = await readFile(new URL('../front/pages/user/calendar.vue', import.meta.url), 'utf8');
+// 翻页回归：用户页、标签页、日历页必须防止并发重复请求，失败不提前推进页码，旧 reload 结果不能覆盖新状态。
+for (const page of [userTimeline, tagTimeline, calendar]) {
+  assert.match(page, /const loading = ref\(false\)/);
+  assert.match(page, /let requestGeneration = 0/);
+  assert.match(page, /if \(loading\.value \|\| !hasNext\.value\) return/);
+  assert.match(page, /const page = state\.page \+ 1/);
+  assert.match(page, /state\.page = page/);
+  assert.match(page, /const mergeMemos =/);
+  assert.match(page, /incoming\.filter\(memo => !existing\.has\(memo\.id\)\)/);
+  assert.match(page, /if \(generation !== requestGeneration\) return/);
+}
 const music = await readFile(new URL('../front/components/Music.vue', import.meta.url), 'utf8');
 const musicPreview = await readFile(new URL('../front/components/MusicPreview.vue', import.meta.url), 'utf8');
 assert.match(about, /markdownit\(\{ html: true/);
