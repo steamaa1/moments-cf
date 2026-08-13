@@ -297,7 +297,10 @@ export function md5Hex(buffer) {
 export async function restoreD1Backup(env, key, dependencies = {}, target = 'r2', storageConfig = null) {
   if (!key.startsWith(BACKUP_PREFIX) || key.includes('..')) throw new Error('备份名称无效');
   const object = await backupBackend(env, target, storageConfig).get(key); if (!object) throw new Error('备份不存在');
-  const bytes = await object.arrayBuffer(); const etag = md5Hex(bytes); const fetchImpl = dependencies.fetch || fetch;
+  const bytes = typeof object.arrayBuffer === 'function'
+    ? await object.arrayBuffer()
+    : await new Response(object.body).arrayBuffer();
+  const etag = md5Hex(bytes); const fetchImpl = dependencies.fetch || fetch;
   const init = await cfApi(env, '/import', { action: 'init', etag }, fetchImpl);
   if (!init.upload_url || !init.filename) throw new Error('D1 Import 初始化失败');
   const upload = await fetchImpl(init.upload_url, { method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body: bytes }); if (!upload.ok) throw new Error('备份上传至 D1 Import 失败');
