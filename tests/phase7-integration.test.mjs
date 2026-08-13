@@ -336,6 +336,10 @@ assert.match(mdUtilsSrc, /export function loadMusicAssets/, '应导出音乐资�
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /customIcon/, '自定义状态应记录 emoji');
+const commentBox = await readFile(new URL('../front/components/CommentBox.vue', import.meta.url), 'utf8');
+assert.match(commentBox, /localCommentUserinfo\.value = \{/);
+assert.doesNotMatch(commentBox, /state\.username = ''|state\.website = ''|state\.email = ''/, '匿名评论成功后应保留已记住的身份字段');
+assert.match(commentBox, /state\.content = ''/, '评论成功后仍应清空正文');
 const indexPage = indexPageForBus;
 assert.match(memoComponent, /const readLikedMemoIds =/, '点赞缓存应统一安全读取');
 assert.match(memoComponent, /localStorage\.removeItem\("likeMemos"\)/, '损坏的点赞缓存应自动清理');

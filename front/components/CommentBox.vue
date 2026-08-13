@@ -79,10 +79,7 @@ const doComment = async (token?: string) => {
   await useMyFetch(`/comment/add`, {...state, token:token})
   toast.success("评论成功!")
   currentCommentBox.value = ''
-  state.username = ''
   state.content = ''
-  state.website = ''
-  state.email = ''
   memoChangedEvent.emit(props.memoId)
 }
 
