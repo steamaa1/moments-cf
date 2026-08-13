@@ -84,8 +84,12 @@ watch(profile, (value) => {
 }, { immediate: false })
 
 onMounted(reload)
-memoReloadEvent.on(reload)
-memoChangedEvent.on(async id => { const value=await useMyFetch<MemoVO>('/memo/get?latest=1&id='+id);const index=memos.value.findIndex(item=>item.id===id);if(index>=0)memos.value[index]=value })
+const stopMemoReload = memoReloadEvent.on(reload)
+const stopMemoChanged = memoChangedEvent.on(async id => { const value=await useMyFetch<MemoVO>('/memo/get?latest=1&id='+id);const index=memos.value.findIndex(item=>item.id===id);if(index>=0)memos.value[index]=value })
+onBeforeUnmount(() => {
+  stopMemoReload()
+  stopMemoChanged()
+})
 </script>
 
 <style scoped>

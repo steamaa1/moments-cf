@@ -16,9 +16,10 @@ const reload = async () => {
   memo.value = await useMyFetch<MemoVO>('/memo/get?id=' + id)
 }
 
-memoChangedEvent.on(async () => {
+const stopMemoChanged = memoChangedEvent.on(async () => {
   await reload()
 })
+onBeforeUnmount(() => stopMemoChanged())
 onMounted(async () => {
   await reload()
 })

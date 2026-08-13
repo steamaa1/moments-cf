@@ -70,16 +70,21 @@ const loadMore = async () => {
   }
 }
 
-memoReloadEvent.on(async () => {
+const stopMemoReload = memoReloadEvent.on(async () => {
   await reload()
 })
 
-memoChangedEvent.on(async (id: number) => {
+const stopMemoChanged = memoChangedEvent.on(async (id: number) => {
   const res = await useMyFetch<MemoVO>('/memo/get?latest=1&id=' + id)
   const index = memos.value.findIndex(r => r.id === id)
   if (index >= 0) {
     memos.value[index] = res
   }
+})
+
+onBeforeUnmount(() => {
+  stopMemoReload()
+  stopMemoChanged()
 })
 </script>
 
