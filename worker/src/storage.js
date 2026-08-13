@@ -189,13 +189,19 @@ export function webdavBackend(config) {
       if (!response.ok) throw new Error(`WebDAV 列表失败（${response.status}）`);
       const xml = await response.text();
       const objects = [];
-      for (const match of xml.matchAll(/<D:(?:href|getcontentlength|getlastmodified)>([^<]*)<\/D:\1>/g)) { /* placeholder */ }
       const baseUrl = base();
-      for (const hrefMatch of xml.matchAll(/<D:href>([^<]*)<\/D:href>[\s\S]*?<D:getcontentlength>(\d*)<\/D:getcontentlength>[\s\S]*?<D:getlastmodified>([^<]*)<\/D:getlastmodified>/g)) {
-        const decoded = decodeURIComponent(hrefMatch[1]);
-        const key = decoded.startsWith(baseUrl) ? decoded.slice(baseUrl.length).replace(/^\//, '') : decoded.split('/').pop() || '';
+      const tagValue = (source, name) => source.match(new RegExp(`<(?:[\\w.-]+:)?${name}[^>]*>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${name}>`, 'i'))?.[1] || '';
+      const decodeXml = (value) => String(value || '').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'");
+      for (const match of xml.matchAll(/<(?:[\w.-]+:)?response\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?response>/gi)) {
+        const href = decodeXml(tagValue(match[1], 'href'));
+        const size = tagValue(match[1], 'getcontentlength');
+        const modified = decodeXml(tagValue(match[1], 'getlastmodified'));
+        if (!href || !size || !modified) continue;
+        let decoded = href;
+        try { decoded = decodeURIComponent(href); } catch {}
+        const key = decoded.startsWith(baseUrl) ? decoded.slice(baseUrl.length).replace(/^\//, '') : decoded.split('/').filter(Boolean).pop() || '';
         if (!key) continue;
-        objects.push({ key, size: Number(hrefMatch[2] || 0), uploaded: new Date(hrefMatch[3]) });
+        objects.push({ key, size: Number(size || 0), uploaded: new Date(modified) });
       }
       return objects;
     },

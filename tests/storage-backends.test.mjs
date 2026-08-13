@@ -8,8 +8,11 @@ const fakeFetch = async (url, init = {}) => {
   if (String(url).includes('list-type=2')) {
     return new Response('<ListBucketResult><Contents><Key>media/a.webp</Key><LastModified>2026-08-06T00:00:00Z</LastModified><ETag>\"abc\"</ETag><Size>10</Size><StorageClass>STANDARD</StorageClass></Contents></ListBucketResult>', { status: 200 });
   }
-  if (String(url).includes('PROPFIND') || (init.headers && init.headers.depth)) {
-    return new Response('<D:multistatus xmlns:D="DAV:"><D:response><D:href>https://dav.example.com/remote.php/dav/files/user/media/b.webp</D:href><D:propstat><D:prop><D:getcontentlength>20</D:getcontentlength><D:getlastmodified>Thu, 06 Aug 2026 00:00:00 GMT</D:getlastmodified></D:prop></D:propstat></D:response></D:multistatus>', { status: 207 });
+  if ((init.method || '').toUpperCase() === 'PROPFIND' || (init.headers && init.headers.depth)) {
+    if (String(url).includes('backups/d1')) {
+      return new Response('<x:multistatus xmlns:x="DAV:"><x:response><x:href>https://dav.example.com/remote.php/dav/files/user/backups/d1/a%20b.sql</x:href><x:propstat><x:prop><x:getcontentlength>30</x:getcontentlength><x:getlastmodified>Thu, 13 Aug 2026 00:00:00 GMT</x:getlastmodified></x:prop></x:propstat></x:response></x:multistatus>', { status: 207 });
+    }
+    return new Response('<d:multistatus xmlns:d="DAV:"><d:response><d:href>https://dav.example.com/remote.php/dav/files/user/media/b.webp</d:href><d:propstat><d:prop><d:getcontentlength>20</d:getcontentlength><d:getlastmodified>Thu, 06 Aug 2026 00:00:00 GMT</d:getlastmodified></d:prop></d:propstat></d:response></d:multistatus>', { status: 207 });
   }
   return new Response(null, { status: 200 });
 };
@@ -68,6 +71,9 @@ for (const method of ['HEAD', 'DELETE']) {
 const davList = await dav.list('media/');
 assert.equal(davList[0].key, 'media/b.webp');
 assert.equal(davList[0].size, 20);
+const davBackupList = await dav.list('backups/d1/');
+assert.equal(davBackupList[0].key, 'backups/d1/a b.sql', 'WebDAV list should accept arbitrary namespace prefixes and decode paths');
+assert.equal(davBackupList[0].size, 30);
 
 // R2 binding
 const stored = new Map();
