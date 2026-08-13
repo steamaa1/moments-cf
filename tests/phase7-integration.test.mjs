@@ -210,7 +210,9 @@ const gitEditor = await readFile(new URL('../front/components/GitEmbed.vue', imp
 const gitPreview = await readFile(new URL('../front/components/GitPreview.vue', import.meta.url), 'utf8');
 assert.match(gitEditor, /GitHub、GitLab、Gitea、Forgejo、Codeberg/);
 assert.match(gitEditor, /嵌入 Git 仓库/);
+assert.match(gitEditor, /i-carbon-logo-github/);
 assert.match(gitPreview, /Git 仓库快照/);
+assert.match(gitPreview, /i-carbon-logo-github/);
 assert.match(gitPreview, /noopener noreferrer/);
 assert.match(gitPreview, /providerLabel/);
 const xEditor = await readFile(new URL('../front/components/XEmbed.vue', import.meta.url), 'utf8');

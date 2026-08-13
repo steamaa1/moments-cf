@@ -1,7 +1,7 @@
 <template>
   <UPopover :ui="{ base: 'w-[min(380px,calc(100vw-2rem))]' }" :popper="{ arrow: true }" mode="click">
     <button type="button" class="flex h-6 w-6 items-center justify-center text-gray-700 transition-transform duration-150 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-700 dark:text-gray-100" title="嵌入 Git 仓库" aria-label="嵌入 Git 仓库">
-      <UIcon name="i-carbon-code" class="h-6 w-6" aria-hidden="true"/>
+      <UIcon name="i-carbon-logo-github" class="h-6 w-6" aria-hidden="true"/>
     </button>
     <template #panel="{ close }">
       <div class="space-y-3 p-4">
