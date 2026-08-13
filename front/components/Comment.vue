@@ -24,7 +24,7 @@
     </span>
     
   </div>
-  <CommentBox :memo-id="props.memoId" :reply-to="props.comment.username" :comment-id="props.comment.id" :reply-email="props.comment.email"/>
+  <CommentBox :memo-id="props.memoId" :reply-to="props.comment.username" :comment-id="props.comment.id"/>
 </template>
 
 <script setup lang="ts">

@@ -1406,7 +1406,15 @@ async function addComment(request, env, headers, ctx) {
   const website = body.website ? validHttpUrl(String(body.website)) : null;
   if (body.website && !website) return json(fail('网站地址格式错误'), 400, headers);
   const username = user ? user.nickname : String(body.username || `匿名用户_${randomToken(2)}`).trim().slice(0, 80);
-  const replyTo = String(body.replyTo || '').slice(0, 80); const replyEmail = String(body.replyEmail || '').slice(0, 254);
+  const replyCommentId = intParam(body.replyCommentId);
+  let replyTo = '';
+  let replyEmail = '';
+  if (replyCommentId) {
+    const targetComment = await env.DB.prepare('SELECT id, username, email FROM comments WHERE id=? AND memo_id=?').bind(replyCommentId, memo.id).first();
+    if (!targetComment) return json(fail('回复的评论不存在'), 400, headers);
+    replyTo = String(targetComment.username || '').slice(0, 80);
+    replyEmail = String(targetComment.email || '').slice(0, 254);
+  }
   await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(content, replyTo, replyEmail, username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash).run();
   const owner = await env.DB.prepare('SELECT nickname,email,telegram_chat_id FROM users WHERE id=?').bind(memo.user_id).first();

@@ -31,7 +31,6 @@ const props = defineProps<{
   commentId: number
   memoId: number
   replyTo?: string
-  replyEmail?: string
 }>()
 const pid = computed(() => {
   return `${props.memoId}#${props.commentId}`
@@ -49,8 +48,7 @@ const sysConfig = useState<SysConfigVO>('sysConfig')
 const state = reactive({
   content: "",
   memoId: props.memoId,
-  replyTo: props.replyTo,
-  replyEmail: props.replyEmail,
+  replyCommentId: props.commentId || 0,
   username: localCommentUserinfo.value.username,
   website: localCommentUserinfo.value.website,
   email: localCommentUserinfo.value.email,

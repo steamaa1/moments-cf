@@ -40,7 +40,7 @@ const friend = {
 };
 const memo = { id: 10, user_id: 1, content: '动态正文', imgs: '', show_type: 1, created_at: '2026-08-01 00:00:00' };
 
-function makeDb(config, users, owner, memoRow) {
+function makeDb(config, users, owner, memoRow, comments = {}) {
   return {
     prepare(sql) {
       const stmt = {
@@ -51,6 +51,10 @@ function makeDb(config, users, owner, memoRow) {
           if (sql.includes('SELECT * FROM memos')) return memoRow;
           if (sql.includes('SELECT * FROM users WHERE id')) return users[Number(stmt.args[0])] || null;
           if (sql.includes('SELECT COUNT(*) AS total FROM comments')) return { total: 0 };
+          if (sql.includes('SELECT id, username, email FROM comments')) {
+            const comment = comments[Number(stmt.args[0])] || null;
+            return comment && Number(comment.memo_id) === Number(stmt.args[1]) ? comment : null;
+          }
           if (sql.includes('nickname,email,telegram_chat_id')) return owner;
           return null;
         },
@@ -62,7 +66,7 @@ function makeDb(config, users, owner, memoRow) {
   };
 }
 
-async function postComment({ config, users, owner, memoRow = memo, payload, authToken = null }) {
+async function postComment({ config, users, owner, memoRow = memo, comments = {}, payload, authToken = null }) {
   const fetchCalls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -71,7 +75,7 @@ async function postComment({ config, users, owner, memoRow = memo, payload, auth
   };
   try {
     const env = {
-      DB: makeDb(config, users, owner, memoRow),
+      DB: makeDb(config, users, owner, memoRow, comments),
       JWT_SECRET,
       LIKE_SALT: JWT_SECRET,
       RESEND_API_KEY: 're_test_key',
@@ -110,13 +114,14 @@ const telegramConfig = { ...baseConfig, telegramBotTokenEncrypted: botToken };
   assert.equal(result.fetchCalls.length, 0, '作者自评不应触发任何通知');
 }
 
-// 2. 作者本人回复他人评论 → 仍邮件通知被回复人（replyEmail），不通知自己（Telegram 不发）
+// 2. 作者本人回复真实评论 → 服务端按 replyCommentId 查询邮箱并通知，不信任客户端邮箱
 {
   const result = await postComment({
     config: telegramConfig,
     users: { 1: author },
     owner: author,
-    payload: { memoId: 10, content: '回复你', replyTo: '访客A', replyEmail: 'guest@example.com' },
+    comments: { 88: { id: 88, memo_id: 10, username: '访客A', email: 'guest@example.com' } },
+    payload: { memoId: 10, content: '回复你', replyCommentId: 88, replyTo: '伪造名称', replyEmail: 'attacker@example.com' },
     authToken: selfToken,
   });
   assert.equal(result.status, 200);
@@ -125,7 +130,36 @@ const telegramConfig = { ...baseConfig, telegramBotTokenEncrypted: botToken };
   assert.equal(telegramCalls(result.fetchCalls).length, 0, '作者回复时不应给自己发 Telegram');
 }
 
-// 3. 游客评论 → 邮件通知作者 + Telegram 通知作者
+// 3. 伪造 replyEmail 但没有有效 replyCommentId → 不得向伪造邮箱发信
+{
+  const result = await postComment({
+    config: telegramConfig,
+    users: { 1: author },
+    owner: author,
+    payload: { memoId: 10, content: '伪造回复', replyTo: '任意人', replyEmail: 'attacker@example.com' },
+    authToken: null,
+  });
+  assert.equal(result.status, 200);
+  assert.equal(resendCalls(result.fetchCalls).length, 1);
+  assert.equal(resendTo(resendCalls(result.fetchCalls)[0]), 'author@example.com', '无有效回复 ID 时只能通知动态作者');
+}
+
+// 4. 不属于当前动态的 replyCommentId → 拒绝请求
+{
+  const result = await postComment({
+    config: telegramConfig,
+    users: { 1: author },
+    owner: author,
+    comments: { 99: { id: 99, memo_id: 11, username: '其他动态访客', email: 'other@example.com' } },
+    payload: { memoId: 10, content: '跨动态回复', replyCommentId: 99 },
+    authToken: null,
+  });
+  assert.equal(result.status, 400);
+  assert.match(result.body.message, /回复的评论不存在/);
+  assert.equal(result.fetchCalls.length, 0);
+}
+
+// 5. 游客评论 → 邮件通知作者 + Telegram 通知作者
 {
   const result = await postComment({
     config: telegramConfig,
