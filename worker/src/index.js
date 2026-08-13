@@ -737,6 +737,18 @@ async function getMemo(request, env, headers) {
   }
   return json(ok(view), 200, headers);
 }
+async function previewUnfurl(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const kind = String(body?.kind || '');
+  const url = String(body?.url || '').trim();
+  try {
+    if (kind === 'git') return json(ok(await fetchGitSnapshot(parseGitEmbedUrl(url))), 200, headers);
+    if (kind === 'x') return json(ok(await fetchXSnapshot(parseXEmbedUrl(url))), 200, headers);
+    return json(fail('预览类型无效'), 400, headers);
+  } catch (error) { return json(fail(error.message), 400, headers); }
+}
 async function verifyMemoMedia(imgs, user, env) {
   for (const url of imgs) {
     if (!url.startsWith('/upload/media/')) continue;
@@ -1875,6 +1887,7 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/file/trash/purge') return await purgeTrash(request, env, headers);
     if (url.pathname === '/api/file/s3PreSigned') return json(fail('Cloudflare 版本使用 R2 直连上传，请关闭旧 S3 设置'), 400, headers);
     if (url.pathname === '/api/memo/list') return await listMemos(request, env, headers);
+    if (url.pathname === '/api/memo/preview') return await previewUnfurl(request, env, headers);
     if (url.pathname === '/api/memo/get') return await getMemo(request, env, headers);
     if (url.pathname === '/api/memo/save') return await saveMemo(request, env, headers);
     if (url.pathname === '/api/memo/remove') return await removeMemo(request, env, headers);
@@ -1916,7 +1929,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

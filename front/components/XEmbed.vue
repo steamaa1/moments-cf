@@ -7,13 +7,13 @@
       <div class="space-y-3 p-4">
         <div>
           <p class="font-semibold text-gray-800 dark:text-gray-100">嵌入 X 原帖</p>
-          <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">粘贴一条 X（Twitter）状态链接，以原帖卡片展示。</p>
+          <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">粘贴一条 X（Twitter）状态链接，确认后立即抓取预览。</p>
         </div>
         <UInput v-model="draft" placeholder="https://x.com/.../status/..." @keyup.enter="confirm(close)"/>
         <p v-if="draft && !valid" class="text-xs text-red-500">请输入 x.com 或 twitter.com 的单条状态链接</p>
         <div class="flex justify-end gap-2">
           <UButton color="white" @click="clear(close)">清空</UButton>
-          <UButton :disabled="Boolean(draft) && !valid" @click="confirm(close)">确定</UButton>
+          <UButton :disabled="Boolean(draft) && !valid" :loading="loading" @click="confirm(close)">确定</UButton>
         </div>
       </div>
     </template>
@@ -22,11 +22,13 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { toast } from 'vue-sonner'
 import type { XEmbed } from '~/types'
 
 const props = withDefaults(defineProps<XEmbed>(), { url: '', id: '' })
 const emit = defineEmits<{ confirm: [value: XEmbed] }>()
 const draft = ref(props.url || '')
+const loading = ref(false)
 const parsed = computed(() => {
   try {
     const url = new URL(draft.value.trim())
@@ -37,10 +39,21 @@ const parsed = computed(() => {
 })
 const valid = computed(() => !draft.value.trim() || parsed.value.valid)
 watch(() => props.url, value => { draft.value = value || '' })
-const confirm = (close: Function) => {
-  if (!valid.value) return
-  emit('confirm', draft.value.trim() ? { url: draft.value.trim(), id: parsed.value.id } : {})
-  close()
+const confirm = async (close: Function) => {
+  if (!valid.value || loading.value) return
+  const url = draft.value.trim()
+  if (!url) { emit('confirm', {}); close(); return }
+  loading.value = true
+  try {
+    const snapshot = await useMyFetch<XEmbed>('/memo/preview', { kind: 'x', url })
+    emit('confirm', snapshot)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'X 原帖抓取失败')
+    emit('confirm', { url, id: parsed.value.id })
+  } finally {
+    loading.value = false
+    close()
+  }
 }
 const clear = (close: Function) => { draft.value = ''; emit('confirm', {}); close() }
 </script>

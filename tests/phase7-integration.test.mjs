@@ -211,6 +211,10 @@ const gitPreview = await readFile(new URL('../front/components/GitPreview.vue', 
 assert.match(gitEditor, /GitHub、GitLab、Gitea、Forgejo、Codeberg/);
 assert.match(gitEditor, /嵌入 Git 仓库/);
 assert.match(gitEditor, /i-carbon-logo-github/);
+assert.match(gitEditor, /\/memo\/preview/);
+assert.match(gitEditor, /kind: 'git'/);
+assert.match(gitEditor, /立即抓取预览/);
+assert.match(gitEditor, /:loading="loading"/);
 assert.match(gitPreview, /Git 仓库快照/);
 assert.match(gitPreview, /i-carbon-logo-github/);
 assert.match(gitPreview, /itemTitle/);
@@ -228,6 +232,10 @@ const xEditor = await readFile(new URL('../front/components/XEmbed.vue', import.
 const xPreview = await readFile(new URL('../front/components/XPreview.vue', import.meta.url), 'utf8');
 const memoEdit = await readFile(new URL('../front/components/MemoEdit.vue', import.meta.url), 'utf8');
 assert.match(xEditor, /x\.com 或 twitter\.com/);
+assert.match(xEditor, /\/memo\/preview/);
+assert.match(xEditor, /kind: 'x'/);
+assert.match(xEditor, /立即抓取预览/);
+assert.match(xEditor, /:loading="loading"/);
 assert.match(xPreview, /x-card__header/);
 assert.match(xPreview, /authorName/);
 assert.match(xPreview, /authorUsername/);

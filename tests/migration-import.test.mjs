@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { migrationFinish, migrationImport, migrationPreflight, migrationPrepare, passwordHash, signJwt } from '../worker/src/index.js';
+import { migrationFinish, migrationImport, migrationPreflight, migrationPrepare, passwordHash, previewUnfurl, signJwt } from '../worker/src/index.js';
 
 const secret = 'migration-test-secret-at-least-sixteen-characters';
 const packageId = 'a'.repeat(64);
@@ -65,6 +65,26 @@ assert.equal(preflightResponse.status, 200);
 assert.equal(preflightBody.data.packageId, packageId);
 assert.equal(preflightBody.data.backupAvailable, true);
 assert.equal(preflightBody.data.existingRun, null);
+const originalPreviewFetch = globalThis.fetch;
+globalThis.fetch = async (url) => {
+  const text = String(url);
+  if (text.includes('/repos/steamaa1/moments-cf/issues/42')) return Response.json({ title: '预览中的 Bug', state: 'open', user: { login: 'steamaa1', avatar_url: 'https://avatars.githubusercontent.com/u/1' }, created_at: '2026-08-01T00:00:00Z' });
+  if (text.includes('/repos/steamaa1/moments-cf')) return Response.json({ full_name: 'steamaa1/moments-cf', description: '预览仓库', language: 'JavaScript', stargazers_count: 1, forks_count: 0, owner: { login: 'steamaa1' } });
+  throw new Error('unexpected ' + text);
+};
+try {
+  const previewRequest = new Request('https://moments.example/api/memo/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ kind: 'git', url: 'https://github.com/steamaa1/moments-cf/issues/42' }) });
+  const previewResponse = await previewUnfurl(previewRequest, env, {});
+  const previewBody = await previewResponse.json();
+  assert.equal(previewResponse.status, 200);
+  assert.equal(previewBody.data.itemTitle, '预览中的 Bug');
+  assert.equal(previewBody.data.itemState, 'open');
+  assert.equal(previewBody.data.stars, 1);
+} finally { globalThis.fetch = originalPreviewFetch; }
+const anonPreview = await previewUnfurl(new Request('https://moments.example/api/memo/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'git', url: 'https://github.com/a/b' }) }), env, {});
+assert.equal(anonPreview.status, 401, '预览接口必须登录');
+const badPreview = await previewUnfurl(new Request('https://moments.example/api/memo/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ kind: 'evil', url: 'https://github.com/a/b' }) }), env, {});
+assert.equal(badPreview.status, 400, '非法预览类型应拒绝');
 state.runs.set(packageId, { status: 'importing', summary: JSON.stringify({ manifest: { tables: manifest.tables, mediaCount: 0, mediaBytes: 0 }, backupReady: true, backup: { key: 'backups/d1/ready.sql' } }) });
 const prepareRequest = new Request('https://moments.example/api/admin/migration/prepare', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ packageId, password: 'password123' }) });
 const prepareResponse = await migrationPrepare(prepareRequest, env, {});
