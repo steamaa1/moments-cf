@@ -39,11 +39,14 @@ const reload = async () => {
   const generation = ++requestGeneration
   loading.value = true
   try {
-    const res = await useMyFetch<{list:MemoVO[];total:number;hasNext:boolean}>('/memo/list', { ...state, page: 1 })
+    const [res, user] = await Promise.all([
+      useMyFetch<{list:MemoVO[];total:number;hasNext:boolean}>('/memo/list', { ...state, page: 1 }),
+      useMyFetch<UserVO>(`/user/profileById?id=${userId}`),
+    ])
     if (generation !== requestGeneration) return
     state.page = 1
     memos.value = res.list
-    profile.value = res.list[0]?.user || profile.value
+    profile.value = user
     hasNext.value = res.hasNext
   } finally {
     if (generation === requestGeneration) loading.value = false

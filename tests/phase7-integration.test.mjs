@@ -73,6 +73,8 @@ assert.match(about, /markdownit\(\{ html: true/);
 assert.match(about, /enableAbout/);
 assert.match(timeline, /朋友圈时间轴/);
 assert.match(userTimeline, /viewMode = ref<'timeline' \| 'cards'>\('timeline'\)/);
+assert.match(userTimeline, /Promise\.all\(\[/, '用户空间应并行加载资料与动态');
+assert.match(userTimeline, /\/user\/profileById\?id=\$\{userId\}/, '用户空间应按 ID 独立加载资料，不依赖首条动态');
 assert.match(calendar, /时间轴排列/);
 assert.match(music, /直链播放/);
 assert.match(music, /滚动歌词（LRC）/);

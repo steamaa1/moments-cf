@@ -276,6 +276,15 @@ async function getProfile(request, env, headers, username = null) {
   }
   return json(ok(view), 200, headers);
 }
+async function getProfileById(request, env, headers) {
+  const id = intParam(new URL(request.url).searchParams.get('id'));
+  if (id < 1) return json(fail('用户 ID 无效'), 400, headers);
+  const user = await requireBinding(env, 'DB').prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
+  const view = publicUser(user, false);
+  if (!view) return json(fail('用户不存在'), 404, headers);
+  view.status = await userStatusView(env, user.id);
+  return json(ok(view), 200, headers);
+}
 async function saveProfile(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
@@ -1989,6 +1998,7 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/user/status/get') return await statusGet(request, env, headers);
     if (url.pathname === '/api/user/status/list') return await statusList(request, env, headers);
     if (url.pathname === '/api/user/profile') return await getProfile(request, env, headers);
+    if (url.pathname === '/api/user/profileById') return await getProfileById(request, env, headers);
     if (url.pathname.startsWith('/api/user/profile/')) return await getProfile(request, env, headers, url.pathname.slice('/api/user/profile/'.length));
     if (url.pathname === '/api/user/saveProfile') return await saveProfile(request, env, headers);
     if (url.pathname === '/api/sysConfig/get') return await getConfig(request, env, headers);
