@@ -326,6 +326,9 @@ assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emo
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /customIcon/, '自定义状态应记录 emoji');
 const indexPage = indexPageForBus;
+assert.match(memoComponent, /const readLikedMemoIds =/, '点赞缓存应统一安全读取');
+assert.match(memoComponent, /localStorage\.removeItem\("likeMemos"\)/, '损坏的点赞缓存应自动清理');
+assert.equal((memoComponent.match(/JSON\.parse\(localStorage\.getItem\("likeMemos"\)/g) || []).length, 1, '点赞缓存只能在安全读取函数中解析一次');
 assert.match(indexPage, /客官勿急 正在加载中…/, '加载中应显示提示文案');
 assert.match(indexPage, /const loading = ref\(false\)/, '应有加载状态标记');
 console.log('Phase 7 integration tests: PASS');
