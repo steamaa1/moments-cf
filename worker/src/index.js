@@ -755,7 +755,7 @@ async function saveMemo(request, env, headers) {
   try {
     imgs = (Array.isArray(body.imgs) ? body.imgs : []).map(value => safeHttpHref(value, '图片地址', { allowRelativeUpload: true })).filter(Boolean).slice(0, 9);
   } catch (error) { return json(fail(error.message), 400, headers); }
-  if (!content && !imgs.length && !body.externalUrl && !body.ext?.video?.value) return json(fail('动态内容不能为空'), 400, headers);
+  if (!content && !imgs.length && !body.externalUrl && !body.ext?.video?.value && !body.ext?.git?.url) return json(fail('动态内容不能为空'), 400, headers);
   if (content.length > 10000) return json(fail('动态内容不能超过 10000 字'), 400, headers);
   try { await verifyMemoMedia(imgs, access.user, env); } catch (error) { return json(fail(error.message), 403, headers); }
   const id = intParam(body.id);
@@ -770,6 +770,7 @@ async function saveMemo(request, env, headers) {
   let safeExt;
   try {
     safeExt = sanitizeMemoExt(body.ext);
+    if (safeExt.git?.url && !safeExt.git.title) safeExt.git = await fetchGitSnapshot(safeExt.git);
     if (safeExt.x?.id) {
       const metricsAllZero = !safeExt.x.likes && !safeExt.x.replies && !safeExt.x.reposts;
       const needsRefresh = !safeExt.x.text || !safeExt.x.avatar || metricsAllZero || (String(safeExt.x.text).includes('pic.twitter.com') && !safeExt.x.media?.length);
@@ -932,6 +933,61 @@ function parseXEmbedUrl(value) {
   if (!match) throw new Error('仅支持单条 X（Twitter）状态链接');
   return { url, id: match[1] };
 }
+function parseGitEmbedUrl(value) {
+  const href = safeHttpHref(value, 'Git 链接');
+  const url = new URL(href);
+  if (forbiddenHost(url.hostname)) throw new Error('不允许访问本地或内网 Git 地址');
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (parts.length < 2) throw new Error('Git 链接必须包含仓库所有者和仓库名');
+  const host = url.hostname.toLowerCase();
+  const provider = host === 'github.com' ? 'github' : host === 'gitlab.com' ? 'gitlab' : host === 'codeberg.org' ? 'codeberg' : host.includes('forgejo') ? 'forgejo' : host.includes('gitea') ? 'gitea' : 'git';
+  const owner = parts[0].slice(0, 200);
+  const repo = parts[1].replace(/\.git$/i, '').slice(0, 200);
+  if (!owner || !repo || ['api', 'explore', 'users', 'user', 'org'].includes(owner.toLowerCase())) throw new Error('Git 仓库路径无效');
+  let kind = 'repo'; let branch = ''; let path = ''; let number;
+  const marker = parts[2] === '-' ? parts[3] : parts[2];
+  const offset = parts[2] === '-' ? 4 : 3;
+  if (['issues', 'issue'].includes(marker)) { kind = 'issue'; number = clampInt(parts[offset], 1, 1_000_000_000, 0) || undefined; }
+  else if (['pull', 'pulls', 'merge_requests'].includes(marker)) { kind = 'pull'; number = clampInt(parts[offset], 1, 1_000_000_000, 0) || undefined; }
+  else if (['commit', 'commits'].includes(marker)) { kind = 'commit'; path = String(parts[offset] || '').slice(0, 200); }
+  else if (['releases', 'release'].includes(marker)) { kind = 'release'; path = parts.slice(offset).join('/').slice(0, 500); }
+  else if (['blob', 'tree', 'src', 'raw'].includes(marker)) { kind = 'file'; branch = String(parts[offset] || '').slice(0, 200); path = parts.slice(offset + 1).join('/').slice(0, 1000); }
+  return { url: href, provider, kind, owner, repo, branch, path, number };
+}
+function gitSnapshotFromRepository(data, git) {
+  return {
+    ...git,
+    title: String(data?.full_name || data?.path_with_namespace || data?.name || `${git.owner}/${git.repo}`).slice(0, 300),
+    description: String(data?.description || '').slice(0, 4000),
+    author: String(data?.owner?.login || data?.owner?.username || data?.namespace?.name || git.owner).slice(0, 200),
+    avatar: safeHttpHref(data?.owner?.avatar_url || data?.avatar_url || '', 'Git 头像') || '',
+    language: String(data?.language || data?.language_name || '').slice(0, 100),
+    stars: clampInt(data?.stargazers_count ?? data?.star_count ?? data?.stars_count, 0, 1_000_000_000, 0),
+    forks: clampInt(data?.forks_count, 0, 1_000_000_000, 0),
+    updatedAt: String(data?.updated_at || data?.last_activity_at || '').slice(0, 100),
+  };
+}
+function gitSnapshotFromHtml(html, git) {
+  const title = decodeHtml(metaContent(html, 'property', 'og:title') || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || `${git.owner}/${git.repo}`).replace(/<[^>]*>/g, '').trim();
+  const description = decodeHtml(metaContent(html, 'property', 'og:description') || metaContent(html, 'name', 'description')).replace(/<[^>]*>/g, '').trim();
+  return { ...git, title: title.slice(0, 300) || `${git.owner}/${git.repo}`, description: description.slice(0, 4000), author: git.owner };
+}
+async function fetchGitSnapshot(git) {
+  const headers = { accept: 'application/json', 'user-agent': 'Moments-CF/1.0' };
+  let apiUrl = '';
+  if (git.provider === 'github') apiUrl = `https://api.github.com/repos/${encodeURIComponent(git.owner)}/${encodeURIComponent(git.repo)}`;
+  else if (git.provider === 'gitlab') apiUrl = `https://gitlab.com/api/v4/projects/${encodeURIComponent(`${git.owner}/${git.repo}`)}`;
+  else apiUrl = `${new URL(git.url).origin}/api/v1/repos/${encodeURIComponent(git.owner)}/${encodeURIComponent(git.repo)}`;
+  try {
+    const response = await fetch(apiUrl, { redirect: 'manual', headers, signal: AbortSignal.timeout(8000) });
+    if (response.ok && (response.headers.get('content-type') || '').includes('json')) return gitSnapshotFromRepository(await response.json(), git);
+  } catch (error) { console.warn('Git repository API snapshot failed', error); }
+  try {
+    const response = await fetch(git.url, { redirect: 'manual', headers: { 'user-agent': headers['user-agent'], accept: 'text/html' }, signal: AbortSignal.timeout(8000) });
+    if (response.ok && (response.headers.get('content-type') || '').includes('text/html')) return gitSnapshotFromHtml((await response.text()).slice(0, 512000), git);
+  } catch (error) { console.warn('Git page snapshot failed', error); }
+  return { ...git, title: `${git.owner}/${git.repo}`, description: '', author: git.owner };
+}
 function xSyndicationToken(id) {
   return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
 }
@@ -1022,7 +1078,7 @@ async function fetchXSnapshot(x) {
 }
 function sanitizeMemoExt(input) {
   const ext = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
-  const output = { music: {}, video: {}, doubanBook: {}, doubanMovie: {} };
+  const output = { music: {}, video: {}, git: {}, doubanBook: {}, doubanMovie: {} };
   if (ext.music?.url || ext.music?.mode === 'direct') {
     const url = safeHttpHref(ext.music.url, '音乐直链');
     const name = String(ext.music.name || '').trim().slice(0, 200);
@@ -1053,6 +1109,20 @@ function sanitizeMemoExt(input) {
     if (type === 'youtube' && !['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com'].includes(url?.hostname)) throw new Error('Youtube 视频地址无效');
     if (type === 'bilibili' && url?.hostname !== 'player.bilibili.com') throw new Error('B站视频地址无效');
     output.video = { type, value };
+  }
+  if (ext.git?.url) {
+    const git = parseGitEmbedUrl(ext.git.url);
+    if (ext.git.title) Object.assign(git, {
+      title: String(ext.git.title || '').slice(0, 300),
+      description: String(ext.git.description || '').slice(0, 4000),
+      author: String(ext.git.author || '').slice(0, 200),
+      avatar: safeHttpHref(ext.git.avatar, 'Git 头像') || '',
+      language: String(ext.git.language || '').slice(0, 100),
+      stars: clampInt(ext.git.stars, 0, 1_000_000_000, 0),
+      forks: clampInt(ext.git.forks, 0, 1_000_000_000, 0),
+      updatedAt: String(ext.git.updatedAt || '').slice(0, 100),
+    });
+    output.git = git;
   }
   if (ext.x?.url) {
     const x = parseXEmbedUrl(ext.x.url);
@@ -1790,7 +1860,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

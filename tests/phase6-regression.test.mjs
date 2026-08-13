@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
+import worker, { fetchGitSnapshot, fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseGitEmbedUrl, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
 
 const userPage = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userPage, /const userId = Number\(route\.params\.id\)/);
@@ -20,6 +20,29 @@ const directMusic = sanitizeMemoExt({ music: { mode: 'direct', url: 'https://med
 assert.deepEqual(directMusic, { mode: 'direct', url: 'https://media.example/song.mp3', name: '测试歌曲', artist: '', cover: '', lrc: '[00:01.00]第一句' });
 assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'javascript:alert(1)', name: '坏音乐' } }), /音乐直链/);
 assert.throws(() => sanitizeMemoExt({ music: { mode: 'direct', url: 'https://media.example/a.mp3', name: '' } }), /歌曲名/);
+const gitRepo = parseGitEmbedUrl('https://github.com/steamaa1/moments-cf');
+assert.equal(gitRepo.provider, 'github');
+assert.equal(gitRepo.kind, 'repo');
+assert.equal(gitRepo.owner, 'steamaa1');
+assert.equal(gitRepo.repo, 'moments-cf');
+assert.equal(parseGitEmbedUrl('https://github.com/steamaa1/moments-cf/issues/42').kind, 'issue');
+assert.equal(parseGitEmbedUrl('https://gitlab.com/group/project/-/merge_requests/7').kind, 'pull');
+assert.equal(parseGitEmbedUrl('https://gitea.example.com/team/project/src/branch/main/README.md').kind, 'file');
+assert.throws(() => parseGitEmbedUrl('https://127.0.0.1/team/project'), /本地或内网/);
+const gitExt = sanitizeMemoExt({ git: { url: 'https://github.com/steamaa1/moments-cf', title: 'moments-cf', description: '测试仓库', stars: 4 } }).git;
+assert.equal(gitExt.title, 'moments-cf');
+assert.equal(gitExt.stars, 4);
+const originalGitFetch = globalThis.fetch;
+globalThis.fetch = async (url) => {
+  assert.match(String(url), /api\.github\.com\/repos\/steamaa1\/moments-cf/);
+  return Response.json({ full_name: 'steamaa1/moments-cf', description: 'Cloudflare edition', language: 'JavaScript', stargazers_count: 12, forks_count: 3, owner: { login: 'steamaa1' } });
+};
+try {
+  const snapshot = await fetchGitSnapshot(gitRepo);
+  assert.equal(snapshot.title, 'steamaa1/moments-cf');
+  assert.equal(snapshot.description, 'Cloudflare edition');
+  assert.equal(snapshot.stars, 12);
+} finally { globalThis.fetch = originalGitFetch; }
 const xEmbed = sanitizeMemoExt({ x: { url: 'https://x.com/example/status/1881234567890123456' } }).x;
 assert.deepEqual(xEmbed, { url: 'https://x.com/example/status/1881234567890123456', id: '1881234567890123456' });
 assert.equal(sanitizeMemoExt({ x: { url: 'https://twitter.com/example/status/1881234567890123456' } }).x.id, '1881234567890123456');

@@ -124,7 +124,27 @@ export type MetingMusicServer = Exclude<MetingJSDTO['server'], undefined>
 export type MetingMusicType = Exclude<MetingJSDTO['type'], undefined>
 
 
+export type GitEmbed = {
+    url: string
+    provider?: string
+    kind?: 'repo' | 'file' | 'issue' | 'pull' | 'commit' | 'release'
+    title?: string
+    description?: string
+    owner?: string
+    repo?: string
+    branch?: string
+    path?: string
+    number?: number
+    author?: string
+    avatar?: string
+    language?: string
+    stars?: number
+    forks?: number
+    updatedAt?: string
+}
+
 export type ExtDTO = {
+    git: GitEmbed,
     music: MusicDTO,
     doubanBook: DoubanBook,
     doubanMovie: DoubanMovie,
