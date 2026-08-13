@@ -205,6 +205,10 @@ async function requireUser(request, env, headers, adminOnly = false) {
   if (adminOnly && Number(user.id) !== 1) return { response: json(fail('无权限', 4), 403, headers) };
   return { user };
 }
+function validUsername(value) {
+  const username = String(value || '').trim();
+  return username.length >= 3 && username.length <= 40 && /^[A-Za-z0-9_-]+$/.test(username) ? username : '';
+}
 function cleanProfile(input, existing) {
   return {
     nickname: String(input.nickname ?? existing.nickname ?? '').trim().slice(0, 80),
@@ -220,13 +224,13 @@ async function initialize(request, env, headers) {
   const body = await readJson(request);
   if (!env.INIT_SECRET) return json(fail('服务端未配置 INIT_SECRET'), 503, headers);
   if (request.headers.get('x-init-secret') !== env.INIT_SECRET) return json(fail('初始化密钥错误'), 403, headers);
-  if (!body?.username || !body?.password || String(body.username).length < 3 || String(body.password).length < 8) {
-    return json(fail('用户名至少 3 位，密码至少 8 位'), 400, headers);
+  const username = validUsername(body?.username);
+  if (!username || String(body?.password || '').length < 8) {
+    return json(fail(!username ? '用户名须为 3-40 位字母、数字、下划线或连字符' : '密码至少 8 位'), 400, headers);
   }
   const db = requireBinding(env, 'DB');
   const exists = await db.prepare('SELECT id FROM users LIMIT 1').first();
   if (exists) return json(fail('站点已初始化'), 409, headers);
-  const username = String(body.username).trim();
   const hash = await passwordHash(String(body.password), pbkdf2Iterations(env.PBKDF2_ITERATIONS));
   const config = { ...DEFAULT_CONFIG, adminUserName: username };
   await db.batch([
@@ -340,7 +344,11 @@ async function saveConfig(request, env, headers) {
   if (!body || typeof body !== 'object') return json(fail('参数错误'), 400, headers);
   const old = await env.DB.prepare('SELECT content FROM sys_config WHERE id = 1').first();
   const previousConfig = parseConfig(old?.content);
-  const adminUserName = String(body.adminUserName || '').trim() || access.user.username;
+  const requestedAdminUserName = String(body.adminUserName || '').trim() || access.user.username;
+  const adminUserName = validUsername(requestedAdminUserName);
+  if (!adminUserName) return json(fail('用户名须为 3-40 位字母、数字、下划线或连字符'), 400, headers);
+  const duplicateAdminName = await env.DB.prepare('SELECT id FROM users WHERE username=? AND id<>1').bind(adminUserName).first();
+  if (duplicateAdminName) return json(fail('用户名已存在'), 409, headers);
   const config = { ...previousConfig, ...body, adminUserName };
   config.beiAnNo = sanitizeSafeHtml(body.beiAnNo);
   config.enableAbout = Boolean(body.enableAbout);
@@ -461,9 +469,9 @@ async function register(request, env, headers) {
   const body = await readJson(request);
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   if (!config.enableRegister) return json(fail('当前未开启注册用户'), 403, headers);
-  const username = String(body?.username || '').trim();
+  const username = validUsername(body?.username);
   const password = String(body?.password || '');
-  if (username.length < 3 || username.length > 40 || !/^[A-Za-z0-9_-]+$/.test(username)) return json(fail('用户名须为 3-40 位字母、数字、下划线或连字符'), 400, headers);
+  if (!username) return json(fail('用户名须为 3-40 位字母、数字、下划线或连字符'), 400, headers);
   if (password.length < 8) return json(fail('密码至少 8 位'), 400, headers);
   if (password !== String(body?.repeatPassword || '')) return json(fail('两次密码不一致'), 400, headers);
   if (await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first()) return json(fail('用户名已存在'), 409, headers);
