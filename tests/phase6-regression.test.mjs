@@ -41,6 +41,11 @@ assert.throws(() => parseMemoRefUrl('/memo/0', 'moments.example'), /编号无效
 const memoRefExt = sanitizeMemoExt({ memoRef: { id: 123 } }).memoRef;
 assert.equal(memoRefExt.id, 123);
 assert.equal(memoRefExt.url, '/memo/123');
+const memoRefFull = sanitizeMemoExt({ memoRef: { id: 1, authorName: '作者', authorAvatar: '/avatar.webp', content: '引用内容', imgs: ['/upload/media/1.png', 'javascript:x'], createdAt: '2026-08-01' } }).memoRef;
+assert.equal(memoRefFull.authorName, '作者');
+assert.equal(memoRefFull.authorAvatar, '/avatar.webp');
+assert.equal(memoRefFull.content, '引用内容');
+assert.deepEqual(memoRefFull.imgs, ['/upload/media/1.png'], '非法图片 URL 应被过滤');
 assert.throws(() => sanitizeMemoExt({ memoRef: { id: 'abc' } }), /编号无效/);
 assert.throws(() => sanitizeMemoExt({ memoRef: { id: 0 } }), /编号无效/);
 const gitExt = sanitizeMemoExt({ git: { url: 'https://github.com/steamaa1/moments-cf', title: 'moments-cf', description: '测试仓库', stars: 4 } }).git;

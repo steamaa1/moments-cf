@@ -30,7 +30,7 @@ class Statement {
       const memo = state.memos.find(m => m.id === Number(this.args[0]));
       if (!memo) return null;
       const user = state.users.find(u => u.id === memo.user_id) || state.users[0];
-      return { ...memo, show_type: 1, imgs: '', created_at: '2026-08-01 00:00:00', nickname: user.nickname, avatar_url: user.avatar_url, username: user.username };
+      return { ...memo, show_type: memo.show_type ?? 1, imgs: '', created_at: '2026-08-01 00:00:00', nickname: user.nickname, avatar_url: user.avatar_url, username: user.username };
     }
     return null;
   }
@@ -53,15 +53,17 @@ class Statement {
       state.mappings.set(`${this.args[0]}:${this.args[1]}:${this.args[2]}`, this.args[3]);
       return { meta: {} };
     }
-    if (sql.startsWith('insert into memos')) { const id = nextMemo++; state.memos.push({ id, content: this.args[0], user_id: this.args[4] }); return { meta: { last_row_id: id } }; }
+    if (sql.startsWith('insert into memos') && sql.includes('fav_count')) { const id = nextMemo++; state.memos.push({ id, content: this.args[0], user_id: this.args[4] }); return { meta: { last_row_id: id } }; }
+    if (sql.startsWith('insert into memos') && !sql.includes('fav_count')) { const id = nextMemo++; state.memos.push({ id, content: this.args[0], ext: this.args[6], show_type: this.args[7], user_id: this.args[9] }); return { meta: { last_row_id: id } }; }
     if (sql.startsWith('insert into comments')) { const id = nextComment++; state.comments.push({ id, memo_id: this.args[8] }); return { meta: { last_row_id: id } }; }
     if (sql.startsWith('insert into friends')) { const id = nextFriend++; state.friends.push({ id, name: this.args[0] }); return { meta: { last_row_id: id } }; }
+    if (sql.startsWith('insert into media')) return { meta: { last_row_id: 1 } };
     if (sql.startsWith('update sys_config set content')) { state.config = JSON.parse(this.args[0]); return { meta: {} }; }
     if (sql.startsWith('update migration_runs set status=')) { state.runs.set(this.args[1], { status: sql.includes("status='completed'") ? 'completed' : 'failed' }); return { meta: {} }; }
     throw new Error(`Unhandled SQL: ${this.sql}`);
   }
 }
-const env = { DB: { prepare(sql) { return new Statement(sql); } }, JWT_SECRET: secret, CLOUDFLARE_ACCOUNT_ID: 'account', D1_DATABASE_ID: 'database', D1_BACKUP_API_TOKEN: 'token' };
+const env = { DB: { prepare(sql) { return new Statement(sql); } }, JWT_SECRET: secret, CLOUDFLARE_ACCOUNT_ID: 'account', D1_DATABASE_ID: 'database', D1_BACKUP_API_TOKEN: 'token', MEDIA: { async put() {}, async get() { return null; }, async list() { return { objects: [] }; }, async delete() {} } };
 state.users[0].password_hash = await passwordHash('password123');
 const token = await signJwt({ sub: '1', tv: 0, exp: Math.floor(Date.now() / 1000) + 60 }, secret);
 const manifest = { format: 'moments-cf-migration', version: 1, packageId, tables: { 'users.json': 2, 'memos.json': 1, 'comments.json': 1, 'friends.json': 1, 'sys_config.json': 1 }, mediaCount: 0, mediaBytes: 0 };
@@ -146,6 +148,35 @@ assert.equal(memoRefBody.data.url, '/memo/1');
 assert.equal(memoRefBody.data.content, '旧动态');
 const memoRefBad = await previewUnfurl(new Request('https://moments.example/api/memo/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ kind: 'memo', url: '/memo/999' }) }), env, {});
 assert.equal(memoRefBad.status, 400, '不存在的动态应拒绝');
+const privateMemoSave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '私密动态', showType: 0 }) }), env);
+assert.equal(privateMemoSave.status, 200);
+const privateId = state.memos[state.memos.length - 1].id;
+const privatePreview = await previewUnfurl(new Request('https://moments.example/api/memo/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ kind: 'memo', url: `/memo/${privateId}` }) }), env, {});
+assert.equal(privatePreview.status, 400, '私密动态不可被引用');
+// BUG-10：upload 服务端验证 SHA-256 与文件内容一致
+const goodFile = new File(['hello-upload'], 'a.png', { type: 'image/png' });
+const goodDigest = new Uint8Array(await crypto.subtle.digest('SHA-256', await goodFile.arrayBuffer()));
+const goodSha = [...goodDigest].map(value => value.toString(16).padStart(2, '0')).join('');
+const goodForm = new FormData();
+goodForm.append('files', goodFile);
+goodForm.append('sha256', goodSha);
+const goodUpload = await worker.fetch(new Request('https://moments.example/api/file/upload', { method: 'POST', headers: { 'x-api-token': token }, body: goodForm }), env);
+assert.equal(goodUpload.status, 200, 'SHA 一致应通过');
+const badForm = new FormData();
+badForm.append('files', new File(['hello-upload'], 'a.png', { type: 'image/png' }));
+badForm.append('sha256', '0'.repeat(64));
+const badUpload = await worker.fetch(new Request('https://moments.example/api/file/upload', { method: 'POST', headers: { 'x-api-token': token }, body: badForm }), env);
+assert.equal(badUpload.status, 400, 'SHA 与内容不一致应拒绝');
+// RISK-11：X 快照重抓失败时保留旧文本快照，不阻塞保存
+const originalXFetch = globalThis.fetch;
+globalThis.fetch = async () => new Response('', { status: 500 });
+try {
+  const xSave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: 'X 正文', ext: { x: { url: 'https://x.com/a/status/1234567890123456789', id: '1234567890123456789', text: '旧快照文本', avatar: '', likes: 0, replies: 0, reposts: 0 } } }) }), env);
+  const xSaveBody = await xSave.json();
+  assert.equal(xSave.status, 200, xSaveBody.message);
+  const lastXExt = JSON.parse(state.memos[state.memos.length - 1].ext || '{}');
+  assert.equal(lastXExt.x.text, '旧快照文本', '抓取失败应保留旧快照');
+} finally { globalThis.fetch = originalXFetch; }
 
 // BUG-06 回归：纯音乐/纯豆瓣嵌入动态不应被判为「内容为空」
 const musicSave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '', ext: { music: { mode: 'direct', url: 'https://media.example/a.mp3', name: '测试歌曲' } } }) }), env);
@@ -156,4 +187,12 @@ const doubanSaveBody = await doubanSave.json();
 assert.equal(doubanSave.status, 200, doubanSaveBody.message);
 const emptySave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '' }) }), env);
 assert.equal(emptySave.status, 400, '真正空内容仍应拒绝');
+const memoRefSave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '正文仍在', ext: { memoRef: { id: 999, authorName: '伪造', content: '伪造' } } }) }), env);
+const memoRefSaveBody = await memoRefSave.json();
+assert.equal(memoRefSave.status, 200, memoRefSaveBody.message);
+const lastMemoExt = JSON.parse(state.memos[state.memos.length - 1].ext || '{}');
+assert.ok(!lastMemoExt.memoRef, '失效的站内引用应被移除而非阻塞保存');
+assert.ok(state.memos[state.memos.length - 1].content.includes('正文仍在'), '正文应保留');
+const memoRefOnlySave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '', ext: { memoRef: { id: 999 } } }) }), env);
+assert.equal(memoRefOnlySave.status, 400, '引用失效且无其他内容时应拒绝');
 console.log('Migration import idempotency tests: PASS');

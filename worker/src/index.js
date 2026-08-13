@@ -406,6 +406,9 @@ async function upload(request, env, headers) {
     if (!ALLOWED_MEDIA_TYPES.has(file.type)) return json(fail(`不支持的文件类型：${file.type || '未知'}`), 415, headers);
     if (file.size > MAX_UPLOAD_BYTES) return json(fail('文件不能超过 25MB'), 413, headers);
     if (!/^[a-f0-9]{64}$/.test(sha)) return json(fail('SHA-256 格式错误'), 400, headers);
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+    const actualSha = [...digest].map(value => value.toString(16).padStart(2, '0')).join('');
+    if (actualSha !== sha) return json(fail('SHA-256 与文件内容不一致'), 400, headers);
     const duplicate = await env.DB.prepare("SELECT r2_key FROM media WHERE owner_id=? AND sha256=? AND trashed_at IS NULL AND upload_state='ready' LIMIT 1").bind(access.user.id, sha).first();
     if (duplicate) { urls.push(`/upload/${duplicate.r2_key}`); continue; }
     const extension = mediaExtension(file.name);
@@ -482,12 +485,13 @@ async function directUploadInit(request, env, headers) {
   if (!signing.accessKeyId || !signing.secretAccessKey || (storageConfig.storageType === 'r2' && !signing.accountId)) return json(fail('直传凭据未配置，请在 Worker Secrets 设置对应 Access Key'), 503, headers);
   const extension = mediaExtension(file.filename);
   const key = mediaObjectKey(extension);
-  const old = await env.DB.prepare('SELECT id FROM media WHERE owner_id=? AND r2_key=? LIMIT 1').bind(access.user.id, key).first();
-  if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, old.id).run();
-  else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,upload_state) VALUES (?,?,?,?,?,?,'pending')").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256).run();
+  // 先完成预签名，成功后再写 pending 记录；签名失败时不留下 pending 垃圾
   const uploadUrl = await backend.presignPut({ key, contentType: file.contentType });
   const thumbnailKey = file.contentType.startsWith('image/') ? mediaThumbKey() : '';
   const thumbnailUploadUrl = thumbnailKey ? await backend.presignPut({ key: thumbnailKey, contentType: 'image/webp' }) : '';
+  const old = await env.DB.prepare('SELECT id FROM media WHERE owner_id=? AND r2_key=? LIMIT 1').bind(access.user.id, key).first();
+  if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, old.id).run();
+  else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,upload_state) VALUES (?,?,?,?,?,?,'pending')").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256).run();
   return json(ok({ exists: false, uploadUrl, key, path: `/upload/${key}`, contentType: file.contentType, direct: file.size >= DIRECT_UPLOAD_THRESHOLD, thumbnailKey, thumbnailUploadUrl }), 200, headers);
 }
 async function directUploadComplete(request, env, headers) {
@@ -769,7 +773,7 @@ function memoRefText(value) {
 async function memoRefSnapshot(env, id, viewer) {
   const memo = await env.DB.prepare(`${MEMO_SELECT} WHERE m.id = ?`).bind(id).first();
   if (!memo) throw new Error('动态不存在');
-  if (!(await canReadMemo(memo, viewer))) throw new Error('暂无权限引用该动态');
+  if (Number(memo.show_type) !== 1 || Date.parse(memo.created_at) > Date.now()) throw new Error('仅可引用已发布的公开动态');
   const imgs = String(memo.imgs || '').split(',').filter(Boolean).slice(0, 4);
   return {
     id: Number(memo.id),
@@ -827,14 +831,26 @@ async function saveMemo(request, env, headers) {
   try {
     safeExt = sanitizeMemoExt(body.ext);
     if (safeExt.git?.url && !safeExt.git.title) safeExt.git = await fetchGitSnapshot(safeExt.git);
-    if (safeExt.memoRef?.id) safeExt.memoRef = await memoRefSnapshot(env, safeExt.memoRef.id, access.user);
+    if (safeExt.memoRef?.id) {
+      try { safeExt.memoRef = await memoRefSnapshot(env, safeExt.memoRef.id, access.user); }
+      catch (error) {
+        // 源动态已失效（删除/变私密/未发布）：移除引用，避免整条动态无法保存
+        delete safeExt.memoRef;
+      }
+    }
     if (safeExt.x?.id) {
       const metricsAllZero = !safeExt.x.likes && !safeExt.x.replies && !safeExt.x.reposts;
       const needsRefresh = !safeExt.x.text || !safeExt.x.avatar || metricsAllZero || (String(safeExt.x.text).includes('pic.twitter.com') && !safeExt.x.media?.length);
-      if (needsRefresh) safeExt.x = await fetchXSnapshot(safeExt.x);
+      if (needsRefresh) {
+        try { safeExt.x = await fetchXSnapshot(safeExt.x); }
+        catch (error) {
+          // 快照抓取失败：已有文本快照则保留旧快照，否则移除，避免阻塞保存
+          if (!safeExt.x.text) delete safeExt.x;
+        }
+      }
     }
   } catch (error) { return json(fail(error.message), 400, headers); }
-  const hasExt = safeExt.music?.url || safeExt.music?.id || safeExt.x?.id || safeExt.git?.url || safeExt.video?.value
+  const hasExt = safeExt.music?.url || safeExt.music?.id || safeExt.x?.id || safeExt.git?.url || safeExt.video?.value || safeExt.memoRef?.id
     || (Array.isArray(safeExt.doubanBooks) && safeExt.doubanBooks.length > 0)
     || (Array.isArray(safeExt.doubanMovies) && safeExt.doubanMovies.length > 0)
     || Boolean(safeExt.doubanBook?.title) || Boolean(safeExt.doubanMovie?.title);
@@ -1250,7 +1266,20 @@ function sanitizeMemoExt(input) {
   if (ext.memoRef?.id != null) {
     const id = Number(ext.memoRef.id);
     if (!Number.isInteger(id) || id < 1) throw new Error('站内动态编号无效');
-    output.memoRef = { id, url: `/memo/${id}` };
+    const avatar = String(ext.memoRef.authorAvatar || '').trim();
+    const imgs = (Array.isArray(ext.memoRef.imgs) ? ext.memoRef.imgs : []).slice(0, 4).map(img => {
+      const value = String(img || '').trim();
+      return value.startsWith('/upload/') || /^https?:\/\//i.test(value) ? value.slice(0, 2048) : '';
+    }).filter(Boolean);
+    output.memoRef = {
+      id,
+      url: `/memo/${id}`,
+      authorName: String(ext.memoRef.authorName || '').slice(0, 80),
+      authorAvatar: (avatar.startsWith('/upload/') || avatar.startsWith('/avatar') || avatar.startsWith('/cover') || /^https?:\/\//i.test(avatar)) ? avatar.slice(0, 2048) : '',
+      content: String(ext.memoRef.content || '').slice(0, 500),
+      imgs,
+      createdAt: String(ext.memoRef.createdAt || '').slice(0, 100),
+    };
   }
   if (ext.x?.url) {
     const x = parseXEmbedUrl(ext.x.url);

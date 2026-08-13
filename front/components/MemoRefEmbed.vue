@@ -21,14 +21,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { MemoRef } from '~/types'
 
 const props = withDefaults(defineProps<MemoRef>(), { id: 0 })
 const emit = defineEmits<{ confirm: [value: MemoRef] }>()
-const draft = ref('')
+const draft = ref(props.id ? `/memo/${props.id}` : '')
 const loading = ref(false)
+watch(() => props.id, value => { draft.value = value ? `/memo/${value}` : '' })
 const parsed = computed(() => {
   try {
     const text = draft.value.trim()

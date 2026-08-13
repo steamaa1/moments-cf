@@ -141,8 +141,11 @@ const publicConfigBody = await publicConfig.json();
 expect(publicConfigBody.data.title === '云梦川的朋友圈', 'public config must return saved title');
 
 const form = new FormData();
-form.append('files', new File(['image-bytes'], 'avatar.webp', { type: 'image/webp' }));
-form.append('sha256', 'a'.repeat(64));
+const uploadFile = new File(['image-bytes'], 'avatar.webp', { type: 'image/webp' });
+const uploadDigest = new Uint8Array(await crypto.subtle.digest('SHA-256', await uploadFile.arrayBuffer()));
+const uploadSha = [...uploadDigest].map(value => value.toString(16).padStart(2, '0')).join('');
+form.append('files', uploadFile);
+form.append('sha256', uploadSha);
 const upload = await worker.fetch(new Request('https://moments.example.com/api/file/upload', { method: 'POST', headers: { 'x-api-token': loginBody.data.token }, body: form }), integrationEnv);
 const uploadBody = await upload.json();
 expect(upload.status === 200 && uploadBody.data.length === 1, 'authenticated upload must succeed');
