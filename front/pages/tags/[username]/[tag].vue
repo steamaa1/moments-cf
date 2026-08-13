@@ -42,6 +42,7 @@ let requestGeneration = 0
 const state = reactive({
   page: 1,
   size: 10,
+  username,
   tag,
 })
 
