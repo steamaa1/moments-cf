@@ -162,6 +162,8 @@ assert.doesNotMatch(source, /aboutContent = sanitizeSafeHtml/);
 assert.match(source, /config.aboutContent = String\(body.aboutContent/);
 assert.match(source, /backupIntervalDays = clampInt/);
 assert.match(source, /backupRetentionDays = clampInt/);
+assert.match(source, /const retentionDays = clampInt\(config\.backupRetentionDays, 1, 3650, 90\);\n  const target = storageConfig\.backupTarget/);
+assert.match(source, /const retentionDays = clampInt\(config\.backupRetentionDays, 1, 3650, 90\);\n  await createD1Backup\(env, \{\}, retentionDays/);
 assert.match(source, /async scheduled/);
 assert.match(source, /\/api\/admin\/migration\/preflight/);
 assert.match(source, /\/api\/admin\/migration\/prepare/);

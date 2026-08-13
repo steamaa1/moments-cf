@@ -1387,10 +1387,34 @@ async function backupExportLocal(request, env, headers) {
   const filename = `moments-backup-${new Date().toISOString().slice(0, 10)}.sql`;
   return new Response(download.body, { headers: { 'content-type': 'application/sql', 'content-disposition': `attachment; filename="${filename}"` } });
 }
-async function backupList(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const storageConfig=await loadStorageConfig(env); const target=storageConfig.backupTarget; return json(ok({list:await listBackups(env,target,storageConfig),retentionDays:90,target}),200,headers); }
+async function backupList(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const storageConfig = await loadStorageConfig(env);
+  const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
+  const config = parseConfig(row?.content);
+  const retentionDays = clampInt(config.backupRetentionDays, 1, 3650, 90);
+  const target = storageConfig.backupTarget;
+  return json(ok({ list: await listBackups(env, target, storageConfig), retentionDays, target }), 200, headers);
+}
 async function backupCreate(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const storageConfig=await loadStorageConfig(env); const row=await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(); const config=parseConfig(row?.content); return json(ok(await createD1Backup(env, {}, clampInt(config.backupRetentionDays, 1, 3650, 90), storageConfig.backupTarget, storageConfig)),200,headers); }
 async function backupDownload(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const key=String(new URL(request.url).searchParams.get('key')||''); if(!key.startsWith(BACKUP_PREFIX)||key.includes('..'))return json(fail('备份名称无效'),400,headers); const storageConfig=await loadStorageConfig(env); const object=await storageBackend(env, storageConfig, storageConfig.backupTarget).get(key); if(!object)return json(fail('备份不存在'),404,headers); return new Response(object.body,{headers:{'content-type':'application/sql','content-disposition':`attachment; filename="${key.split('/').pop()}"`}}); }
-async function backupRestore(request, env, headers) { const access=await requireUser(request,env,headers,true); if(access.response)return access.response; const missing=requireBackupConfig(env,headers); if(missing)return missing; const body=await readJson(request); const key=String(body?.key||''); if(body?.confirmName!==key.split('/').pop())return json(fail('请输入完整备份名称确认'),400,headers); if(!(await passwordMatches(String(body?.password||''),access.user.password_hash)))return json(fail('管理员密码错误'),403,headers); const storageConfig=await loadStorageConfig(env); await createD1Backup(env, {}, 90, storageConfig.backupTarget, storageConfig); return json(ok(await restoreD1Backup(env,key,{},storageConfig.backupTarget,storageConfig)),200,headers); }
+async function backupRestore(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const missing = requireBackupConfig(env, headers);
+  if (missing) return missing;
+  const body = await readJson(request);
+  const key = String(body?.key || '');
+  if (body?.confirmName !== key.split('/').pop()) return json(fail('请输入完整备份名称确认'), 400, headers);
+  if (!(await passwordMatches(String(body?.password || ''), access.user.password_hash))) return json(fail('管理员密码错误'), 403, headers);
+  const storageConfig = await loadStorageConfig(env);
+  const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
+  const config = parseConfig(row?.content);
+  const retentionDays = clampInt(config.backupRetentionDays, 1, 3650, 90);
+  await createD1Backup(env, {}, retentionDays, storageConfig.backupTarget, storageConfig);
+  return json(ok(await restoreD1Backup(env, key, {}, storageConfig.backupTarget, storageConfig)), 200, headers);
+}
 
 async function statusSet(request, env, headers) {
   const access = await requireUser(request, env, headers);
