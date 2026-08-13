@@ -163,13 +163,13 @@ export function webdavBackend(config) {
     },
     async head(key) {
       requireConfig();
-      const response = await fetch(`${base()}/${key}`, { method: 'HEAD', headers });
+      const response = await fetch(`${base()}/${key}`, { method: 'HEAD', headers: headers() });
       if (!response.ok) return null;
       return { size: Number(response.headers.get('content-length') || 0), httpEtag: response.headers.get('etag'), httpMetadata: { contentType: response.headers.get('content-type') || 'application/octet-stream' }, writeHttpMetadata: (headers) => { headers.set('content-type', response.headers.get('content-type') || 'application/octet-stream'); } };
     },
     async delete(key) {
       requireConfig();
-      const response = await fetch(`${base()}/${key}`, { method: 'DELETE', headers });
+      const response = await fetch(`${base()}/${key}`, { method: 'DELETE', headers: headers() });
       if (!response.ok && response.status !== 404) throw new Error(`WebDAV 删除失败（${response.status}）`);
     },
     async list(prefix) {

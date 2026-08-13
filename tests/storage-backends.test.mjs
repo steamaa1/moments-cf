@@ -49,6 +49,14 @@ await dav.put('media/d.mp4', new Uint8Array([4, 5]), { httpMetadata: { contentTy
 const davPut = requests.find(r => r.method === 'PUT' && r.url.includes('media/d.mp4'));
 assert.ok(davPut, 'WebDAV PUT not issued');
 assert.match(davPut.headers.authorization, /^Basic /);
+const davHead = await dav.head('media/d.mp4');
+assert.ok(davHead, 'WebDAV HEAD should succeed');
+await dav.delete('media/d.mp4');
+for (const method of ['HEAD', 'DELETE']) {
+  const request = requests.find(item => item.method === method && item.url.includes('media/d.mp4'));
+  assert.ok(request, `WebDAV ${method} not issued`);
+  assert.match(new Headers(request.headers).get('authorization') || '', /^Basic /, `WebDAV ${method} must include Basic auth`);
+}
 const davList = await dav.list('media/');
 assert.equal(davList[0].key, 'media/b.webp');
 assert.equal(davList[0].size, 20);
