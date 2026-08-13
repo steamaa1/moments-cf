@@ -195,6 +195,21 @@ def test_phase11_media_storage_backend(database: Path) -> None:
         connection.close()
 
 
+def test_phase12_comment_network_rate(database: Path) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        apply_sql(connection, "0011_comment_network_rate.sql")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(comments)")}
+        if "network_hash" not in columns:
+            raise AssertionError("network_hash column missing")
+        indexes = {row[1] for row in connection.execute("PRAGMA index_list(comments)")}
+        if "idx_comments_network_created" not in indexes:
+            raise AssertionError("comment network rate index missing")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_export_helpers(database: Path, temporary: Path) -> None:
     export_dir = temporary / "export"
     run("scripts/migrate/export-sqlite.py", str(database), "--output", str(export_dir))
@@ -242,6 +257,7 @@ def main() -> None:
         test_phase9_user_status(database)
         test_phase10_telegram_column(database)
         test_phase11_media_storage_backend(database)
+        test_phase12_comment_network_rate(database)
         test_export_helpers(database, temporary)
     print("Phase 7 migration and release tool functional tests: PASS")
 

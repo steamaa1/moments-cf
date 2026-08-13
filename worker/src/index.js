@@ -1388,8 +1388,10 @@ async function commentIdentity(request, env) {
   const existing = request.headers.get('cookie')?.match(/(?:^|;\s*)moments_comment_id=([^;]+)/)?.[1];
   const identity = existing || randomToken(20); const secret = env.LIKE_SALT || env.JWT_SECRET;
   const hash = base64url(await hmac(secret, identity)); const headers = new Headers();
+  const clientIp = String(request.headers.get('cf-connecting-ip') || '').trim();
+  const networkHash = clientIp ? base64url(await hmac(secret, `comment-network:${clientIp}`)) : '';
   if (!existing) headers.append('set-cookie', `moments_comment_id=${identity}; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax`);
-  return { hash, headers };
+  return { hash, networkHash, headers };
 }
 async function addComment(request, env, headers, ctx) {
   const body = await readJson(request); if (!body?.memoId || !String(body.content || '').trim()) return json(fail('评论内容不能为空'), 400, headers);
@@ -1404,7 +1406,9 @@ async function addComment(request, env, headers, ctx) {
   if (!memo || !(await canReadMemo(memo, await currentUser(request, env)))) return json(fail('动态不存在或不可评论'), 404, headers);
   const user = await currentUser(request, env); const identity = await commentIdentity(request, env);
   if (!user) {
-    const recent = await env.DB.prepare("SELECT COUNT(*) AS total FROM comments WHERE identity_hash=? AND created_at >= datetime('now', '-1 minute')").bind(identity.hash).first();
+    const recent = identity.networkHash
+      ? await env.DB.prepare("SELECT COUNT(*) AS total FROM comments WHERE (identity_hash=? OR network_hash=?) AND created_at >= datetime('now', '-1 minute')").bind(identity.hash, identity.networkHash).first()
+      : await env.DB.prepare("SELECT COUNT(*) AS total FROM comments WHERE identity_hash=? AND created_at >= datetime('now', '-1 minute')").bind(identity.hash).first();
     if (Number(recent?.total || 0) >= 5) return json(fail('评论过于频繁，请稍后再试'), 429, { ...headers, ...Object.fromEntries(identity.headers) });
   }
   const website = body.website ? validHttpUrl(String(body.website)) : null;
@@ -1419,8 +1423,8 @@ async function addComment(request, env, headers, ctx) {
     replyTo = String(targetComment.username || '').slice(0, 80);
     replyEmail = String(targetComment.email || '').slice(0, 254);
   }
-  await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(content, replyTo, replyEmail, username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash).run();
+  await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash, network_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(content, replyTo, replyEmail, username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash, user ? '' : identity.networkHash).run();
   const owner = await env.DB.prepare('SELECT nickname,email,telegram_chat_id FROM users WHERE id=?').bind(memo.user_id).first();
   // 评论者是动态作者本人时，不向作者自己发送评论通知；
   // 作者回复他人评论时，仍通知被回复人（replyEmail）。
