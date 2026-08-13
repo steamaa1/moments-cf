@@ -420,8 +420,8 @@ async function upload(request, env, headers) {
       const backend = storageBackend(env, storageConfig, storageConfig.storageType);
       await backend.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
       if (thumbnail) await backend.put(thumbnailKey, thumbnail.stream(), { httpMetadata: { contentType: 'image/webp' } });
-      await env.DB.prepare("INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes, sha256, thumbnail_key, upload_state) VALUES (?, ?, ?, ?, ?, ?, ?, 'ready')")
-        .bind(access.user.id, key, file.name.slice(0, 255), file.type, file.size, sha, thumbnailKey).run();
+      await env.DB.prepare("INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes, sha256, thumbnail_key, upload_state, storage_backend) VALUES (?, ?, ?, ?, ?, ?, ?, 'ready', ?)")
+        .bind(access.user.id, key, file.name.slice(0, 255), file.type, file.size, sha, thumbnailKey, storageConfig.storageType).run();
     } catch (error) {
       const backend = storageBackend(env, storageConfig, storageConfig.storageType);
       await Promise.all([backend.delete(key).catch(() => {}), thumbnailKey ? backend.delete(thumbnailKey).catch(() => {}) : Promise.resolve()]);
@@ -490,8 +490,8 @@ async function directUploadInit(request, env, headers) {
   const thumbnailKey = file.contentType.startsWith('image/') ? mediaThumbKey() : '';
   const thumbnailUploadUrl = thumbnailKey ? await backend.presignPut({ key: thumbnailKey, contentType: 'image/webp' }) : '';
   const old = await env.DB.prepare('SELECT id FROM media WHERE owner_id=? AND r2_key=? LIMIT 1').bind(access.user.id, key).first();
-  if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, thumbnail_key=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, thumbnailKey || null, old.id).run();
-  else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,thumbnail_key,upload_state) VALUES (?,?,?,?,?,?,?,'pending')").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256,thumbnailKey || null).run();
+  if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, thumbnail_key=?, storage_backend=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, thumbnailKey || null, storageConfig.storageType, old.id).run();
+  else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,thumbnail_key,upload_state,storage_backend) VALUES (?,?,?,?,?,?,?,'pending',?)").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256,thumbnailKey || null,storageConfig.storageType).run();
   return json(ok({ exists: false, uploadUrl, key, path: `/upload/${key}`, contentType: file.contentType, direct: file.size >= DIRECT_UPLOAD_THRESHOLD, thumbnailKey, thumbnailUploadUrl }), 200, headers);
 }
 async function directUploadComplete(request, env, headers) {
@@ -500,7 +500,7 @@ async function directUploadComplete(request, env, headers) {
   const media = await env.DB.prepare("SELECT * FROM media WHERE owner_id=? AND r2_key=? AND upload_state='pending'").bind(access.user.id,key).first();
   if (!media) return json(fail('待确认上传不存在'),404,headers);
   const storageConfig = await loadStorageConfig(env);
-  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+  const backend = storageBackend(env, storageConfig, mediaStorageBackend(media));
   const object = await backend.head(key); if (!object || Number(object.size)!==Number(media.size_bytes)) return json(fail('文件不存在或大小不一致'),409,headers);
   let thumbnailKey = null;
   if (body.thumbnailKey) {
@@ -515,11 +515,14 @@ function collectUploadKeys(value, target) {
   const pattern = /\/upload\/([^\s"'<>),]+)/g;
   for (const match of String(value || '').matchAll(pattern)) target.add(decodeURIComponent(match[1]));
 }
+function mediaStorageBackend(media) {
+  return ['r2', 's3', 'webdav'].includes(media?.storage_backend) ? media.storage_backend : 'r2';
+}
 async function purgeStalePendingUploads(userId, env) {
   const storageConfig = await loadStorageConfig(env);
-  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
-  const stale = await env.DB.prepare("SELECT id, r2_key, thumbnail_key FROM media WHERE owner_id=? AND upload_state='pending' AND created_at <= datetime('now','-1 day')").bind(userId).all();
+  const stale = await env.DB.prepare("SELECT id, r2_key, thumbnail_key, storage_backend FROM media WHERE owner_id=? AND upload_state='pending' AND created_at <= datetime('now','-1 day')").bind(userId).all();
   for (const item of stale.results || []) {
+    const backend = storageBackend(env, storageConfig, mediaStorageBackend(item));
     await Promise.all([backend.delete(item.r2_key).catch(() => {}), item.thumbnail_key ? backend.delete(item.thumbnail_key).catch(() => {}) : Promise.resolve()]);
     await env.DB.prepare("DELETE FROM media WHERE id=? AND owner_id=? AND upload_state='pending'").bind(item.id,userId).run();
   }
@@ -527,11 +530,11 @@ async function purgeStalePendingUploads(userId, env) {
 }
 async function purgeExpiredTrash(userId, env) {
   const storageConfig = await loadStorageConfig(env);
-  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
-  const expired = await env.DB.prepare("SELECT id, r2_key, thumbnail_key FROM media WHERE owner_id=? AND trashed_at IS NOT NULL AND trashed_at <= datetime('now', ?)")
+  const expired = await env.DB.prepare("SELECT id, r2_key, thumbnail_key, storage_backend FROM media WHERE owner_id=? AND trashed_at IS NOT NULL AND trashed_at <= datetime('now', ?)")
     .bind(userId, `-${TRASH_RETENTION_DAYS} days`).all();
   let purged = 0;
   for (const media of expired.results || []) {
+    const backend = storageBackend(env, storageConfig, mediaStorageBackend(media));
     await Promise.all([backend.delete(media.r2_key), media.thumbnail_key ? backend.delete(media.thumbnail_key) : Promise.resolve()]);
     await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(media.id, userId).run();
     purged += 1;
@@ -585,9 +588,9 @@ async function purgeTrash(request, env, headers) {
   const storageConfig = await loadStorageConfig(env);
   if (storageConfig.storageType === 'r2' && !env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
   const id = intParam(new URL(request.url).searchParams.get('id'));
-  const media = await env.DB.prepare('SELECT id, r2_key, thumbnail_key FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).first();
+  const media = await env.DB.prepare('SELECT id, r2_key, thumbnail_key, storage_backend FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).first();
   if (!media) return json(fail('回收站文件不存在'), 404, headers);
-  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+  const backend = storageBackend(env, storageConfig, mediaStorageBackend(media));
   await Promise.all([backend.delete(media.r2_key), media.thumbnail_key ? backend.delete(media.thumbnail_key) : Promise.resolve()]);
   await env.DB.prepare('DELETE FROM media WHERE id=? AND owner_id=? AND trashed_at IS NOT NULL').bind(id, access.user.id).run();
   return json(ok({}), 200, headers);
@@ -2049,14 +2052,14 @@ function parseRangeHeader(header, size) {
 }
 async function serveMedia(request, env, key) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
-  const media = await env.DB.prepare("SELECT id FROM media WHERE (r2_key=? OR thumbnail_key=?) AND trashed_at IS NULL AND upload_state='ready'").bind(key, key).first();
+  const media = await env.DB.prepare("SELECT id, storage_backend FROM media WHERE (r2_key=? OR thumbnail_key=?) AND trashed_at IS NULL AND upload_state='ready'").bind(key, key).first();
   if (!media) return new Response('Not Found', { status: 404 });
   const storageConfig = await loadStorageConfig(env);
-  if (storageConfig.storageType === 'r2' && !env.MEDIA) return new Response('R2 binding is not configured', { status: 503 });
-  const backend = storageBackend(env, storageConfig, storageConfig.storageType);
-  let head = await backend.head(key);
-  let reader = backend;
-  if (!head && env.MEDIA) { head = await env.MEDIA.head(key); reader = r2Backend(env); }
+  const backendType = mediaStorageBackend(media);
+  if (backendType === 'r2' && !env.MEDIA) return new Response('R2 binding is not configured', { status: 503 });
+  const backend = storageBackend(env, storageConfig, backendType);
+  const head = await backend.head(key);
+  const reader = backend;
   if (!head) return new Response('Not Found', { status: 404 });
   const etag = head.httpEtag;
   if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers: { etag } });

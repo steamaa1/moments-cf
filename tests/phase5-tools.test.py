@@ -173,6 +173,28 @@ def test_phase10_telegram_column(database: Path) -> None:
         connection.close()
 
 
+def test_phase11_media_storage_backend(database: Path) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,upload_state) VALUES (1,'media/legacy.webp','legacy.webp','image/webp',1,'ready')")
+        apply_sql(connection, "0010_media_storage_backend.sql")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(media)")}
+        if "storage_backend" not in columns:
+            raise AssertionError("storage_backend column missing")
+        backend = connection.execute("SELECT storage_backend FROM media WHERE r2_key='media/legacy.webp'").fetchone()[0]
+        if backend != "r2":
+            raise AssertionError(f"legacy media should default to r2, found {backend}")
+        try:
+            connection.execute("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,upload_state,storage_backend) VALUES (1,'media/bad.webp','bad.webp','image/webp',1,'ready','invalid')")
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("invalid storage backend must be rejected")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_export_helpers(database: Path, temporary: Path) -> None:
     export_dir = temporary / "export"
     run("scripts/migrate/export-sqlite.py", str(database), "--output", str(export_dir))
@@ -219,6 +241,7 @@ def main() -> None:
         test_phase8_migration_runs(database)
         test_phase9_user_status(database)
         test_phase10_telegram_column(database)
+        test_phase11_media_storage_backend(database)
         test_export_helpers(database, temporary)
     print("Phase 7 migration and release tool functional tests: PASS")
 
