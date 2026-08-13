@@ -972,7 +972,7 @@ function gitSnapshotFromHtml(html, git) {
   const description = decodeHtml(metaContent(html, 'property', 'og:description') || metaContent(html, 'name', 'description')).replace(/<[^>]*>/g, '').trim();
   return { ...git, title: title.slice(0, 300) || `${git.owner}/${git.repo}`, description: description.slice(0, 4000), author: git.owner };
 }
-async function fetchGitSnapshot(git) {
+async function fetchGitRepositorySnapshot(git) {
   const headers = { accept: 'application/json', 'user-agent': 'Moments-CF/1.0' };
   let apiUrl = '';
   if (git.provider === 'github') apiUrl = `https://api.github.com/repos/${encodeURIComponent(git.owner)}/${encodeURIComponent(git.repo)}`;
@@ -987,6 +987,58 @@ async function fetchGitSnapshot(git) {
     if (response.ok && (response.headers.get('content-type') || '').includes('text/html')) return gitSnapshotFromHtml((await response.text()).slice(0, 512000), git);
   } catch (error) { console.warn('Git page snapshot failed', error); }
   return { ...git, title: `${git.owner}/${git.repo}`, description: '', author: git.owner };
+}
+function gitItemApiUrl(git) {
+  const origin = new URL(git.url).origin;
+  if (git.provider === 'github') {
+    const base = `https://api.github.com/repos/${encodeURIComponent(git.owner)}/${encodeURIComponent(git.repo)}`;
+    if (git.kind === 'commit') return `${base}/commits/${encodeURIComponent(git.path || '')}`;
+    return `${base}/issues/${git.number}`;
+  }
+  const project = encodeURIComponent(`${git.owner}/${git.repo}`);
+  if (git.provider === 'gitlab') {
+    if (git.kind === 'commit') return `https://gitlab.com/api/v4/projects/${project}/repository/commits/${encodeURIComponent(git.path || '')}`;
+    return `https://gitlab.com/api/v4/projects/${project}/${git.kind === 'pull' ? 'merge_requests' : 'issues'}/${git.number}`;
+  }
+  if (git.kind === 'commit') return `${origin}/api/v1/repos/${encodeURIComponent(git.owner)}/${encodeURIComponent(git.repo)}/git/commits/${encodeURIComponent(git.path || '')}`;
+  return `${origin}/api/v1/repos/${encodeURIComponent(git.owner)}/${encodeURIComponent(git.repo)}/issues/${git.number}`;
+}
+function gitItemSnapshotFrom(data, git) {
+  if (git.kind === 'commit') {
+    const message = String(data?.commit?.message || data?.title || '').split('\n')[0].trim();
+    return {
+      itemTitle: message.slice(0, 300),
+      itemAuthor: String(data?.author?.login || data?.author?.username || data?.author_name || data?.commit?.author?.name || '').slice(0, 200),
+      avatar: safeHttpHref(data?.author?.avatar_url || data?.commit?.author?.avatar_url || '', 'Git 头像') || '',
+      itemDate: String(data?.created_at || data?.committed_date || data?.commit?.author?.date || '').slice(0, 100),
+      itemState: '',
+    };
+  }
+  const merged = git.kind === 'pull' && Boolean(data?.merged_at || data?.merged || data?.state === 'merged');
+  return {
+    itemTitle: String(data?.title || '').slice(0, 300),
+    itemAuthor: String(data?.user?.login || data?.author?.username || data?.author?.name || data?.author?.login || '').slice(0, 200),
+    avatar: safeHttpHref(data?.user?.avatar_url || data?.author?.avatar_url || '', 'Git 头像') || '',
+    itemState: merged ? 'merged' : String(data?.state || '').slice(0, 20),
+    itemDate: String(data?.created_at || '').slice(0, 100),
+  };
+}
+async function fetchGitItemSnapshot(git) {
+  const headers = { accept: 'application/json', 'user-agent': 'Moments-CF/1.0' };
+  const response = await fetch(gitItemApiUrl(git), { redirect: 'manual', headers, signal: AbortSignal.timeout(8000) });
+  if (!response.ok || !(response.headers.get('content-type') || '').includes('json')) throw new Error(`Git 条目获取失败（${response.status}）`);
+  const snapshot = gitItemSnapshotFrom(await response.json(), git);
+  if (git.kind !== 'commit' && !snapshot.itemTitle) throw new Error('Git 条目没有标题');
+  return snapshot;
+}
+async function fetchGitSnapshot(git) {
+  if (!['issue', 'pull', 'commit'].includes(git.kind)) return fetchGitRepositorySnapshot(git);
+  const base = await fetchGitRepositorySnapshot(git);
+  try {
+    const item = await fetchGitItemSnapshot(git);
+    return { ...base, ...item };
+  } catch (error) { console.warn('Git item snapshot failed', error); }
+  return base;
 }
 function xSyndicationToken(id) {
   return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
@@ -1121,6 +1173,10 @@ function sanitizeMemoExt(input) {
       stars: clampInt(ext.git.stars, 0, 1_000_000_000, 0),
       forks: clampInt(ext.git.forks, 0, 1_000_000_000, 0),
       updatedAt: String(ext.git.updatedAt || '').slice(0, 100),
+      itemTitle: String(ext.git.itemTitle || '').slice(0, 300),
+      itemAuthor: String(ext.git.itemAuthor || '').slice(0, 200),
+      itemState: ['open', 'closed', 'merged'].includes(String(ext.git.itemState || '').toLowerCase()) ? String(ext.git.itemState).toLowerCase() : '',
+      itemDate: String(ext.git.itemDate || '').slice(0, 100),
     });
     output.git = git;
   }

@@ -34,15 +34,35 @@ assert.equal(gitExt.title, 'moments-cf');
 assert.equal(gitExt.stars, 4);
 const originalGitFetch = globalThis.fetch;
 globalThis.fetch = async (url) => {
-  assert.match(String(url), /api\.github\.com\/repos\/steamaa1\/moments-cf/);
-  return Response.json({ full_name: 'steamaa1/moments-cf', description: 'Cloudflare edition', language: 'JavaScript', stargazers_count: 12, forks_count: 3, owner: { login: 'steamaa1' } });
+  const text = String(url);
+  if (text.includes('/repos/steamaa1/moments-cf/issues/42')) {
+    return Response.json({ title: '修复了某个 Bug', state: 'open', user: { login: 'steamaa1', avatar_url: 'https://avatars.githubusercontent.com/u/1' }, created_at: '2026-08-01T00:00:00Z' });
+  }
+  if (text.includes('/repos/steamaa1/moments-cf/commits/abc123')) {
+    return Response.json({ commit: { message: 'feat: 新功能\n\n详情', author: { name: 'steamaa1', date: '2026-08-02T00:00:00Z' } }, author: { login: 'steamaa1', avatar_url: 'https://avatars.githubusercontent.com/u/1' } });
+  }
+  if (text.includes('/repos/steamaa1/moments-cf')) {
+    return Response.json({ full_name: 'steamaa1/moments-cf', description: 'Cloudflare edition', language: 'JavaScript', stargazers_count: 12, forks_count: 3, owner: { login: 'steamaa1' } });
+  }
+  throw new Error('unexpected ' + text);
 };
 try {
   const snapshot = await fetchGitSnapshot(gitRepo);
   assert.equal(snapshot.title, 'steamaa1/moments-cf');
   assert.equal(snapshot.description, 'Cloudflare edition');
   assert.equal(snapshot.stars, 12);
+  const issue = await fetchGitSnapshot(parseGitEmbedUrl('https://github.com/steamaa1/moments-cf/issues/42'));
+  assert.equal(issue.itemTitle, '修复了某个 Bug');
+  assert.equal(issue.itemState, 'open');
+  assert.equal(issue.itemAuthor, 'steamaa1');
+  assert.equal(issue.stars, 12, 'issue 卡片仍应带仓库元数据');
+  const commit = await fetchGitSnapshot(parseGitEmbedUrl('https://github.com/steamaa1/moments-cf/commit/abc123'));
+  assert.equal(commit.itemTitle, 'feat: 新功能');
+  assert.equal(commit.itemAuthor, 'steamaa1');
 } finally { globalThis.fetch = originalGitFetch; }
+const gitItemExt = sanitizeMemoExt({ git: { url: 'https://github.com/steamaa1/moments-cf/issues/42', title: 'steamaa1/moments-cf', itemTitle: '修复了某个 Bug', itemState: 'OPEN', itemAuthor: 'steamaa1', itemDate: '2026-08-01' } }).git;
+assert.equal(gitItemExt.itemTitle, '修复了某个 Bug');
+assert.equal(gitItemExt.itemState, 'open', '状态应统一为小写');
 const xEmbed = sanitizeMemoExt({ x: { url: 'https://x.com/example/status/1881234567890123456' } }).x;
 assert.deepEqual(xEmbed, { url: 'https://x.com/example/status/1881234567890123456', id: '1881234567890123456' });
 assert.equal(sanitizeMemoExt({ x: { url: 'https://twitter.com/example/status/1881234567890123456' } }).x.id, '1881234567890123456');

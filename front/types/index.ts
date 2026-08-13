@@ -141,6 +141,10 @@ export type GitEmbed = {
     stars?: number
     forks?: number
     updatedAt?: string
+    itemTitle?: string
+    itemAuthor?: string
+    itemState?: string
+    itemDate?: string
 }
 
 export type ExtDTO = {
