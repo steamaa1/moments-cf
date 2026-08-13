@@ -490,8 +490,8 @@ async function directUploadInit(request, env, headers) {
   const thumbnailKey = file.contentType.startsWith('image/') ? mediaThumbKey() : '';
   const thumbnailUploadUrl = thumbnailKey ? await backend.presignPut({ key: thumbnailKey, contentType: 'image/webp' }) : '';
   const old = await env.DB.prepare('SELECT id FROM media WHERE owner_id=? AND r2_key=? LIMIT 1').bind(access.user.id, key).first();
-  if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, old.id).run();
-  else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,upload_state) VALUES (?,?,?,?,?,?,'pending')").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256).run();
+  if (old) await env.DB.prepare("UPDATE media SET original_filename=?, content_type=?, size_bytes=?, sha256=?, thumbnail_key=?, upload_state='pending', trashed_at=NULL WHERE id=?").bind(file.filename, file.contentType, file.size, file.sha256, thumbnailKey || null, old.id).run();
+  else await env.DB.prepare("INSERT INTO media (owner_id,r2_key,original_filename,content_type,size_bytes,sha256,thumbnail_key,upload_state) VALUES (?,?,?,?,?,?,?,'pending')").bind(access.user.id,key,file.filename,file.contentType,file.size,file.sha256,thumbnailKey || null).run();
   return json(ok({ exists: false, uploadUrl, key, path: `/upload/${key}`, contentType: file.contentType, direct: file.size >= DIRECT_UPLOAD_THRESHOLD, thumbnailKey, thumbnailUploadUrl }), 200, headers);
 }
 async function directUploadComplete(request, env, headers) {
@@ -505,6 +505,7 @@ async function directUploadComplete(request, env, headers) {
   let thumbnailKey = null;
   if (body.thumbnailKey) {
     thumbnailKey = String(body.thumbnailKey);
+    if (!media.thumbnail_key || thumbnailKey !== String(media.thumbnail_key)) return json(fail('缩略图标识不匹配'), 403, headers);
     const thumb = await backend.head(thumbnailKey); if (!thumb || !String(thumb.httpMetadata?.contentType || '').startsWith('image/')) return json(fail('缩略图不存在'),409,headers);
   }
   await env.DB.prepare("UPDATE media SET upload_state='ready', thumbnail_key=? WHERE id=?").bind(thumbnailKey,media.id).run();
