@@ -82,6 +82,7 @@ assert.match(memoDetailForBus, /watch\(id, async/, '动态详情切换 ID 后必
 assert.match(editPage, /<MemoEdit :key="id" :id="id"\/>/, '编辑页切换 ID 后必须重建编辑器');
 assert.match(userTimeline, /watch\(userId, async/, '用户空间切换 ID 后必须重新加载');
 assert.match(tagTimeline, /watch\(\[username, tag\], async/, '标签路由变化后必须重新加载');
+assert.doesNotMatch(tagTimeline, /@click="loadMore" v-else/, '标签页到底提示不得继续绑定加载事件');
 assert.match(calendar, /时间轴排列/);
 assert.match(music, /直链播放/);
 assert.match(music, /滚动歌词（LRC）/);
