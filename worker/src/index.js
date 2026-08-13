@@ -738,6 +738,49 @@ async function getMemo(request, env, headers) {
   }
   return json(ok(view), 200, headers);
 }
+function parseMemoRefUrl(value, currentHost) {
+  const text = String(value || '').trim();
+  if (!text) throw new Error('站内动态链接不能为空');
+  let id;
+  if (text.startsWith('/')) {
+    const match = text.match(/^\/memo\/(\d+)\/?$/);
+    if (!match) throw new Error('仅支持本站 /memo/{id} 动态链接');
+    id = Number(match[1]);
+  } else {
+    const url = validHttpUrl(text);
+    if (!url) throw new Error('仅支持本站 /memo/{id} 动态链接');
+    if (url.hostname.toLowerCase() !== String(currentHost || '').toLowerCase()) throw new Error('仅支持本站动态链接');
+    const match = url.pathname.match(/^\/memo\/(\d+)\/?$/);
+    if (!match) throw new Error('仅支持本站 /memo/{id} 动态链接');
+    id = Number(match[1]);
+  }
+  if (!Number.isInteger(id) || id < 1) throw new Error('动态编号无效');
+  return { id, url: `/memo/${id}` };
+}
+function memoRefText(value) {
+  return String(value || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[`*_~>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500);
+}
+async function memoRefSnapshot(env, id, viewer) {
+  const memo = await env.DB.prepare(`${MEMO_SELECT} WHERE m.id = ?`).bind(id).first();
+  if (!memo) throw new Error('动态不存在');
+  if (!(await canReadMemo(memo, viewer))) throw new Error('暂无权限引用该动态');
+  const imgs = String(memo.imgs || '').split(',').filter(Boolean).slice(0, 4);
+  return {
+    id: Number(memo.id),
+    url: `/memo/${Number(memo.id)}`,
+    authorName: String(memo.nickname || '').slice(0, 80),
+    authorAvatar: String(memo.avatar_url || '').slice(0, 2048),
+    content: memoRefText(memo.content),
+    imgs,
+    createdAt: String(memo.created_at || ''),
+  };
+}
 async function previewUnfurl(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
@@ -747,6 +790,7 @@ async function previewUnfurl(request, env, headers) {
   try {
     if (kind === 'git') return json(ok(await fetchGitSnapshot(parseGitEmbedUrl(url))), 200, headers);
     if (kind === 'x') return json(ok(await fetchXSnapshot(parseXEmbedUrl(url))), 200, headers);
+    if (kind === 'memo') return json(ok(await memoRefSnapshot(env, parseMemoRefUrl(url, new URL(request.url).hostname).id, await currentUser(request, env))), 200, headers);
     return json(fail('预览类型无效'), 400, headers);
   } catch (error) { return json(fail(error.message), 400, headers); }
 }
@@ -783,6 +827,7 @@ async function saveMemo(request, env, headers) {
   try {
     safeExt = sanitizeMemoExt(body.ext);
     if (safeExt.git?.url && !safeExt.git.title) safeExt.git = await fetchGitSnapshot(safeExt.git);
+    if (safeExt.memoRef?.id) safeExt.memoRef = await memoRefSnapshot(env, safeExt.memoRef.id, access.user);
     if (safeExt.x?.id) {
       const metricsAllZero = !safeExt.x.likes && !safeExt.x.replies && !safeExt.x.reposts;
       const needsRefresh = !safeExt.x.text || !safeExt.x.avatar || metricsAllZero || (String(safeExt.x.text).includes('pic.twitter.com') && !safeExt.x.media?.length);
@@ -1152,7 +1197,7 @@ async function fetchXSnapshot(x) {
 }
 function sanitizeMemoExt(input) {
   const ext = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
-  const output = { music: {}, video: {}, git: {}, doubanBook: {}, doubanMovie: {} };
+  const output = { music: {}, video: {}, git: {}, memoRef: {}, doubanBook: {}, doubanMovie: {} };
   if (ext.music?.url || ext.music?.mode === 'direct') {
     const url = safeHttpHref(ext.music.url, '音乐直链');
     const name = String(ext.music.name || '').trim().slice(0, 200);
@@ -1201,6 +1246,11 @@ function sanitizeMemoExt(input) {
       itemDate: String(ext.git.itemDate || '').slice(0, 100),
     });
     output.git = git;
+  }
+  if (ext.memoRef?.id != null) {
+    const id = Number(ext.memoRef.id);
+    if (!Number.isInteger(id) || id < 1) throw new Error('站内动态编号无效');
+    output.memoRef = { id, url: `/memo/${id}` };
   }
   if (ext.x?.url) {
     const x = parseXEmbedUrl(ext.x.url);
@@ -1939,7 +1989,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

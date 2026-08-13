@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { fetchGitSnapshot, fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseGitEmbedUrl, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
+import worker, { fetchGitSnapshot, fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseGitEmbedUrl, parseMemoRefUrl, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
 
 const userPage = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userPage, /const userId = Number\(route\.params\.id\)/);
@@ -31,6 +31,18 @@ assert.equal(parseGitEmbedUrl('https://gitea.example.com/team/project/src/branch
 assert.throws(() => parseGitEmbedUrl('https://127.0.0.1/team/project'), /内网或 IP 地址/);
 assert.throws(() => parseGitEmbedUrl('https://8.8.8.8/team/project'), /IP 地址/);
 assert.throws(() => parseGitEmbedUrl('https://[2001:db8::1]/team/project'), /IP 地址/);
+const memoRefPath = parseMemoRefUrl('/memo/123', 'moments.example');
+assert.deepEqual(memoRefPath, { id: 123, url: '/memo/123' });
+assert.deepEqual(parseMemoRefUrl('https://moments.example/memo/456', 'moments.example'), { id: 456, url: '/memo/456' });
+assert.throws(() => parseMemoRefUrl('https://other.example/memo/456', 'moments.example'), /仅支持本站/);
+assert.throws(() => parseMemoRefUrl('/memo/abc', 'moments.example'), /仅支持本站/);
+assert.throws(() => parseMemoRefUrl('https://moments.example/user/1', 'moments.example'), /仅支持本站/);
+assert.throws(() => parseMemoRefUrl('/memo/0', 'moments.example'), /编号无效/);
+const memoRefExt = sanitizeMemoExt({ memoRef: { id: 123 } }).memoRef;
+assert.equal(memoRefExt.id, 123);
+assert.equal(memoRefExt.url, '/memo/123');
+assert.throws(() => sanitizeMemoExt({ memoRef: { id: 'abc' } }), /编号无效/);
+assert.throws(() => sanitizeMemoExt({ memoRef: { id: 0 } }), /编号无效/);
 const gitExt = sanitizeMemoExt({ git: { url: 'https://github.com/steamaa1/moments-cf', title: 'moments-cf', description: '测试仓库', stars: 4 } }).git;
 assert.equal(gitExt.title, 'moments-cf');
 assert.equal(gitExt.stars, 4);

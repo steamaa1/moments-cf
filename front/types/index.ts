@@ -147,8 +147,19 @@ export type GitEmbed = {
     itemDate?: string
 }
 
+export type MemoRef = {
+    id: number
+    url?: string
+    authorName?: string
+    authorAvatar?: string
+    content?: string
+    imgs?: string[]
+    createdAt?: string
+}
+
 export type ExtDTO = {
     git: GitEmbed,
+    memoRef: MemoRef,
     music: MusicDTO,
     doubanBook: DoubanBook,
     doubanMovie: DoubanMovie,

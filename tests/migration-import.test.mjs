@@ -26,6 +26,12 @@ class Statement {
     if (sql.includes('select count(*) as count from migration_items')) return { count: [...state.mappings.keys()].filter(key => key.startsWith(`${this.args[0]}:${this.args[1]}:`)).length };
     if (sql.includes('select id from users where username')) return state.users.find(user => user.username === this.args[0]) || null;
     if (sql.includes('select content from sys_config')) return { content: JSON.stringify(state.config) };
+    if (sql.includes('from memos m join users u on u.id=m.user_id where m.id')) {
+      const memo = state.memos.find(m => m.id === Number(this.args[0]));
+      if (!memo) return null;
+      const user = state.users.find(u => u.id === memo.user_id) || state.users[0];
+      return { ...memo, show_type: 1, imgs: '', created_at: '2026-08-01 00:00:00', nickname: user.nickname, avatar_url: user.avatar_url, username: user.username };
+    }
     return null;
   }
   async run() {
@@ -130,6 +136,16 @@ const finishRequest = new Request('https://moments.example/api/admin/migration/f
 const finishResponse = await migrationFinish(finishRequest, env, {});
 assert.equal(finishResponse.status, 200);
 assert.equal(state.runs.get(packageId).status, 'completed');
+
+// 站内动态引用预览（此时 state.memos 已导入动态 id=1）
+const memoRefPreview = await previewUnfurl(new Request('https://moments.example/api/memo/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ kind: 'memo', url: '/memo/1' }) }), env, {});
+const memoRefBody = await memoRefPreview.json();
+assert.equal(memoRefPreview.status, 200, memoRefBody.message);
+assert.equal(memoRefBody.data.id, 1);
+assert.equal(memoRefBody.data.url, '/memo/1');
+assert.equal(memoRefBody.data.content, '旧动态');
+const memoRefBad = await previewUnfurl(new Request('https://moments.example/api/memo/preview', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ kind: 'memo', url: '/memo/999' }) }), env, {});
+assert.equal(memoRefBad.status, 400, '不存在的动态应拒绝');
 
 // BUG-06 回归：纯音乐/纯豆瓣嵌入动态不应被判为「内容为空」
 const musicSave = await worker.fetch(new Request('https://moments.example/api/memo/save', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ content: '', ext: { music: { mode: 'direct', url: 'https://media.example/a.mp3', name: '测试歌曲' } } }) }), env);

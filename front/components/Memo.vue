@@ -94,6 +94,7 @@
           />
           <x-preview v-if="extJSON.x?.url && extJSON.x?.id" v-bind="extJSON.x"/>
           <git-preview v-if="extJSON.git?.url" v-bind="extJSON.git"/>
+          <memo-ref-preview v-if="extJSON.memoRef?.id" v-bind="extJSON.memoRef"/>
           <div v-for="(book, index) in extJSON.doubanBooks || (extJSON.doubanBook && extJSON.doubanBook.title ? [extJSON.doubanBook] : [])" :key="(book.id || index) + '-b'">
             <douban-book-preview :book="book"/>
           </div>

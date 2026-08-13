@@ -16,6 +16,7 @@
       <music v-bind="state.music" @confirm="updateMusic"/>
       <x-embed v-bind="state.x" @confirm="updateX"/>
       <git-embed v-bind="state.git" @confirm="updateGit"/>
+      <memo-ref-embed v-bind="state.memoRef" @confirm="updateMemoRef"/>
       <upload-video @confirm="handleVideo" v-bind="state.video"/>
       <douban-edit v-model:books="doubanBooks" v-model:movies="doubanMovies"/>
       <UPopover :popper="{ arrow: true }" mode="click">
@@ -99,6 +100,10 @@
         <p v-else class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:bg-gray-800">X 原帖将在发表时抓取并保存为静态卡片。</p>
         <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除 X 嵌入" @click="updateX({})"/>
       </div>
+      <div v-if="state.memoRef.id" class="relative">
+        <memo-ref-preview v-bind="state.memoRef"/>
+        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除站内动态引用" @click="updateMemoRef({ id: 0 } as MemoRef)"/>
+      </div>
       <div v-for="(book, index) in doubanBooks" :key="(book.id || index) + '-b'" class="relative">
         <douban-book-preview :book="book"/>
         <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-1 top-1" @click="removeDouban('book', index)"/>
@@ -128,7 +133,8 @@ import type {
   Video,
   VideoType,
   XEmbed,
-  GitEmbed
+  GitEmbed,
+  MemoRef
 } from "~/types";
 import {toast} from "vue-sonner";
 import UploadImage from "~/components/UploadImage.vue";
@@ -167,6 +173,7 @@ const defaultState = {
   },
   x: { url: '', id: '' } as XEmbed,
   git: { url: '' } as GitEmbed,
+  memoRef: { id: 0 } as MemoRef,
   video: {
     type: 'youtube' as VideoType,
     value: ""
@@ -224,6 +231,9 @@ const updateX = (x: XEmbed) => {
 }
 const updateGit = (git: GitEmbed) => {
   state.git = { ...git, url: git.url || '' }
+}
+const updateMemoRef = (memoRef: MemoRef) => {
+  state.memoRef = memoRef && memoRef.id ? memoRef : { id: 0 } as MemoRef
 }
 
 const handleVideo = (video: Video) => {
@@ -296,6 +306,7 @@ onMounted(async () => {
     updateMusic(ext.music || {})
     updateX(ext.x || {})
     updateGit(ext.git || {})
+    updateMemoRef(ext.memoRef || {})
     Object.assign(state.video, ext.video)
     doubanBooks.value = Array.isArray(ext.doubanBooks) ? ext.doubanBooks : (ext.doubanBook && ext.doubanBook.title ? [ext.doubanBook] : [])
     doubanMovies.value = Array.isArray(ext.doubanMovies) ? ext.doubanMovies : (ext.doubanMovie && ext.doubanMovie.title ? [ext.doubanMovie] : [])
@@ -325,6 +336,7 @@ const saveMemo = async () => {
       music: state.music.id || state.music.url ? state.music : {},
       x: state.x.url && state.x.id ? state.x : {},
       git: state.git.url ? state.git : {},
+      memoRef: state.memoRef.id ? state.memoRef : {},
       doubanBooks: doubanBooks.value.filter(book => book && book.title),
       doubanMovies: doubanMovies.value.filter(movie => movie && movie.title),
       video: state.video.value ? state.video : {},
