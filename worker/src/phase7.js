@@ -230,7 +230,7 @@ export async function startD1Export(env, fetchImpl = fetch) {
 export async function pollD1Export(env, bookmark, fetchImpl = fetch) {
   return cfApi(env, '/export', { output_format: 'polling', current_bookmark: bookmark }, fetchImpl);
 }
-export async function storeD1Backup(env, result, retentionDays = BACKUP_RETENTION_DAYS, fetchImpl = fetch) {
+export async function storeD1Backup(env, result, retentionDays = BACKUP_RETENTION_DAYS, fetchImpl = fetch, target = 'r2', storageConfig = null) {
   if (!result?.signed_url) throw new Error('D1 导出未返回下载地址');
   const download = await fetchImpl(result.signed_url);
   if (!download.ok) throw new Error('无法下载 D1 导出文件');

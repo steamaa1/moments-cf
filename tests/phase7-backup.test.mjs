@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createD1Backup, restoreD1Backup } from '../worker/src/phase7.js';
+import { createD1Backup, restoreD1Backup, storeD1Backup } from '../worker/src/phase7.js';
 
 const stored = new Map();
 const env = {
@@ -19,6 +19,21 @@ const backupFetch = async (url, init={}) => {
 };
 const created = await createD1Backup(env,{fetch:backupFetch,sleep:async()=>{}});
 assert.match(created.key,/^backups\/d1\/.+\.sql$/); assert.ok(stored.has(created.key));
+
+const storedDirect = new Map();
+const directEnv = {
+  ...env,
+  MEDIA: {
+    async put(key, body) { storedDirect.set(key, new Uint8Array(await new Response(body).arrayBuffer())); },
+    async list() { return { objects: [...storedDirect].map(([key, value]) => ({ key, size: value.length, uploaded: new Date() })) }; },
+    async delete(key) { storedDirect.delete(key); },
+  },
+};
+const direct = await storeD1Backup(directEnv, { signed_url: 'https://download.test/direct' }, 90, async url => {
+  assert.equal(url, 'https://download.test/direct');
+  return new Response('DIRECT BACKUP', { status: 200 });
+}, 'r2', null);
+assert.ok(storedDirect.has(direct.key), 'storeD1Backup writes the downloaded backup');
 
 let importStep=0;
 const restoreFetch = async (url, init={}) => {
