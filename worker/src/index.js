@@ -240,10 +240,20 @@ async function login(request, env, headers) {
   if (!body?.username || !body?.password) return json(fail('用户名或密码不能为空'), 400, headers);
   if (!env.JWT_SECRET) return json(fail('服务端未配置 JWT_SECRET'), 503, headers);
   const db = requireBinding(env, 'DB');
-  const user = await db.prepare('SELECT * FROM users WHERE username = ?').bind(String(body.username).trim()).first();
+  const username = String(body.username).trim();
+  const clientIp = String(request.headers.get('cf-connecting-ip') || '').trim();
+  const networkHash = clientIp ? base64url(await hmac(env.JWT_SECRET, `login-network:${clientIp}`)) : '';
+  const usernameHash = base64url(await hmac(env.JWT_SECRET, `login-username:${username.toLowerCase()}`));
+  if (networkHash) {
+    const recent = await db.prepare("SELECT COUNT(*) AS total FROM login_attempts WHERE network_hash=? AND username_hash=? AND created_at >= datetime('now', '-10 minutes')").bind(networkHash, usernameHash).first();
+    if (Number(recent?.total || 0) >= 10) return json(fail('登录尝试过于频繁，请稍后再试'), 429, headers);
+  }
+  const user = await db.prepare('SELECT * FROM users WHERE username = ?').bind(username).first();
   if (!user || !(await passwordMatches(String(body.password), user.password_hash))) {
+    if (networkHash) await db.prepare('INSERT INTO login_attempts (network_hash, username_hash) VALUES (?, ?)').bind(networkHash, usernameHash).run();
     return json(fail('用户不存在或密码不正确'), 401, headers);
   }
+  if (networkHash) await db.prepare('DELETE FROM login_attempts WHERE network_hash=? AND username_hash=?').bind(networkHash, usernameHash).run();
   const now = Math.floor(Date.now() / 1000);
   const token = await signJwt({ sub: String(user.id), username: user.username, tv: Number(user.token_version), iat: now, exp: now + 60 * 60 * 24 * 14 }, env.JWT_SECRET);
   return json(ok({ token, username: user.username, id: Number(user.id) }), 200, headers);

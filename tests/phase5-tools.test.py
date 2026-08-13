@@ -231,6 +231,21 @@ def test_phase13_like_network_dedup(database: Path) -> None:
         connection.close()
 
 
+def test_phase14_login_rate_limit(database: Path) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        apply_sql(connection, "0013_login_rate_limit.sql")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(login_attempts)")}
+        if not {"network_hash", "username_hash", "created_at"}.issubset(columns):
+            raise AssertionError("login_attempts columns missing")
+        indexes = {row[1] for row in connection.execute("PRAGMA index_list(login_attempts)")}
+        if "idx_login_attempts_network_user_created" not in indexes:
+            raise AssertionError("login attempt rate index missing")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_export_helpers(database: Path, temporary: Path) -> None:
     export_dir = temporary / "export"
     run("scripts/migrate/export-sqlite.py", str(database), "--output", str(export_dir))
@@ -280,6 +295,7 @@ def main() -> None:
         test_phase11_media_storage_backend(database)
         test_phase12_comment_network_rate(database)
         test_phase13_like_network_dedup(database)
+        test_phase14_login_rate_limit(database)
         test_export_helpers(database, temporary)
     print("Phase 7 migration and release tool functional tests: PASS")
 
