@@ -10,10 +10,10 @@ import type {MemoVO} from "~/types";
 import {memoChangedEvent} from "~/event";
 
 const route = useRoute()
-const id = route.params.id as any as number
+const id = computed(() => Number(route.params.id))
 const memo = ref<MemoVO>()
 const reload = async () => {
-  memo.value = await useMyFetch<MemoVO>('/memo/get?id=' + id)
+  memo.value = await useMyFetch<MemoVO>('/memo/get?id=' + id.value)
 }
 
 const stopMemoChanged = memoChangedEvent.on(async () => {
@@ -22,6 +22,9 @@ const stopMemoChanged = memoChangedEvent.on(async () => {
 onBeforeUnmount(() => stopMemoChanged())
 onMounted(async () => {
   await reload()
+})
+watch(id, async (value, previous) => {
+  if (value > 0 && value !== previous) await reload()
 })
 
 // SEO：动态标题/摘要/首图/规范化链接

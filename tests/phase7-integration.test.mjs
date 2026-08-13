@@ -48,6 +48,7 @@ const tagTimeline = await readFile(new URL('../front/pages/tags/[username]/[tag]
 const calendar = await readFile(new URL('../front/pages/user/calendar.vue', import.meta.url), 'utf8');
 // 翻页回归：首页、用户页、标签页、日历页必须防止并发重复请求，失败不提前推进页码，旧 reload 结果不能覆盖新状态。
 const memoDetailForBus = await readFile(new URL('../front/pages/memo/[id].vue', import.meta.url), 'utf8');
+const editPage = await readFile(new URL('../front/pages/edit/[id].vue', import.meta.url), 'utf8');
 const indexPageForBus = await readFile(new URL('../front/pages/index.vue', import.meta.url), 'utf8');
 // 事件总线回归：所有注册的监听必须保存取消函数，并在页面卸载时移除。
 for (const page of [indexPageForBus, userTimeline, tagTimeline, calendar, memoDetailForBus]) {
@@ -74,8 +75,13 @@ assert.match(about, /enableAbout/);
 assert.match(timeline, /朋友圈时间轴/);
 assert.match(userTimeline, /viewMode = ref<'timeline' \| 'cards'>\('timeline'\)/);
 assert.match(userTimeline, /Promise\.all\(\[/, '用户空间应并行加载资料与动态');
-assert.match(userTimeline, /\/user\/profileById\?id=\$\{userId\}/, '用户空间应按 ID 独立加载资料，不依赖首条动态');
-assert.match(tagTimeline, /username,\s*\n\s*tag,/, '标签页请求必须同时按用户名和标签过滤');
+assert.match(userTimeline, /\/user\/profileById\?id=\$\{userId\.value\}/, '用户空间应按 ID 独立加载资料，不依赖首条动态');
+assert.match(tagTimeline, /username: username\.value,\s*\n\s*tag: tag\.value,/, '标签页请求必须同时按用户名和标签过滤');
+assert.match(memoDetailForBus, /const id = computed\(\(\) => Number\(route\.params\.id\)\)/, '动态详情 ID 必须响应路由变化');
+assert.match(memoDetailForBus, /watch\(id, async/, '动态详情切换 ID 后必须重新加载');
+assert.match(editPage, /<MemoEdit :key="id" :id="id"\/>/, '编辑页切换 ID 后必须重建编辑器');
+assert.match(userTimeline, /watch\(userId, async/, '用户空间切换 ID 后必须重新加载');
+assert.match(tagTimeline, /watch\(\[username, tag\], async/, '标签路由变化后必须重新加载');
 assert.match(calendar, /时间轴排列/);
 assert.match(music, /直链播放/);
 assert.match(music, /滚动歌词（LRC）/);

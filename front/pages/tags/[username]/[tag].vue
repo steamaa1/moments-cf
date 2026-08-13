@@ -20,14 +20,15 @@ import {useElementVisibility} from "@vueuse/core";
 import {memoChangedEvent, memoReloadEvent} from "~/event";
 
 const route = useRoute()
-const username = route.params.username
-const tag = route.params.tag
+const username = computed(() => String(route.params.username || ''))
+const tag = computed(() => String(route.params.tag || ''))
 const user = ref<UserVO>()
 
-onMounted(async ()=>{
-  user.value = await useMyFetch<UserVO>('/user/profile/' + username)
+const loadRoute = async () => {
+  user.value = await useMyFetch<UserVO>('/user/profile/' + encodeURIComponent(username.value))
   await reload()
-})
+}
+onMounted(loadRoute)
 
 const loadMoreEle = ref(null)
 const targetIsVisible = useElementVisibility(loadMoreEle)
@@ -42,8 +43,8 @@ let requestGeneration = 0
 const state = reactive({
   page: 1,
   size: 10,
-  username,
-  tag,
+  username: username.value,
+  tag: tag.value,
 })
 
 const memos = ref<Array<MemoVO>>([])
@@ -93,6 +94,16 @@ const loadMore = async () => {
 
 const stopMemoReload = memoReloadEvent.on(async () => {
   await reload()
+})
+
+watch([username, tag], async ([nextUsername, nextTag], previous) => {
+  if (previous && nextUsername === previous[0] && nextTag === previous[1]) return
+  state.username = nextUsername
+  state.tag = nextTag
+  user.value = undefined
+  memos.value = []
+  hasNext.value = false
+  await loadRoute()
 })
 
 const stopMemoChanged = memoChangedEvent.on(async (id: number) => {

@@ -1,7 +1,7 @@
 <template>
   <div>
     <Header v-if="currentUser" v-bind:user="currentUser"/>
-    <MemoEdit :id="id"/>
+    <MemoEdit :key="id" :id="id"/>
 
   </div>
 </template>
@@ -11,7 +11,7 @@ import type {UserVO} from "~/types";
 import {useRoute} from "#imports";
 const currentUser = useState<UserVO>('userinfo')
 const route = useRoute()
-const id = parseInt(route.params.id as string)
+const id = computed(() => Number(route.params.id))
 </script>
 
 <style scoped>

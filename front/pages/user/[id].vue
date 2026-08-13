@@ -18,8 +18,8 @@ import { memoChangedEvent, memoReloadEvent } from '~/event'
 import { useElementVisibility } from '@vueuse/core'
 
 const route = useRoute()
-const userId = Number(route.params.id)
-const state = reactive({ page: 1, size: 10, userId })
+const userId = computed(() => Number(route.params.id))
+const state = reactive({ page: 1, size: 10, userId: userId.value })
 const memos = ref<MemoVO[]>([])
 const profile = ref<UserVO | null>(null)
 const hasNext = ref(false)
@@ -41,7 +41,7 @@ const reload = async () => {
   try {
     const [res, user] = await Promise.all([
       useMyFetch<{list:MemoVO[];total:number;hasNext:boolean}>('/memo/list', { ...state, page: 1 }),
-      useMyFetch<UserVO>(`/user/profileById?id=${userId}`),
+      useMyFetch<UserVO>(`/user/profileById?id=${userId.value}`),
     ])
     if (generation !== requestGeneration) return
     state.page = 1
@@ -87,6 +87,14 @@ watch(profile, (value) => {
 }, { immediate: false })
 
 onMounted(reload)
+watch(userId, async value => {
+  if (value < 1) return
+  state.userId = value
+  profile.value = null
+  memos.value = []
+  hasNext.value = false
+  await reload()
+})
 const stopMemoReload = memoReloadEvent.on(reload)
 const stopMemoChanged = memoChangedEvent.on(async id => { const value=await useMyFetch<MemoVO>('/memo/get?latest=1&id='+id);const index=memos.value.findIndex(item=>item.id===id);if(index>=0)memos.value[index]=value })
 onBeforeUnmount(() => {
