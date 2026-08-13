@@ -5,7 +5,7 @@
       <UBadge color="gray" variant="solid" size="xs">作者</UBadge>
     </span>
     <span v-else class="text-[#576b95] text-nowrap">
-      <a v-if="props.comment.website" :href="formatWebsite(props.comment.website)" target="_blank">
+      <a v-if="props.comment.website" :href="formatWebsite(props.comment.website)" target="_blank" rel="noopener noreferrer">
         {{ props.comment.username }}
       </a>
       <span v-else>{{ props.comment.username }}</span>

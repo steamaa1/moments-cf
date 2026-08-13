@@ -1,6 +1,6 @@
 <template>
   <div class="douban-card-block">
-    <a class="douban-card" :href="book?.url" target="_blank">
+    <a class="douban-card" :href="book?.url" target="_blank" rel="noopener noreferrer">
       <div class="douban-card-bgimg" :style="`background-image: url('${coverUrl}')`">
       </div>
       <div class="flex gap-2">

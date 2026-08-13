@@ -12,7 +12,7 @@
         @mouseenter="onMouseEnter(friend.id)"
         @mouseleave="onMouseLeave(friend.id)"
       >
-        <a :href="friend.url" target="_blank" class="block p-4">
+        <a :href="friend.url" target="_blank" rel="noopener noreferrer" class="block p-4">
           <div class="flex items-center gap-2 mb-2">
             <img
               :src="friend.icon"

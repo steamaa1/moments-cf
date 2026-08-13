@@ -337,6 +337,19 @@ assert.match(mdUtilsSrc, /export function loadMusicAssets/, '应导出音乐资�
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /customIcon/, '自定义状态应记录 emoji');
+const externalLinkFiles = [
+  '../front/components/Comment.vue',
+  '../front/components/DoubanBookPreview.vue',
+  '../front/components/DoubanMoviePreview.vue',
+  '../front/components/ExternalUrlPreview.vue',
+  '../front/pages/friend.vue',
+];
+for (const path of externalLinkFiles) {
+  const content = await readFile(new URL(path, import.meta.url), 'utf8');
+  for (const link of content.matchAll(/<a\b[^>]*target="_blank"[^>]*>/g)) {
+    assert.match(link[0], /rel="noopener noreferrer"/, `${path} 的新窗口外链必须隔离 opener`);
+  }
+}
 const commentBox = await readFile(new URL('../front/components/CommentBox.vue', import.meta.url), 'utf8');
 assert.match(commentBox, /localCommentUserinfo\.value = \{/);
 assert.doesNotMatch(commentBox, /state\.username = ''|state\.website = ''|state\.email = ''/, '匿名评论成功后应保留已记住的身份字段');
