@@ -649,7 +649,9 @@ async function likeIdentity(request, env) {
   }
   const secret = env.LIKE_SALT || env.JWT_SECRET;
   if (!secret) throw new Error('服务端未配置 JWT_SECRET');
-  return { hash: base64url(await hmac(secret, identity)), headers };
+  const clientIp = String(request.headers.get('cf-connecting-ip') || '').trim();
+  const networkHash = clientIp ? base64url(await hmac(secret, `like-network:${clientIp}`)) : '';
+  return { hash: base64url(await hmac(secret, identity)), networkHash, headers };
 }
 async function canReadMemo(memo, user) {
   if (!memo) return false;
@@ -905,7 +907,7 @@ async function likeMemo(request, env, headers) {
   const memo = await env.DB.prepare('SELECT id, show_type, created_at FROM memos WHERE id=?').bind(id).first();
   if (!memo || Number(memo.show_type) !== 1 || Date.parse(memo.created_at) > Date.now()) return json(fail('动态不存在或不可点赞'), 404, headers);
   const identity = await likeIdentity(request, env);
-  const result = await env.DB.prepare('INSERT OR IGNORE INTO memo_likes (memo_id, identity_hash) VALUES (?, ?)').bind(id, identity.hash).run();
+  const result = await env.DB.prepare('INSERT OR IGNORE INTO memo_likes (memo_id, identity_hash, network_hash) VALUES (?, ?, ?)').bind(id, identity.hash, identity.networkHash).run();
   if (Number(result.meta?.changes || 0) === 0) return json(fail('您已经点赞过了'), 409, { ...headers, ...Object.fromEntries(identity.headers) });
   // D1 trigger trg_memo_likes_insert updates fav_count in the same transaction.
   return json(ok({}), 200, { ...headers, ...Object.fromEntries(identity.headers) });

@@ -210,6 +210,27 @@ def test_phase12_comment_network_rate(database: Path) -> None:
         connection.close()
 
 
+def test_phase13_like_network_dedup(database: Path) -> None:
+    connection = sqlite3.connect(database)
+    try:
+        apply_sql(connection, "0012_like_network_dedup.sql")
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(memo_likes)")}
+        if "network_hash" not in columns:
+            raise AssertionError("like network_hash column missing")
+        connection.execute("INSERT INTO memo_likes (memo_id,identity_hash,network_hash) VALUES (1,'browser-network-a','network-a')")
+        try:
+            connection.execute("INSERT INTO memo_likes (memo_id,identity_hash,network_hash) VALUES (1,'browser-network-b','network-a')")
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("same memo and network hash must be unique")
+        connection.execute("INSERT INTO memo_likes (memo_id,identity_hash,network_hash) VALUES (1,'browser-empty-a','')")
+        connection.execute("INSERT INTO memo_likes (memo_id,identity_hash,network_hash) VALUES (1,'browser-empty-b','')")
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_export_helpers(database: Path, temporary: Path) -> None:
     export_dir = temporary / "export"
     run("scripts/migrate/export-sqlite.py", str(database), "--output", str(export_dir))
@@ -258,6 +279,7 @@ def main() -> None:
         test_phase10_telegram_column(database)
         test_phase11_media_storage_backend(database)
         test_phase12_comment_network_rate(database)
+        test_phase13_like_network_dedup(database)
         test_export_helpers(database, temporary)
     print("Phase 7 migration and release tool functional tests: PASS")
 
