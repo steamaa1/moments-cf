@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { migrationImport, migrationPreflight, migrationPrepare, passwordHash, signJwt } from '../worker/src/index.js';
+import { migrationFinish, migrationImport, migrationPreflight, migrationPrepare, passwordHash, signJwt } from '../worker/src/index.js';
 
 const secret = 'migration-test-secret-at-least-sixteen-characters';
 const packageId = 'a'.repeat(64);
@@ -22,6 +22,7 @@ class Statement {
     if (sql.includes('select status, summary from migration_runs')) return state.runs.get(this.args[0]) || null;
     if (sql.includes('select status from migration_runs')) return state.runs.get(this.args[0]) || null;
     if (sql.includes('select target_id from migration_items')) return state.mappings.has(`${this.args[0]}:${this.args[1]}:${this.args[2]}`) ? { target_id: state.mappings.get(`${this.args[0]}:${this.args[1]}:${this.args[2]}`) } : null;
+    if (sql.includes('select count(*) as count from migration_items')) return { count: [...state.mappings.keys()].filter(key => key.startsWith(`${this.args[0]}:${this.args[1]}:`)).length };
     if (sql.includes('select id from users where username')) return state.users.find(user => user.username === this.args[0]) || null;
     if (sql.includes('select content from sys_config')) return { content: JSON.stringify(state.config) };
     return null;
@@ -36,6 +37,10 @@ class Statement {
       const id = nextUser++;
       state.users.push({ id, username: this.args[0], nickname: this.args[1], password_hash: this.args[2], token_version: 0 });
       return { meta: { last_row_id: id } };
+    }
+    if (sql.startsWith("insert into migration_runs")) {
+      state.runs.set(this.args[0], { status: 'importing', summary: this.args[1] });
+      return { meta: {} };
     }
     if (sql.startsWith('insert or ignore into migration_items')) {
       state.mappings.set(`${this.args[0]}:${this.args[1]}:${this.args[2]}`, this.args[3]);
@@ -52,17 +57,21 @@ class Statement {
 const env = { DB: { prepare(sql) { return new Statement(sql); } }, JWT_SECRET: secret, CLOUDFLARE_ACCOUNT_ID: 'account', D1_DATABASE_ID: 'database', D1_BACKUP_API_TOKEN: 'token' };
 state.users[0].password_hash = await passwordHash('password123');
 const token = await signJwt({ sub: '1', tv: 0, exp: Math.floor(Date.now() / 1000) + 60 }, secret);
-const preflightRequest = new Request('https://moments.example/api/admin/migration/preflight', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ manifest: { format: 'moments-cf-migration', version: 1, packageId, tables: { 'users.json': 2 }, mediaCount: 0, mediaBytes: 0 } }) });
+const manifest = { format: 'moments-cf-migration', version: 1, packageId, tables: { 'users.json': 2, 'memos.json': 1, 'comments.json': 1, 'friends.json': 1, 'sys_config.json': 1 }, mediaCount: 0, mediaBytes: 0 };
+const preflightRequest = new Request('https://moments.example/api/admin/migration/preflight', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ manifest }) });
 const preflightResponse = await migrationPreflight(preflightRequest, env, {});
 const preflightBody = await preflightResponse.json();
 assert.equal(preflightResponse.status, 200);
 assert.equal(preflightBody.data.packageId, packageId);
 assert.equal(preflightBody.data.backupAvailable, true);
 assert.equal(preflightBody.data.existingRun, null);
-state.runs.set(packageId, { status: 'importing', summary: JSON.stringify({ backupReady: true, backup: { key: 'backups/d1/ready.sql' } }) });
+state.runs.set(packageId, { status: 'importing', summary: JSON.stringify({ manifest: { tables: manifest.tables, mediaCount: 0, mediaBytes: 0 }, backupReady: true, backup: { key: 'backups/d1/ready.sql' } }) });
 const prepareRequest = new Request('https://moments.example/api/admin/migration/prepare', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ packageId, password: 'password123' }) });
 const prepareResponse = await migrationPrepare(prepareRequest, env, {});
 const prepareBody = await prepareResponse.json();
+const prematureFinishRequest = new Request('https://moments.example/api/admin/migration/finish', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ packageId, imported: { media: 0 } }) });
+const prematureFinishResponse = await migrationFinish(prematureFinishRequest, env, {});
+assert.equal(prematureFinishResponse.status, 409, 'incomplete migration must not be marked completed');
 assert.equal(prepareResponse.status, 200);
 assert.equal(prepareBody.data.resumed, true);
 async function call(body) {
@@ -96,4 +105,8 @@ assert.equal(state.config.title, 'Legacy');
 assert.equal(state.config.enableS3, false);
 assert.equal(state.config.turnstileSecretKey, 'keep-secret');
 assert.equal(state.config.smtpPasswordEncrypted, 'keep-encrypted');
+const finishRequest = new Request('https://moments.example/api/admin/migration/finish', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-token': token }, body: JSON.stringify({ packageId, imported: { media: 0 } }) });
+const finishResponse = await migrationFinish(finishRequest, env, {});
+assert.equal(finishResponse.status, 200);
+assert.equal(state.runs.get(packageId).status, 'completed');
 console.log('Migration import idempotency tests: PASS');

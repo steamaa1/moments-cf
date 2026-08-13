@@ -1460,11 +1460,21 @@ async function migrationPreflight(request, env, headers) {
   if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('迁移包缺少有效 packageId'), 400, headers);
   const existingRun = await env.DB.prepare('SELECT status, summary FROM migration_runs WHERE package_id=?').bind(packageId).first();
   const counts = {};
-  for (const [name, value] of Object.entries(manifest.tables || {})) counts[name] = Number(value) || 0;
+  for (const [name, value] of Object.entries(manifest.tables || {})) {
+    if (!Number.isInteger(Number(value)) || Number(value) < 0) return json(fail(`迁移清单数量无效：${name}`), 400, headers);
+    counts[name] = Number(value);
+  }
+  const manifestSummary = { tables: counts, mediaCount: Number(manifest.mediaCount) || 0, mediaBytes: Number(manifest.mediaBytes) || 0 };
+  if (!existingRun) {
+    await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?)").bind(packageId, JSON.stringify({ manifest: manifestSummary, preflight: true })).run();
+  } else if (existingRun.status === 'importing') {
+    const previous = migrationSummary(existingRun.summary);
+    await env.DB.prepare("UPDATE migration_runs SET summary=?, updated_at=CURRENT_TIMESTAMP WHERE package_id=? AND status='importing'").bind(JSON.stringify({ ...previous, manifest: manifestSummary, preflight: true }), packageId).run();
+  }
   const userCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM users').first();
   const memoCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM memos').first();
   const backupAvailable = Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.D1_DATABASE_ID && env.D1_BACKUP_API_TOKEN);
-  return json(ok({ packageId, existingRun, manifest: { tables: counts, mediaCount: Number(manifest.mediaCount) || 0, mediaBytes: Number(manifest.mediaBytes) || 0 }, destination: { users: Number(userCount?.count || 0), memos: Number(memoCount?.count || 0) }, backupAvailable, warnings: ['旧用户密码不会迁移，管理员密码保留本站当前密码', existingRun?.status === 'completed' ? '该迁移包已经导入完成，不能重复导入' : existingRun?.status === 'importing' ? '检测到未完成迁移，将从已记录的断点继续' : '导入过程中请保持页面开启，避免中断'] }), 200, headers);
+  return json(ok({ packageId, existingRun, manifest: manifestSummary, destination: { users: Number(userCount?.count || 0), memos: Number(memoCount?.count || 0) }, backupAvailable, warnings: ['旧用户密码不会迁移，管理员密码保留本站当前密码', existingRun?.status === 'completed' ? '该迁移包已经导入完成，不能重复导入' : existingRun?.status === 'importing' ? '检测到未完成迁移，将从已记录的断点继续' : '导入过程中请保持页面开启，避免中断'] }), 200, headers);
 }
 function clampInt(value, min, max, fallback) {
   const n = Number(value);
@@ -1524,7 +1534,7 @@ async function migrationPrepare(request, env, headers) {
   if (existing?.status === 'importing' && previous.backupReady) return json(ok({ packageId, ready: true, resumed: true }), 200, headers);
   if (existing?.status === 'importing' && previous.backupBookmark) return json(ok({ packageId, ready: false, resumed: true, bookmark: previous.backupBookmark }), 200, headers);
   if (body?.skipBackup === true) {
-    const summary = { backupReady: true, backup: null, skipped: true, retentionDays: 90 };
+    const summary = { ...previous, backupReady: true, backup: null, skipped: true, retentionDays: 90 };
     await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?) ON CONFLICT(package_id) DO UPDATE SET status='importing', summary=excluded.summary, updated_at=CURRENT_TIMESTAMP").bind(packageId, JSON.stringify(summary)).run();
     return json(ok({ packageId, ready: true, resumed: false, skipped: true }), 200, headers);
   }
@@ -1676,7 +1686,26 @@ async function migrationFinish(request, env, headers) {
   const body = await readJson(request);
   const packageId = String(body?.packageId || '');
   if (!/^[a-f0-9]{64}$/.test(packageId)) return json(fail('packageId 无效'), 400, headers);
-  await env.DB.prepare("UPDATE migration_runs SET status='completed', summary=?, updated_at=CURRENT_TIMESTAMP WHERE package_id=? AND status='importing'").bind(JSON.stringify({ finishedAt: new Date().toISOString(), imported: body?.imported || {} }), packageId).run();
+  const run = await env.DB.prepare('SELECT status, summary FROM migration_runs WHERE package_id=?').bind(packageId).first();
+  if (!run || run.status !== 'importing') return json(fail('迁移未准备或已经结束'), 409, headers);
+  const summary = migrationSummary(run.summary);
+  const manifest = summary.manifest;
+  if (!manifest || !manifest.tables) return json(fail('迁移缺少服务端预检记录，请重新预检后再完成'), 409, headers);
+  const kinds = [['users.json', 'users'], ['memos.json', 'memos'], ['comments.json', 'comments'], ['friends.json', 'friends'], ['sys_config.json', 'config']];
+  const mismatches = [];
+  for (const [filename, kind] of kinds) {
+    const expected = Number(manifest.tables[filename] || 0);
+    if (!expected) continue;
+    const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM migration_items WHERE package_id=? AND kind=?').bind(packageId, kind).first();
+    const actual = Number(row?.count || 0);
+    if (actual !== expected) mismatches.push(`${filename}: 清单 ${expected}，实际完成 ${actual}`);
+  }
+  const expectedMedia = Number(manifest.mediaCount || 0);
+  const importedMedia = Number(body?.imported?.media);
+  if (!Number.isInteger(importedMedia) || importedMedia !== expectedMedia) mismatches.push(`media: 清单 ${expectedMedia}，客户端报告完成 ${Number.isFinite(importedMedia) ? importedMedia : 0}`);
+  if (mismatches.length) return json(fail(`迁移尚未完成：${mismatches.join('；')}`), 409, headers);
+  const completedSummary = { ...summary, finishedAt: new Date().toISOString(), completedCounts: Object.fromEntries(kinds.map(([filename, kind]) => [kind, Number(manifest.tables[filename] || 0)])), media: expectedMedia };
+  await env.DB.prepare("UPDATE migration_runs SET status='completed', summary=?, updated_at=CURRENT_TIMESTAMP WHERE package_id=? AND status='importing'").bind(JSON.stringify(completedSummary), packageId).run();
   return json(ok({ packageId, completed: true }), 200, headers);
 }
 
