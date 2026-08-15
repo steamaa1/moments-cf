@@ -324,6 +324,8 @@ assert.match(layoutDefault, /Promise\.all\(\[\s*useMyFetch/, '首页 profile/sys
 const nuxtConfigSrc = await readFile(new URL('../front/nuxt.config.ts', import.meta.url), 'utf8');
 assert.doesNotMatch(nuxtConfigSrc, /APlayer|Meting/, '音乐库不应全局加载');
 assert.match(musicPreview, /loadMusicAssets/, '音乐组件应按需加载 APlayer/Meting');
+assert.match(musicPreview, /metingReady/, 'Meting 模式应等脚本就绪再渲染标签');
+assert.match(musicPreview, /mode === 'direct'/, '直链与 Meting 模式分流加载');
 assert.match(musicPreview, /loadMusicAssets/, '音乐组件应按需加载 APlayer/Meting');
 const uploadPreviewImg = await readFile(new URL('../front/components/UploadImagePreview.vue', import.meta.url), 'utf8');
 assert.match(uploadPreviewImg, /loading="lazy"/, '动态图片应懒加载');
