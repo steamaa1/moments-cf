@@ -17,6 +17,7 @@
         <span v-if="$route.path === '/user/calendar'">日历检索</span>
         <span v-else-if="$route.path === '/sys/settings'">系统设置</span>
         <span v-else-if="$route.path === '/sys/migration'" class="flex items-center gap-1.5"><UIcon name="i-carbon-import-export" class="h-4 w-4"/>一键导入</span>
+        <span v-else-if="$route.path === '/sys/approve'" class="flex items-center gap-1.5"><UIcon name="i-carbon-user-check" class="h-4 w-4"/>注册审批</span>
         <span v-else-if="$route.path === '/user/settings'">用户中心</span>
         <span v-else-if="$route.path.indexOf('/tags/') >= 0">
           {{ route.params.tag || "话题专栏" }}

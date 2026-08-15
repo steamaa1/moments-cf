@@ -39,6 +39,7 @@ const DEFAULT_CONFIG = {
   commentOrder: 'desc',
   timeFormat: 'timeAgo',
   enableRegister: false,
+  enableRegisterApproval: false,
   seoDescription: '',
   seoKeywords: '',
   backupIntervalDays: 7,
@@ -75,7 +76,7 @@ const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
   'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength', 'telegramBotUsername', 'friendNotice', 'friendEmail',
-  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister', 'seoDescription', 'seoKeywords',
+  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister', 'enableRegisterApproval', 'seoDescription', 'seoKeywords',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
 const MAX_PBKDF2_ITERATIONS = 100000;
@@ -258,6 +259,8 @@ async function login(request, env, headers) {
     return json(fail('用户不存在或密码不正确'), 401, headers);
   }
   if (networkHash) await db.prepare('DELETE FROM login_attempts WHERE network_hash=? AND username_hash=?').bind(networkHash, usernameHash).run();
+  if (Number(user.registration_state) === 0) return json(fail('账号待管理员审批，请耐心等待'), 403, headers);
+  if (Number(user.registration_state) === 2) return json(fail('注册申请未通过，如有疑问请联系管理员'), 403, headers);
   const now = Math.floor(Date.now() / 1000);
   const token = await signJwt({ sub: String(user.id), username: user.username, tv: Number(user.token_version), iat: now, exp: now + 60 * 60 * 24 * 14 }, env.JWT_SECRET);
   return json(ok({ token, username: user.username, id: Number(user.id) }), 200, headers);
@@ -363,6 +366,7 @@ async function saveConfig(request, env, headers) {
   config.enableTurnstile = Boolean(body.enableTurnstile);
   config.turnstileSiteKey = String(body.turnstileSiteKey || '').trim().slice(0, 200);
   config.turnstileSecretKey = String(body.turnstileSecretKey || previousConfig.turnstileSecretKey || '').trim().slice(0, 300);
+  config.enableRegisterApproval = Boolean(body.enableRegisterApproval);
   config.seoDescription = String(body.seoDescription || '').trim().slice(0, 300);
   config.seoKeywords = String(body.seoKeywords || '').trim().slice(0, 500);
   config.enableD1Backup = body.enableD1Backup !== false;
@@ -465,7 +469,7 @@ function sqliteTime(value = new Date()) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
-async function register(request, env, headers) {
+async function register(request, env, headers, ctx) {
   const body = await readJson(request);
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   if (!config.enableRegister) return json(fail('当前未开启注册用户'), 403, headers);
@@ -475,10 +479,20 @@ async function register(request, env, headers) {
   if (password.length < 8) return json(fail('密码至少 8 位'), 400, headers);
   if (password !== String(body?.repeatPassword || '')) return json(fail('两次密码不一致'), 400, headers);
   if (await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first()) return json(fail('用户名已存在'), 409, headers);
+  const email = String(body?.email || '').trim().slice(0, 254);
+  const reason = String(body?.reason || '').trim().slice(0, 500);
+  const awaitingApproval = Boolean(config.enableRegisterApproval);
+  if (awaitingApproval && !reason) return json(fail('请填写注册理由'), 400, headers);
   const hash = await passwordHash(password, pbkdf2Iterations(env.PBKDF2_ITERATIONS));
-  await env.DB.prepare('INSERT INTO users (username, nickname, password_hash, slogan) VALUES (?, ?, ?, ?)')
-    .bind(username, username, hash, '记录生活的每一个瞬间。').run();
-  return json(ok({}), 201, headers);
+  const state = awaitingApproval ? 0 : 1;
+  await env.DB.prepare('INSERT INTO users (username, nickname, password_hash, slogan, email, registration_reason, registration_state) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(username, username, hash, '记录生活的每一个瞬间。', email, reason, state).run();
+  if (awaitingApproval) {
+    // 通知管理员有新的注册申请待审批
+    const task = notifyAdminNewRegistration(env, config, { username, email, reason }).catch(error => console.error('注册审批通知失败', error));
+    if (ctx?.waitUntil) ctx.waitUntil(task); else await task;
+  }
+  return json(ok({ awaitingApproval }), awaitingApproval ? 202 : 201, headers);
 }
 async function fileExists(request, env, headers) {
   const access = await requireUser(request, env, headers);
@@ -1621,6 +1635,76 @@ async function serveXMedia(request) {
     return new Response(response.body, { headers: { 'content-type': contentType, 'cache-control': 'public, max-age=604800, stale-while-revalidate=86400', 'x-content-type-options': 'nosniff' } });
   } catch { return new Response('X media unavailable', { status: 502 }); }
 }
+async function registrationRequests(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const rows = await env.DB.prepare("SELECT id, username, nickname, email, registration_reason, created_at FROM users WHERE registration_state=0 ORDER BY created_at ASC").all();
+  return json(ok((rows.results || []).map(row => ({ id: Number(row.id), username: row.username, nickname: row.nickname, email: row.email, reason: row.registration_reason, createdAt: row.created_at }))), 200, headers);
+}
+async function registrationApprove(request, env, headers, ctx) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const id = intParam(body?.id);
+  const user = await env.DB.prepare('SELECT id, username, email, registration_state FROM users WHERE id=?').bind(id).first();
+  if (!user) return json(fail('用户不存在'), 404, headers);
+  if (Number(user.registration_state) === 0) {
+    await env.DB.prepare('UPDATE users SET registration_state=1, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(id).run();
+    // 批准后通知用户（邮件，如有邮箱与邮件配置）
+    if (user.email) {
+      const row = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();
+      const config = parseConfig(row?.content);
+      if (config.enableEmail && config.smtpUsername) {
+        const task = notifyUserRegistrationApproved(env, config, user).catch(error => console.error('注册通过通知失败', error));
+        if (ctx?.waitUntil) ctx.waitUntil(task); else await task;
+      }
+    }
+  }
+  return json(ok({}), 200, headers);
+}
+async function registrationReject(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  const id = intParam(body?.id);
+  const user = await env.DB.prepare('SELECT id, registration_state FROM users WHERE id=?').bind(id).first();
+  if (!user) return json(fail('用户不存在'), 404, headers);
+  if (Number(user.registration_state) === 0) {
+    // 拒绝不通知（按需求），仅标记状态，用户登录时可见提示
+    await env.DB.prepare('UPDATE users SET registration_state=2, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(id).run();
+  }
+  return json(ok({}), 200, headers);
+}
+async function notifyAdminNewRegistration(env, config, { username, email, reason }) {
+  const admin = await env.DB.prepare('SELECT email, telegram_chat_id FROM users WHERE id=1').first();
+  const title = config.title || 'Moments';
+  const subject = `${title}：新用户注册待审批`;
+  const text = `新用户申请注册：\n用户名：${username}\n邮箱：${email || '（未填写）'}\n理由：${reason || '（未填写）'}\n请到后台注册审批页面处理。`;
+  const errors = [];
+  if (config.enableEmail && admin?.email && config.smtpUsername) {
+    let mailCredential = '';
+    try { mailCredential = config.smtpPasswordEncrypted ? await decryptConfigSecret(config.smtpPasswordEncrypted, env.JWT_SECRET) : ''; } catch (error) { console.error('Mail credential decrypt failed', error); }
+    try {
+      await sendNotification(env, { ...config, mailCredential }, { from: config.smtpUsername, to: admin.email, subject, html: `<p>${escapeXml(text).replace(/\n/g, '<br>')}</p>`, text });
+      return;
+    } catch (error) { errors.push(`Email: ${error.message}`); }
+  }
+  if (config.enableTelegram && admin?.telegram_chat_id) {
+    const botToken = config.telegramBotTokenEncrypted ? await decryptConfigSecret(config.telegramBotTokenEncrypted, env.JWT_SECRET).catch(() => '') : '';
+    if (botToken) {
+      try { await sendTelegram({ botToken, chatId: admin.telegram_chat_id, text: `📬 ${subject}\n\n${text}` }); return; } catch (error) { errors.push(`Telegram: ${error.message}`); }
+    }
+  }
+  if (errors.length) throw new Error(errors.join('; '));
+}
+async function notifyUserRegistrationApproved(env, config, user) {
+  const title = config.title || 'Moments';
+  const subject = `${title}：注册申请已通过`;
+  const text = `${user.username}，您好！\n您的注册申请已通过审批，现在可以登录 ${title} 了。`;
+  let mailCredential = '';
+  try { mailCredential = config.smtpPasswordEncrypted ? await decryptConfigSecret(config.smtpPasswordEncrypted, env.JWT_SECRET) : ''; } catch (error) { console.error('Mail credential decrypt failed', error); }
+  await sendNotification(env, { ...config, mailCredential }, { from: config.smtpUsername, to: user.email, subject, html: `<p>${escapeXml(text).replace(/\n/g, '<br>')}</p>`, text });
+}
 async function externalInfo(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
@@ -2000,7 +2084,7 @@ async function handleApi(request, env, ctx) {
     if (request.method !== 'POST') return json(fail('仅支持 POST'), 405, headers);
     if (url.pathname === '/api/admin/initialize') return await initialize(request, env, headers);
     if (url.pathname === '/api/user/login') return await login(request, env, headers);
-    if (url.pathname === '/api/user/reg') return await register(request, env, headers);
+    if (url.pathname === '/api/user/reg') return await register(request, env, headers, ctx);
     if (url.pathname === '/api/user/status/set') return await statusSet(request, env, headers);
     if (url.pathname === '/api/user/status/clear') return await statusClear(request, env, headers);
     if (url.pathname === '/api/user/status/get') return await statusGet(request, env, headers);
@@ -2044,6 +2128,9 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/admin/migration/fail') return await migrationFail(request, env, headers);
     if (url.pathname === '/api/admin/migration/import') return await migrationImport(request, env, headers);
     if (url.pathname === '/api/admin/backup/export') return await backupExportLocal(request, env, headers);
+    if (url.pathname === '/api/admin/registration/requests') return await registrationRequests(request, env, headers);
+    if (url.pathname === '/api/admin/registration/approve') return await registrationApprove(request, env, headers, ctx);
+    if (url.pathname === '/api/admin/registration/reject') return await registrationReject(request, env, headers);
     if (url.pathname === '/api/admin/backup/list') return await backupList(request, env, headers);
     if (url.pathname === '/api/admin/backup/create') return await backupCreate(request, env, headers);
     if (url.pathname === '/api/admin/backup/download') return await backupDownload(request, env, headers);

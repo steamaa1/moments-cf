@@ -33,6 +33,15 @@
     <UFormGroup label="是否开启注册用户" name="enableRegister" :ui="{label:{base:'font-bold'}}">
       <UToggle v-model="state.enableRegister"/>
     </UFormGroup>
+    <UFormGroup label="注册需管理员批准" name="enableRegisterApproval" :ui="{label:{base:'font-bold'}}">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <UToggle v-model="state.enableRegisterApproval"/>
+          <p class="text-xs text-gray-500 mt-1">开启后新用户注册需填写理由，待管理员批准后方可登录</p>
+        </div>
+        <UButton color="gray" variant="soft" icon="i-carbon-user-check" to="/sys/approve">注册审批</UButton>
+      </div>
+    </UFormGroup>
     <div class="rounded-xl border border-gray-200 p-4 space-y-3 dark:border-gray-700">
       <div class="flex items-center justify-between gap-4"><div><p class="font-semibold">关于页面</p><p class="text-xs text-gray-500">开启后导航中显示“关于”，内容支持 Markdown 与 HTML。</p></div><UToggle v-model="state.enableAbout"/></div>
       <UFormGroup v-if="state.enableAbout" label="关于内容" name="aboutContent" :ui="{label:{base:'font-bold'}}">
@@ -243,6 +252,9 @@ import {useUpload} from "~/utils";
 import {useGlobalState} from "~/store";
 
 const currentUser = useState<UserVO>('userinfo')
+const global = useGlobalState()
+// 仅管理员可访问系统设置（含注册审批、备份、存储凭据等敏感功能）
+if (global.value.userinfo.id !== 1) await navigateTo('/', { replace: true })
 const version = ref('')
 const commitId = ref('')
 const state = reactive({
@@ -257,6 +269,7 @@ const state = reactive({
   enableAutoLoadNextPage: true,
   enableComment: true,
   enableRegister: true,
+  enableRegisterApproval: false,
   backupIntervalDays: 7,
   backupRetentionDays: 90,
   enableD1Backup: true,
