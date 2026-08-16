@@ -339,6 +339,8 @@ assert.match(mdUtilsSrc, /export function loadMusicAssets/, '应导出音乐资�
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /customIcon/, '自定义状态应记录 emoji');
+const emojiComp = await readFile(new URL('../front/components/Emoji.vue', import.meta.url), 'utf8');
+assert.match(emojiComp, /currentTarget.*textContent/s, 'Emoji 取值应使用 currentTarget+textContent');
 const externalLinkFiles = [
   '../front/components/Comment.vue',
   '../front/components/DoubanBookPreview.vue',

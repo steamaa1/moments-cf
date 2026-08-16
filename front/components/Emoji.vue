@@ -12,7 +12,10 @@
 <script setup lang="ts">
 const emit = defineEmits(['selected'])
 const selectEmoji = (event:Event)=>{
-  const value = (event.target as HTMLDivElement).innerHTML
+  // 用 currentTarget + textContent：点击目标即 v-for 项，纯文本取值
+  // 避免 innerHTML 在内容被转义/含子元素时误取整块 HTML
+  const value = (event.currentTarget as HTMLDivElement).textContent?.trim() || ''
+  if (!value) return
   emit('selected',value)
 }
 const tabItems = [
