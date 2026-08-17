@@ -17,6 +17,9 @@
     <UFormGroup label="SEO 关键词" name="seoKeywords" :ui="{label:{base:'font-bold'}}" help="逗号分隔，留空使用默认">
       <UInput v-model="state.seoKeywords" placeholder="朋友圈, 动态, 博客"/>
     </UFormGroup>
+    <UFormGroup label="站点规范域名" name="siteUrl" :ui="{label:{base:'font-bold'}}" help="用于生成 canonical/og:url、sitemap、robots 与 RSS 链接；请填写唯一正式域名，例如 https://wb.me-i.top">
+      <UInput v-model="state.siteUrl" placeholder="https://wb.me-i.top" type="url"/>
+    </UFormGroup>
     <UFormGroup label="Favicon" name="favicon"
                 :ui="{label:{base:'font-bold'}}">
       <UInput type="file" size="sm" icon="i-heroicons-folder" accept="image/*" @change="uploadFavicon"/>
@@ -289,6 +292,7 @@ const state = reactive({
   title: "极简朋友圈",
   seoDescription: "",
   seoKeywords: "",
+  siteUrl: "https://wb.me-i.top",
   favicon: "/favicon.ico",
   beiAnNo: "",
   css: "",

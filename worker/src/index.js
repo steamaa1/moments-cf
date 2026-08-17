@@ -42,6 +42,7 @@ const DEFAULT_CONFIG = {
   enableRegisterApproval: false,
   seoDescription: '',
   seoKeywords: '',
+  siteUrl: 'https://wb.me-i.top',
   backupIntervalDays: 7,
   backupRetentionDays: 90,
   enableD1Backup: true,
@@ -76,7 +77,7 @@ const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
   'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength', 'telegramBotUsername', 'friendNotice', 'friendEmail',
-  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister', 'enableRegisterApproval', 'seoDescription', 'seoKeywords',
+  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister', 'enableRegisterApproval', 'seoDescription', 'seoKeywords', 'siteUrl',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
 const MAX_PBKDF2_ITERATIONS = 100000;
@@ -369,6 +370,8 @@ async function saveConfig(request, env, headers) {
   config.enableRegisterApproval = Boolean(body.enableRegisterApproval);
   config.seoDescription = String(body.seoDescription || '').trim().slice(0, 300);
   config.seoKeywords = String(body.seoKeywords || '').trim().slice(0, 500);
+  config.siteUrl = String(body.siteUrl || '').trim().replace(/\/+$/, '').slice(0, 200);
+  if (config.siteUrl && !validHttpUrl(config.siteUrl)) return json(fail('站点规范域名格式错误'), 400, headers);
   config.enableD1Backup = body.enableD1Backup !== false;
   config.enableTelegram = body.enableTelegram === true;
   config.telegramBotUsername = String(body.telegramBotUsername || '').trim().replace(/^@/, '').slice(0, 64);
@@ -969,10 +972,14 @@ const DEFAULT_SEO = {
 };
 // 把后台配置的 SEO 信息动态注入 SPA index.html，
 // 让不执行 JS 的爬虫（Bing 等）也能读到站点标题/描述/关键词。
-export function injectSeoMeta(html, config) {
+export function injectSeoMeta(html, config, path = '/') {
   const title = escapeXml(String(config?.title || DEFAULT_SEO.title));
   const description = escapeXml(String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${config.title || DEFAULT_SEO.title}` : DEFAULT_SEO.description)));
   const keywords = escapeXml(String(config?.seoKeywords || DEFAULT_SEO.keywords));
+  const siteUrl = String(config?.siteUrl || '').trim().replace(/\/+$/, '');
+  const canonical = siteUrl ? `${siteUrl}${String(path || '/').replace(/^([^/])/, '/$1')}` : '';
+  const canonicalTag = canonical ? `<link rel="canonical" href="${escapeXml(canonical)}">` : '';
+  const ogUrlTag = canonical ? `<meta property="og:url" content="${escapeXml(canonical)}">` : '';
   let output = String(html || '');
   output = output.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
   output = output.replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${description}">`);
@@ -982,17 +989,24 @@ export function injectSeoMeta(html, config) {
   output = output.replace(/<meta property="og:description"[^>]*>/, `<meta property="og:description" content="${description}">`);
   output = output.replace(/<meta name="twitter:title"[^>]*>/, `<meta name="twitter:title" content="${title}">`);
   output = output.replace(/<meta name="twitter:description"[^>]*>/, `<meta name="twitter:description" content="${description}">`);
+  if (canonical) {
+    if (canonicalTag && !/<link[^>]+rel=["']canonical["']/i.test(output)) output = output.replace('</head>', `${canonicalTag}\n${ogUrlTag}</head>`);
+    else {
+      output = output.replace(/<link[^>]+rel=["']canonical["'][^>]*>/, canonicalTag);
+      if (!/<meta property="og:url"[^>]*>/.test(output)) output = output.replace('</head>', `${ogUrlTag}</head>`);
+    }
+  }
   return output;
 }
 function rssText(value) { return String(value || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[>#*_`~-]/g, '').trim(); }
 async function sitemap(request, env) {
-  const host = new URL(request.url).origin;
   const [memos, users, configRow] = await Promise.all([
     env.DB.prepare('SELECT id, created_at FROM memos WHERE show_type=1 AND created_at<=CURRENT_TIMESTAMP LIMIT 50000').all(),
     env.DB.prepare('SELECT id, updated_at FROM users LIMIT 5000').all(),
     env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(),
   ]);
   const config = parseConfig(configRow?.content);
+  const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || new URL(request.url).origin;
   const urls = [];
   const push = (loc, lastmod, freq, priority) => {
     const lastmodTag = lastmod ? `<lastmod>${escapeXml(lastmod.replace(' ', 'T') + 'Z')}</lastmod>` : '';
@@ -1006,8 +1020,10 @@ async function sitemap(request, env) {
   const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`;
   return new Response(xml, { headers: { 'content-type': 'application/xml; charset=UTF-8', 'cache-control': 'no-store' } });
 }
-function robots(request) {
-  const host = new URL(request.url).origin;
+async function robots(request, env) {
+  const row = env.DB ? await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : null;
+  const config = parseConfig(row?.content);
+  const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || new URL(request.url).origin;
   const text = `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /upload/\nSitemap: ${host}/sitemap.xml\n`;
   return new Response(text, { headers: { 'content-type': 'text/plain; charset=UTF-8', 'cache-control': 'no-store' } });
 }
@@ -1019,7 +1035,7 @@ async function rss(request, env) {
   if (config.rss) return Response.redirect(config.rss, 302);
   const admin = await env.DB.prepare('SELECT * FROM users WHERE id=1').first();
   const rows = await env.DB.prepare(`${MEMO_SELECT} WHERE m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP ORDER BY m.created_at DESC LIMIT 15`).all();
-  const host = url.origin;
+  const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || url.origin;
   const items = (rows.results || []).map(row => {
     const memo = memoView(row);
     const titleBase = rssText(memo.content).split('\n')[0] || `Memo #${memo.id}`;
@@ -1950,7 +1966,7 @@ async function migrationImport(request, env, headers) {
     const current = parseConfig(old?.content);
     let legacy = rows[0]?.content ?? rows[0] ?? {};
     if (typeof legacy === 'string') { try { legacy = JSON.parse(legacy); } catch { legacy = {}; } }
-    const keys = ['title','favicon','beiAnNo','css','js','rss','enableAutoLoadNextPage','enableComment','maxCommentLength','memoMaxHeight','commentOrder','timeFormat','enableRegister','seoDescription','seoKeywords'];
+    const keys = ['title','favicon','beiAnNo','css','js','rss','enableAutoLoadNextPage','enableComment','maxCommentLength','memoMaxHeight','commentOrder','timeFormat','enableRegister','seoDescription','seoKeywords','siteUrl'];
     for (const key of keys) if (Object.hasOwn(legacy, key)) current[key] = legacy[key];
     current.beiAnNo = sanitizeSafeHtml(current.beiAnNo);
     current.enableS3 = false;
@@ -2229,7 +2245,7 @@ export default {
     const normalizedPath = url.pathname.replace(/\/+$/, '').toLowerCase();
     if (normalizedPath === '/rss') return rss(request, env);
     if (normalizedPath === '/sitemap.xml') return sitemap(request, env);
-    if (normalizedPath === '/robots.txt') return robots(request);
+    if (normalizedPath === '/robots.txt') return robots(request, env);
     if (!env.ASSETS) return new Response('Workers Assets binding is not configured', { status: 503 });
     const assetsResponse = await env.ASSETS.fetch(request);
     // SPA fallback（HTML）不缓存：避免 Cloudflare 边缘把 index.html 缓存到
@@ -2241,7 +2257,7 @@ export default {
       // 注入后台配置的 SEO meta，让不执行 JS 的爬虫读取到动态标题/描述/关键词
       const row = env.DB ? await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : null;
       const config = parseConfig(row?.content);
-      const injected = injectSeoMeta(await assetsResponse.text(), config);
+      const injected = injectSeoMeta(await assetsResponse.text(), config, url.pathname);
       return new Response(injected, { status: assetsResponse.status, headers });
     }
     // 静态资源缓存：_nuxt/ 构建产物按内容 hash 命名，可永久缓存；

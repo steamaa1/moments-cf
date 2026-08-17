@@ -45,6 +45,16 @@ const html = `<!doctype html><html><head>
   assert.match(out, /<meta name="description" content="签名B · 站点A">/);
 }
 
+// 3.1 siteUrl 配置后按当前路径注入 canonical 与 og:url；未配置时不注入
+{
+  const out = injectSeoMeta(html, { siteUrl: 'https://wb.me-i.top' }, '/memo/123');
+  assert.match(out, /<link rel="canonical" href="https:\/\/wb\.me-i\.top\/memo\/123">/);
+  assert.match(out, /<meta property="og:url" content="https:\/\/wb\.me-i\.top\/memo\/123">/);
+  const withoutSiteUrl = injectSeoMeta(html, {}, '/memo/123');
+  assert.doesNotMatch(withoutSiteUrl, /rel="canonical"/);
+  assert.doesNotMatch(withoutSiteUrl, /property="og:url"/);
+}
+
 // 4. HTML 转义（& < " 不得破坏 meta 结构）
 {
   const out = injectSeoMeta(html, { title: 'A&B', seoDescription: '<b>"x"</b>' });
@@ -62,14 +72,17 @@ const html = `<!doctype html><html><head>
 const source = await readFile(new URL('../worker/src/index.js', import.meta.url), 'utf8');
 assert.match(source, /config\.seoDescription = String\(body\.seoDescription/);
 assert.match(source, /'seoDescription', 'seoKeywords'/);
-assert.match(source, /injectSeoMeta\(await assetsResponse\.text\(\), config\)/);
+assert.match(source, /injectSeoMeta\(await assetsResponse\.text\(\), config, url\.pathname\)/);
 const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');
 assert.match(settings, /v-model="state\.seoDescription"/);
 assert.match(settings, /v-model="state\.seoKeywords"/);
+assert.match(settings, /v-model="state\.siteUrl"/);
 assert.match(settings, /SEO 描述/);
 assert.match(settings, /SEO 关键词/);
+assert.match(settings, /站点规范域名/);
 const layoutDefault = await readFile(new URL('../front/layouts/default.vue', import.meta.url), 'utf8');
 assert.match(layoutDefault, /sysConfigVO\.seoDescription \|\|/);
 assert.match(layoutDefault, /sysConfigVO\.seoKeywords \|\|/);
+assert.match(layoutDefault, /sysConfigVO\.siteUrl/);
 
 console.log('SEO meta injection regression tests: PASS');

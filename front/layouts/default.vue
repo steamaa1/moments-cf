@@ -79,10 +79,14 @@ if (currentProfile) {
   sysConfig.value = sysConfigVO;
 }
 const { y } = useWindowScroll();
+const route = useRoute();
 const seoTitle = sysConfigVO.title || site.title;
 const seoDescription = sysConfigVO.seoDescription || (sysConfigVO.slogan ? `${sysConfigVO.slogan} · ${seoTitle}` : site.description);
 const seoKeywords = sysConfigVO.seoKeywords || site.keywords;
-useHead({
+const canonicalBase = (sysConfigVO.siteUrl || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
+const canonicalUrl = computed(() => canonicalBase ? canonicalBase + route.path : '');
+const noindex = ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix));
+useHead(() => ({
   title: seoTitle,
   link: [
     {
@@ -100,14 +104,17 @@ useHead({
       title: "我的 RSS 订阅",
       href: sysConfigVO.rss || `/rss`,
     },
+    ...(canonicalUrl.value ? [{ rel: "canonical", href: canonicalUrl.value }] : []),
   ],
   meta: [
     { name: "description", content: seoDescription },
     { name: "keywords", content: seoKeywords },
+    { name: "robots", content: noindex ? "noindex, nofollow" : "index, follow" },
     { property: "og:site_name", content: seoTitle },
     { property: "og:type", content: "website" },
     { property: "og:title", content: seoTitle },
     { property: "og:description", content: seoDescription },
+    ...(canonicalUrl.value ? [{ property: "og:url", content: canonicalUrl.value }] : []),
     { name: "twitter:card", content: "summary" },
     { name: "twitter:title", content: seoTitle },
     { name: "twitter:description", content: seoDescription },
@@ -117,7 +124,7 @@ useHead({
       innerHTML: sysConfigVO.css || "",
     },
   ],
-});
+}));
 
 // 自定义 JS：SPA 路由切换后新页面 DOM 已渲染，此时执行才能挂载页脚/天气/统计等元素。
 // 管理员脚本自带防重复检查，重复执行是幂等的。

@@ -70,8 +70,7 @@ const loadMore = async () => {
 }
 
 
-// SEO：昵称 + 签名
-const userSeoHost = typeof window !== 'undefined' ? window.location.origin : ''
+// SEO：昵称 + 签名；canonical/og:url 由 layouts/default.vue 统一输出
 watch(profile, (value) => {
   if (!value?.nickname) return
   const slogan = String(value.slogan || '').slice(0, 120)
@@ -82,7 +81,6 @@ watch(profile, (value) => {
       { property: 'og:title', content: `${value.nickname} 的空间` },
       { property: 'og:description', content: slogan },
     ],
-    link: [{ rel: 'canonical', href: `${userSeoHost}/user/${value.id}` }],
   })
 }, { immediate: false })
 

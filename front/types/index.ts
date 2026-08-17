@@ -89,6 +89,7 @@ export type SysConfigVO = {
     memoMaxHeight: number,
     commentOrder: 'desc' | 'asc',
     timeFormat: 'timeAgo' | 'time',
+    siteUrl: string,
     backupIntervalDays: number,
     backupRetentionDays: number,
     enableD1Backup: boolean,

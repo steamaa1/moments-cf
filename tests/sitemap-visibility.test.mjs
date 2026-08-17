@@ -13,7 +13,7 @@ const env = {
           return { results: [] };
         },
         async first() {
-          if (sql.includes('FROM sys_config')) return { content: JSON.stringify({ enableAbout: false }) };
+          if (sql.includes('FROM sys_config')) return { content: JSON.stringify({ enableAbout: false, siteUrl: '' }) };
           return null;
         },
       };

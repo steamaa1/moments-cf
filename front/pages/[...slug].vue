@@ -11,6 +11,8 @@
 import type { UserVO } from "~/types";
 
 const currentUser = useState<UserVO | null>("userinfo")
+
+useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 </script>
 
 <style scoped></style>
