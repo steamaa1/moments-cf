@@ -53,7 +53,7 @@ import { useGlobalState } from '~/store'
 import { toast } from 'vue-sonner'
 
 type TarMeta = { name: string; size: number; type: number; offset: number }
-type PackageManifest = { format: string; version: number; packageId: string; tables: Record<string, number>; mediaCount: number; mediaBytes: number; media: Array<{path:string;size:number;sha256:string;contentType:string}> }
+type PackageManifest = { format: string; version: number; packageId: string; tables: Record<string, number>; mediaCount: number; mediaBytes: number; rowHashes: Record<string, string[]>; media: Array<{path:string;size:number;sha256:string;contentType:string}> }
 type Report = { packageId:string; existingRun?:{status:string;summary:string}|null; manifest: PackageManifest; destination: {users:number;memos:number}; backupAvailable:boolean; warnings:string[] }
 const currentUser = useState<UserVO>('userinfo')
 const global = useGlobalState()
@@ -172,6 +172,7 @@ async function inspect() {
         tables: manifest.tables,
         mediaCount: manifest.mediaCount,
         mediaBytes: manifest.mediaBytes,
+        rowHashes: manifest.rowHashes,
       },
     })
     progress.message = `预检通过：${manifest.mediaCount || 0} 个媒体、${manifest.tables?.['memos.json'] || 0} 条动态、${manifest.tables?.['users.json'] || 0} 个用户`
@@ -183,7 +184,7 @@ async function inspect() {
     reading.value = false
   }
 }
-async function importBatch(kind:string, rows:unknown[], extra:Record<string,unknown>={}) { for(let i=0;i<rows.length;i+=50) { const result=await api<{userMap?:Record<string,number>;memoMap?:Record<string,number>}>( '/admin/migration/import', {packageId:report.value?.packageId,kind,rows:rows.slice(i,i+50),...extra}); if(result.userMap) Object.assign(maps.users,result.userMap); if(result.memoMap) Object.assign(maps.memos,result.memoMap) } }
+async function importBatch(kind:string, rows:unknown[], extra:Record<string,unknown>={}) { for(let i=0;i<rows.length;i+=50) { const result=await api<{userMap?:Record<string,number>;memoMap?:Record<string,number>}>( '/admin/migration/import', {packageId:report.value?.packageId,kind,offset:i,rows:rows.slice(i,i+50),...extra}); if(result.userMap) Object.assign(maps.users,result.userMap); if(result.memoMap) Object.assign(maps.memos,result.memoMap) } }
 async function startImport() {
   if (!report.value || importing.value) return
   const activeReport = report.value

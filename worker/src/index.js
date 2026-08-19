@@ -1836,7 +1836,12 @@ async function migrationPreflight(request, env, headers) {
     if (!Number.isInteger(Number(value)) || Number(value) < 0) return json(fail(`迁移清单数量无效：${name}`), 400, headers);
     counts[name] = Number(value);
   }
-  const manifestSummary = { tables: counts, mediaCount: Number(manifest.mediaCount) || 0, mediaBytes: Number(manifest.mediaBytes) || 0 };
+  const rowHashes = manifest.rowHashes && typeof manifest.rowHashes === 'object' ? manifest.rowHashes : {};
+  for (const filename of ['users.json', 'memos.json', 'comments.json', 'friends.json', 'sys_config.json']) {
+    if (!Array.isArray(rowHashes[filename]) || rowHashes[filename].length !== counts[filename]) return json(fail(`迁移清单缺少行摘要：${filename}`), 400, headers);
+    if (rowHashes[filename].some(hash => !/^[a-f0-9]{64}$/.test(String(hash)))) return json(fail(`迁移行摘要格式错误：${filename}`), 400, headers);
+  }
+  const manifestSummary = { tables: counts, mediaCount: Number(manifest.mediaCount) || 0, mediaBytes: Number(manifest.mediaBytes) || 0, rowHashes };
   if (!existingRun) {
     await env.DB.prepare("INSERT INTO migration_runs (package_id,status,summary) VALUES (?, 'importing', ?)").bind(packageId, JSON.stringify({ manifest: manifestSummary, preflight: true })).run();
   } else if (existingRun.status === 'importing') {
@@ -1885,6 +1890,15 @@ async function attachStatuses(env, users) {
   for (const user of users) user.status = map.get(Number(user.id)) || null;
 }
 function migrationText(value, max = 2000) { return String(value ?? '').slice(0, max); }
+function canonicalMigrationValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalMigrationValue);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalMigrationValue(value[key])]));
+  return value;
+}
+async function migrationRowHash(row) {
+  const bytes = encoder.encode(JSON.stringify(canonicalMigrationValue(row)));
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(value => value.toString(16).padStart(2, '0')).join('');
+}
 function migrationTime(value) { return sqliteTime(value) || sqliteTime(); }
 async function migrationMapping(env, packageId, kind, sourceId) {
   return env.DB.prepare('SELECT target_id FROM migration_items WHERE package_id=? AND kind=? AND source_id=?').bind(packageId, kind, String(sourceId)).first();
@@ -1959,7 +1973,14 @@ async function migrationImport(request, env, headers) {
   if (!migrationSummary(run.summary).backupReady) return json(fail('导入前备份尚未完成，请稍候'), 409, headers);
   const kind = String(body?.kind || '');
   const rows = Array.isArray(body?.rows) ? body.rows.slice(0, 50) : [];
-  if (!['users', 'memos', 'comments', 'friends', 'config'].includes(kind) || !rows.length) return json(fail('迁移批次参数错误'), 400, headers);
+  const summary = migrationSummary(run.summary);
+  const filename = kind === 'config' ? 'sys_config.json' : `${kind}.json`;
+  const expectedHashes = summary.manifest?.rowHashes?.[filename];
+  const offset = Number(body?.offset);
+  if (!['users', 'memos', 'comments', 'friends', 'config'].includes(kind) || !rows.length || !Array.isArray(expectedHashes) || !Number.isInteger(offset) || offset < 0 || offset + rows.length > expectedHashes.length) return json(fail('迁移批次参数错误'), 400, headers);
+  for (let index = 0; index < rows.length; index += 1) {
+    if (await migrationRowHash(rows[index]) !== expectedHashes[offset + index]) return json(fail('迁移批次内容与预检清单不一致'), 409, headers);
+  }
   if (kind === 'config') {
     if (await migrationMapping(env, packageId, 'config', '1')) return json(ok({ imported: 0 }), 200, headers);
     const old = await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first();

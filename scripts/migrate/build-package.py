@@ -94,6 +94,7 @@ def build_package(source: Path, output: Path, archive: Path | None = None) -> di
         raise FileExistsError(f"output already exists: {output}; choose another path")
     output.mkdir(parents=True)
     counts: dict[str, int] = {}
+    row_hashes: dict[str, list[str]] = {}
     for legacy_table, filename in TABLE_FILES.items():
         rows = table_rows(database, legacy_table)
         if legacy_table == "User":
@@ -102,6 +103,7 @@ def build_package(source: Path, output: Path, archive: Path | None = None) -> di
                 row.pop("password", None)
         write_json(output / "tables" / filename, rows)
         counts[filename] = len(rows)
+        row_hashes[filename] = [hashlib.sha256(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=json_default).encode("utf-8")).hexdigest() for row in rows]
 
     media_items: list[dict[str, Any]] = []
     media_root = output / "media"
@@ -134,6 +136,7 @@ def build_package(source: Path, output: Path, archive: Path | None = None) -> di
         "mediaCount": len(media_items),
         "mediaBytes": sum(item["size"] for item in media_items),
         "media": media_items,
+        "rowHashes": row_hashes,
         "notes": [
             "Passwords are intentionally omitted; the destination administrator password is retained.",
             "Legacy user passwords cannot be used by the Cloudflare PBKDF2 authentication scheme.",
