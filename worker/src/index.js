@@ -2063,7 +2063,9 @@ async function migrationImport(request, env, headers) {
       if (!Number.isInteger(oldId) || oldId < 1 || await migrationMapping(env, packageId, 'comments', oldId)) continue;
       const memoId = Number(memoMap[String(row.memoId)] || memoMap[row.memoId] || 0);
       if (!memoId) continue;
-      const result = await env.DB.prepare('INSERT INTO comments (content,reply_to,reply_email,username,email,website,created_at,updated_at,memo_id,author,identity_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(migrationText(row.content, 10000), migrationText(row.replyTo, 200), migrationText(row.replyEmail, 254), migrationText(row.username, 80), migrationText(row.email, 254), migrationText(row.website, 2000), migrationTime(row.createdAt), migrationTime(row.updatedAt), memoId, migrationText(row.author, 200), '').run();
+      const website = row.website ? validHttpUrl(migrationText(row.website, 2000)) : null;
+      if (row.website && !website) return json(fail(`评论网站地址格式错误：${oldId}`), 400, headers);
+      const result = await env.DB.prepare('INSERT INTO comments (content,reply_to,reply_email,username,email,website,created_at,updated_at,memo_id,author,identity_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(migrationText(row.content, 10000), migrationText(row.replyTo, 200), migrationText(row.replyEmail, 254), migrationText(row.username, 80), migrationText(row.email, 254), website?.href || '', migrationTime(row.createdAt), migrationTime(row.updatedAt), memoId, migrationText(row.author, 200), '').run();
       await saveMigrationMapping(env, packageId, 'comments', oldId, Number(result.meta?.last_row_id || 0));
       imported += 1;
     }
@@ -2073,7 +2075,10 @@ async function migrationImport(request, env, headers) {
   for (const row of rows) {
     const oldId = Number(row.id);
     if (!Number.isInteger(oldId) || oldId < 1 || await migrationMapping(env, packageId, 'friends', oldId)) continue;
-    const result = await env.DB.prepare('INSERT INTO friends (name,icon,url,description,created_at,updated_at) VALUES (?,?,?,?,?,?)').bind(migrationText(row.name, 120), migrationText(row.icon, 2000), migrationText(row.url, 2000), migrationText(row.desc || row.description, 1000), migrationTime(row.createdAt), migrationTime(row.updatedAt)).run();
+    const url = validHttpUrl(migrationText(row.url, 2000));
+    const icon = validHttpUrl(migrationText(row.icon, 2000));
+    if (!url || !icon) return json(fail(`友情链接地址格式错误：${oldId}`), 400, headers);
+    const result = await env.DB.prepare('INSERT INTO friends (name,icon,url,description,created_at,updated_at) VALUES (?,?,?,?,?,?)').bind(migrationText(row.name, 120), icon.href, url.href, migrationText(row.desc || row.description, 1000), migrationTime(row.createdAt), migrationTime(row.updatedAt)).run();
     await saveMigrationMapping(env, packageId, 'friends', oldId, Number(result.meta?.last_row_id || 0));
     imported += 1;
   }
