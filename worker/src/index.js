@@ -1468,10 +1468,14 @@ async function addComment(request, env, headers, ctx) {
   if (!memo || !(await canReadMemo(memo, await currentUser(request, env)))) return json(fail('动态不存在或不可评论'), 404, headers);
   const user = await currentUser(request, env); const identity = await commentIdentity(request, env);
   if (!user) {
-    const recent = identity.networkHash
-      ? await env.DB.prepare("SELECT COUNT(*) AS total FROM comments WHERE (identity_hash=? OR network_hash=?) AND created_at >= datetime('now', '-1 minute')").bind(identity.hash, identity.networkHash).first()
-      : await env.DB.prepare("SELECT COUNT(*) AS total FROM comments WHERE identity_hash=? AND created_at >= datetime('now', '-1 minute')").bind(identity.hash).first();
-    if (Number(recent?.total || 0) >= 5) return json(fail('评论过于频繁，请稍后再试'), 429, { ...headers, ...Object.fromEntries(identity.headers) });
+    if (identity.networkHash) {
+      const quota = await env.DB.prepare("INSERT INTO comment_rate_buckets (network_hash, window_start, request_count, updated_at) VALUES (?, strftime('%Y-%m-%d %H:%M:00','now'), 1, CURRENT_TIMESTAMP) ON CONFLICT(network_hash, window_start) DO UPDATE SET request_count=request_count+1, updated_at=CURRENT_TIMESTAMP WHERE request_count < 5 RETURNING request_count").bind(identity.networkHash).first();
+      if (!quota) return json(fail('评论过于频繁，请稍后再试'), 429, { ...headers, ...Object.fromEntries(identity.headers) });
+      await env.DB.prepare("DELETE FROM comment_rate_buckets WHERE updated_at < datetime('now', '-1 day')").run().catch(() => {});
+    } else {
+      const recent = await env.DB.prepare("SELECT COUNT(*) AS total FROM comments WHERE identity_hash=? AND created_at >= datetime('now', '-1 minute')").bind(identity.hash).first();
+      if (Number(recent?.total || 0) >= 5) return json(fail('评论过于频繁，请稍后再试'), 429, { ...headers, ...Object.fromEntries(identity.headers) });
+    }
   }
   const website = body.website ? validHttpUrl(String(body.website)) : null;
   if (body.website && !website) return json(fail('网站地址格式错误'), 400, headers);

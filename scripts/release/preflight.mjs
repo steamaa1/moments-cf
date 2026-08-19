@@ -22,7 +22,7 @@ await check('Wrangler deployment template exists', async () => {
 });
 await check('ordered SQL migrations exist', async () => {
   const migrations = (await readdir(fromRoot('worker/migrations'))).filter(name => name.endsWith('.sql')).sort();
-  const expected = ['0001_schema.sql', '0002_memos.sql', '0003_comments_friends.sql', '0004_like_counters.sql', '0005_phase6_consistency_trash.sql', '0006_phase7_media.sql', '0007_migration_runs.sql', '0008_user_status.sql', '0009_telegram_notify.sql', '0010_media_storage_backend.sql', '0011_comment_network_rate.sql', '0012_like_network_dedup.sql', '0013_login_rate_limit.sql', '0014_registration_approval.sql'];
+  const expected = ['0001_schema.sql', '0002_memos.sql', '0003_comments_friends.sql', '0004_like_counters.sql', '0005_phase6_consistency_trash.sql', '0006_phase7_media.sql', '0007_migration_runs.sql', '0008_user_status.sql', '0009_telegram_notify.sql', '0010_media_storage_backend.sql', '0011_comment_network_rate.sql', '0012_like_network_dedup.sql', '0013_login_rate_limit.sql', '0014_registration_approval.sql', '0015_comment_rate_buckets.sql'];
   if (migrations.length !== expected.length || expected.some((name, index) => migrations[index] !== name)) {
     throw new Error(`migration sequence incomplete: ${migrations.join(', ')}`);
   }

@@ -3,6 +3,7 @@ import worker from '../worker/src/index.js';
 
 const JWT_SECRET = 'comment-rate-secret-at-least-32-characters';
 const comments = [];
+const buckets = new Map();
 const memo = { id: 10, user_id: 1, show_type: 1, created_at: '2026-08-01 00:00:00' };
 const owner = { id: 1, nickname: 'Admin', email: '', telegram_chat_id: '', token_version: 0, password_hash: 'x' };
 
@@ -14,6 +15,12 @@ class Statement {
     if (sql.includes('select content from sys_config')) return { content: JSON.stringify({ enableComment: true, enableEmail: false, enableTelegram: false, maxCommentLength: 300 }) };
     if (sql.includes('select * from memos')) return memo;
     if (sql.includes('select * from users where id')) return null;
+    if (sql.startsWith('insert into comment_rate_buckets')) {
+      const count = buckets.get(this.args[0]) || 0;
+      if (count >= 5) return null;
+      buckets.set(this.args[0], count + 1);
+      return { request_count: count + 1 };
+    }
     if (sql.includes('select count(*) as total from comments')) {
       if (sql.includes('network_hash')) {
         return { total: comments.filter(item => item.identity_hash === this.args[0] || item.network_hash === this.args[1]).length };
@@ -25,6 +32,7 @@ class Statement {
   }
   async run() {
     const sql = this.sql.toLowerCase();
+    if (sql.startsWith('delete from comment_rate_buckets')) return { meta: { changes: 0 } };
     if (sql.startsWith('insert into comments')) {
       comments.push({ identity_hash: this.args[8], network_hash: this.args[9] });
       return { meta: { changes: 1 } };
