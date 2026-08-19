@@ -16,15 +16,11 @@
             color="primary"
             size="lg"
             class="min-h-11 shrink-0 shadow-sm"
-            aria-label="添加照片"
-            @click="showAddPhoto = true"
+            aria-label="照片管理"
+            @click="showAdmin = true"
           >
-            添加照片
+            照片管理
           </UButton>
-        </div>
-        <div v-if="isAdmin" class="admin-actions mt-4">
-          <UButton icon="i-carbon-folder-add" color="gray" variant="soft" @click="showCreateAlbum = true">新建图集</UButton>
-          <UButton icon="i-carbon-star" color="gray" variant="soft" @click="showFeatured = true">设置精选</UButton>
         </div>
       </section>
 
@@ -92,62 +88,65 @@
       </section>
     </div>
 
-    <UModal v-model="showAddPhoto">
-      <form class="admin-panel" @submit.prevent="savePhoto">
-        <div><h2>添加照片</h2><p class="muted">选择图集和图片后单独保存。</p></div>
-        <UFormGroup label="图集" required>
-          <USelectMenu v-model="uploadAlbumId" :options="uploadAlbumOptions" value-attribute="value" option-attribute="label" placeholder="选择图集" />
-        </UFormGroup>
-        <UFormGroup label="图片" required>
-          <UInput type="file" accept="image/*" @change="selectPhoto" />
-        </UFormGroup>
-        <UFormGroup label="说明">
-          <UInput v-model="uploadCaption" maxlength="200" placeholder="可选" />
-        </UFormGroup>
-        <div class="modal-actions">
-          <UButton color="gray" variant="ghost" type="button" @click="showAddPhoto = false">取消</UButton>
-          <UButton type="submit" icon="i-carbon-save" :loading="photoSaving" :disabled="!uploadAlbumId || !uploadFiles?.length">保存照片</UButton>
+    <UModal
+      v-model="showAdmin"
+      :ui="{ container: 'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur' }"
+    >
+      <div class="admin-panel max-h-[88vh] overflow-y-auto bg-white dark:bg-neutral-800">
+        <div class="flex items-start justify-between gap-4">
+          <div><h2>照片管理</h2><p class="muted">每个管理区可单独保存。</p></div>
+          <UButton color="gray" variant="ghost" icon="i-carbon-close" aria-label="关闭照片管理" @click="showAdmin = false" />
         </div>
-      </form>
-    </UModal>
 
-    <UModal v-model="showCreateAlbum">
-      <form class="admin-panel" @submit.prevent="saveAlbum">
-        <div><h2>新建图集</h2><p class="muted">创建后可在“添加照片”中选择该图集。</p></div>
-        <UFormGroup label="图集名称" required><UInput v-model="newAlbum.name" maxlength="80" placeholder="图集名称" /></UFormGroup>
-        <UFormGroup label="描述"><UTextarea v-model="newAlbum.description" maxlength="500" placeholder="可选" /></UFormGroup>
-        <div class="modal-actions">
-          <UButton color="gray" variant="ghost" type="button" @click="showCreateAlbum = false">取消</UButton>
-          <UButton type="submit" icon="i-carbon-save" :loading="albumSaving" :disabled="!newAlbum.name.trim()">保存图集</UButton>
-        </div>
-      </form>
-    </UModal>
+        <form class="admin-section" @submit.prevent="savePhoto">
+          <div><h3>添加照片</h3><p class="muted">选择图集和图片后保存。</p></div>
+          <UFormGroup label="图集" required>
+            <USelectMenu v-model="uploadAlbumId" :options="uploadAlbumOptions" value-attribute="value" option-attribute="label" placeholder="选择图集" />
+          </UFormGroup>
+          <UFormGroup label="图片" required><UInput type="file" accept="image/*" multiple @change="selectPhoto" /></UFormGroup>
+          <UFormGroup label="说明"><UInput v-model="uploadCaption" maxlength="200" placeholder="可选" /></UFormGroup>
+          <div class="modal-actions"><UButton type="submit" icon="i-carbon-save" :loading="photoSaving" :disabled="!uploadAlbumId || !uploadFiles?.length">保存照片</UButton></div>
+        </form>
 
-    <UModal v-model="showFeatured" @open="loadFeaturedCandidates">
-      <div class="admin-panel">
-        <div><h2>设置精选图片</h2><p class="muted">从全部照片中选择，点击即设为精选。</p></div>
-        <UInput v-model="featuredKeyword" placeholder="按说明筛选" @update:model-value="loadFeaturedCandidates" />
-        <div v-if="featuredLoading" class="status">正在加载照片…</div>
-        <div v-else-if="!featuredCandidates.length" class="empty">暂无可选照片。</div>
-        <div v-else class="picker-grid">
-          <button
-            v-for="photo in featuredCandidates"
-            :key="photo.id"
-            type="button"
-            class="picker-tile"
-            :class="{ 'picker-tile--active': isFeatured(photo) }"
-            :aria-pressed="isFeatured(photo)"
-            :disabled="featuredToggling.has(String(photo.id))"
-            @click="toggleFeatured(photo)"
-          >
-            <img :src="photo.thumbUrl || photo.url" :alt="photo.caption || '照片'" loading="lazy" decoding="async" />
-            <span v-if="isFeatured(photo)" class="picker-badge"><UIcon name="i-carbon-star-filled" /></span>
-          </button>
-        </div>
-        <p class="muted">已精选 {{ wall.featured.length }} 张；再次点击已精选照片可取消精选。</p>
-        <div class="modal-actions">
-          <UButton color="gray" variant="ghost" type="button" @click="showFeatured = false">完成</UButton>
-        </div>
+        <form class="admin-section" @submit.prevent="saveAlbum">
+          <div><h3>图集设置</h3><p class="muted">新建图集，或选择现有图集修改名称和描述。</p></div>
+          <UFormGroup label="操作">
+            <USelectMenu v-model="albumEditorId" :options="albumEditorOptions" value-attribute="value" option-attribute="label" @update:model-value="selectAlbumEditor" />
+          </UFormGroup>
+          <UFormGroup label="图集名称" required><UInput v-model="albumEditor.name" maxlength="80" placeholder="图集名称" /></UFormGroup>
+          <UFormGroup label="描述"><UTextarea v-model="albumEditor.description" maxlength="500" placeholder="可选" /></UFormGroup>
+          <div class="modal-actions"><UButton type="submit" icon="i-carbon-save" :loading="albumSaving" :disabled="!albumEditor.name.trim()">保存图集</UButton></div>
+        </form>
+
+        <section class="admin-section">
+          <div><h3>设置精选图片</h3><p class="muted">先手动加载全部图片，再点击图片切换精选状态。</p></div>
+          <div class="flex flex-wrap gap-2">
+            <UButton icon="i-carbon-download" color="gray" variant="soft" :loading="featuredLoading" @click="loadFeaturedCandidates">
+              {{ featuredLoaded ? '重新加载全部图片' : '加载全部图片' }}
+            </UButton>
+            <UInput v-if="featuredLoaded" v-model="featuredKeyword" class="min-w-0 flex-1" placeholder="在已加载图片中筛选" />
+          </div>
+          <div v-if="featuredLoading" class="loading-notice"><UIcon name="i-carbon-circle-dash" class="h-5 w-5 animate-spin" /><span>正在加载全部图片，请稍候…</span></div>
+          <div v-else-if="!featuredLoaded" class="empty compact-empty">尚未加载图片，请点击“加载全部图片”。</div>
+          <div v-else-if="!filteredFeaturedCandidates.length" class="empty compact-empty">没有符合条件的图片。</div>
+          <div v-else class="picker-grid">
+            <button
+              v-for="photo in filteredFeaturedCandidates"
+              :key="photo.id"
+              type="button"
+              class="picker-tile"
+              :class="{ 'picker-tile--active': isFeatured(photo) }"
+              :aria-pressed="isFeatured(photo)"
+              :disabled="featuredToggling.has(String(photo.id))"
+              @click="toggleFeatured(photo)"
+            >
+              <img :src="photo.thumbUrl || photo.url" :alt="photo.caption || '照片'" loading="lazy" decoding="async" />
+              <span v-if="isFeatured(photo)" class="picker-badge"><UIcon name="i-carbon-star-filled" /></span>
+            </button>
+          </div>
+          <p v-if="featuredLoaded" class="muted">已精选 {{ wall.featured.length }} 张；再次点击可取消精选。</p>
+          <div class="modal-actions"><UButton icon="i-carbon-save" :loading="featuredSaving" :disabled="!featuredLoaded" @click="saveFeatured">保存精选设置</UButton></div>
+        </section>
       </div>
     </UModal>
   </main>
@@ -176,24 +175,34 @@ const loading = ref(true)
 const featuredIndex = ref(0)
 const albumStates = reactive<Record<number, AlbumViewState>>({})
 
-const showAddPhoto = ref(false)
-const showCreateAlbum = ref(false)
-const showFeatured = ref(false)
+const showAdmin = ref(false)
 const uploadAlbumId = ref<number>()
 const uploadFiles = ref<FileList | null>(null)
 const uploadCaption = ref('')
 const photoSaving = ref(false)
 const albumSaving = ref(false)
+const albumEditorId = ref(0)
+const albumEditor = reactive({ name: '', description: '' })
 const featuredCandidates = ref<PhotoVO[]>([])
 const featuredKeyword = ref('')
 const featuredLoading = ref(false)
+const featuredLoaded = ref(false)
+const featuredSaving = ref(false)
 const featuredToggling = ref(new Set<string>())
-const loadFeaturedCandidates = () => setFeatured()
-const newAlbum = reactive({ name: '', description: '' })
+const originalFeatured = ref(new Map<string, boolean>())
 
 const uploadAlbumOptions = computed(() => wall.albums
   .filter(album => !album.isDefault)
   .map(album => ({ label: album.name, value: album.id })))
+const albumEditorOptions = computed(() => [
+  { label: '新建图集', value: 0 },
+  ...wall.albums.map(album => ({ label: `修改：${album.name}`, value: album.id })),
+])
+const filteredFeaturedCandidates = computed(() => {
+  const keyword = featuredKeyword.value.trim().toLowerCase()
+  if (!keyword) return featuredCandidates.value
+  return featuredCandidates.value.filter(photo => String(photo.caption || '').toLowerCase().includes(keyword))
+})
 
 const loadWall = async () => {
   loading.value = true
@@ -272,7 +281,6 @@ const savePhoto = async () => {
       await useMyFetch('/admin/photo/album/add', { albumId: uploadAlbumId.value, url, caption: uploadCaption.value })
     }
     toast.success('照片已保存')
-    showAddPhoto.value = false
     uploadFiles.value = null
     uploadCaption.value = ''
     await loadWall()
@@ -283,15 +291,23 @@ const savePhoto = async () => {
   }
 }
 
+const selectAlbumEditor = (value: number) => {
+  const id = Number(value || 0)
+  albumEditorId.value = id
+  const album = wall.albums.find(item => item.id === id)
+  albumEditor.name = album?.name || ''
+  albumEditor.description = album?.description || ''
+}
+
 const saveAlbum = async () => {
-  if (!newAlbum.name.trim()) return toast.warning('请填写图集名称')
+  if (!albumEditor.name.trim()) return toast.warning('请填写图集名称')
   albumSaving.value = true
   try {
-    await useMyFetch('/admin/photo/album/save', newAlbum)
-    toast.success('图集已保存')
-    newAlbum.name = ''
-    newAlbum.description = ''
-    showCreateAlbum.value = false
+    await useMyFetch('/admin/photo/album/save', { id: albumEditorId.value || undefined, ...albumEditor })
+    toast.success(albumEditorId.value ? '图集名称已保存' : '图集已创建')
+    albumEditorId.value = 0
+    albumEditor.name = ''
+    albumEditor.description = ''
     await loadWall()
   } catch (error: any) {
     toast.error(error?.message || '图集保存失败')
@@ -300,16 +316,15 @@ const saveAlbum = async () => {
   }
 }
 
-const setFeatured = async () => {
+const loadFeaturedCandidates = async () => {
+  if (featuredLoading.value) return
   featuredLoading.value = true
+  featuredLoaded.value = false
   try {
-    const all = []
-    for (let page = 1; ; page += 1) {
-      const result = await useMyFetch<{ list: PhotoVO[]; hasNext: boolean }>('/photo/all', { page, size: 60, keyword: featuredKeyword.value })
-      all.push(...result.list)
-      if (!result.hasNext) break
-    }
-    featuredCandidates.value = all
+    const result = await useMyFetch<{ list: PhotoVO[] }>('/photo/all', { page: 1, size: 500 })
+    featuredCandidates.value = result.list
+    originalFeatured.value = new Map(result.list.map(photo => [String(photo.id), Boolean(photo.featured)]))
+    featuredLoaded.value = true
   } catch (error: any) {
     toast.error(error?.message || '照片加载失败')
   } finally {
@@ -317,24 +332,34 @@ const setFeatured = async () => {
   }
 }
 
-const isFeatured = (photo: PhotoVO) => Boolean(photo.featured) || wall.featured.some(item => String(item.id) === String(photo.id))
-
-const toggleFeatured = async (photo: PhotoVO) => {
+const isFeatured = (photo: PhotoVO) => Boolean(photo.featured)
+const toggleFeatured = (photo: PhotoVO) => {
   const key = String(photo.id)
   if (featuredToggling.value.has(key)) return
-  featuredToggling.value.add(key)
-  const willFeature = !isFeatured(photo)
-  const itemId = photo.albumItemId ?? (photo.sourceType === 'upload' ? photo.sourceId : null)
-  if (!itemId) { toast.error('该照片无法精选'); featuredToggling.value.delete(key); return }
+  photo.featured = !photo.featured
+}
+
+const saveFeatured = async () => {
+  const changed = featuredCandidates.value.filter(photo => originalFeatured.value.get(String(photo.id)) !== Boolean(photo.featured))
+  if (!changed.length) return toast.info('精选设置没有变化')
+  featuredSaving.value = true
   try {
-    await useMyFetch('/admin/photo/featured/set', { id: itemId, featured: willFeature })
-    toast.success(willFeature ? '已设为精选' : '已取消精选')
+    for (const photo of changed) {
+      const itemId = photo.albumItemId ?? (photo.sourceType === 'upload' ? photo.sourceId : null)
+      if (!itemId && !photo.memoId) throw new Error('存在无法保存的精选图片')
+      featuredToggling.value.add(String(photo.id))
+      await useMyFetch('/admin/photo/featured/set', itemId
+        ? { id: itemId, featured: Boolean(photo.featured) }
+        : { memoId: photo.memoId, sourceIndex: photo.sourceIndex || 0, featured: Boolean(photo.featured) })
+    }
+    toast.success('精选设置已保存')
     await loadWall()
-    await setFeatured()
+    await loadFeaturedCandidates()
   } catch (error: any) {
-    toast.error(error?.message || '精选更新失败')
+    toast.error(error?.message || '精选设置保存失败')
   } finally {
-    featuredToggling.value.delete(key)
+    featuredToggling.value.clear()
+    featuredSaving.value = false
   }
 }
 
@@ -371,8 +396,12 @@ h3 { font-size: 1.08rem; font-weight: 700; }
 .featured-caption p { margin-top: .3rem; font-size: .9rem; }
 .album-section { margin-bottom: 2rem; }
 .status, .empty { padding: 2.5rem 0; text-align: center; color: #9ca3af; }
-.admin-panel { display: flex; flex-direction: column; gap: 1rem; padding: 1.25rem; }
+.admin-panel { display: flex; flex-direction: column; gap: 1rem; width: min(92vw, 38rem); padding: 1.25rem; border-radius: .5rem; }
+.admin-section { display: flex; flex-direction: column; gap: .8rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
+.dark .admin-section { border-color: #374151; }
 .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .25rem; }
+.loading-notice { display: flex; min-height: 5rem; align-items: center; justify-content: center; gap: .5rem; color: #737373; font-size: .9rem; }
+.compact-empty { padding: 1.5rem 0; }
 .picker-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; max-height: 60vh; overflow-y: auto; padding: .25rem; }
 .picker-tile { position: relative; display: block; aspect-ratio: 1; overflow: hidden; border-radius: .5rem; background: #e5e5e5; border: 2px solid transparent; cursor: pointer; }
 .picker-tile img { width: 100%; height: 100%; object-fit: cover; }

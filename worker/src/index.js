@@ -849,7 +849,7 @@ async function photoAlbum(request, env, headers) {
 }
 async function photoAll(request, env, headers) {
   const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
-  const body = (await readJson(request)) || {}; const page = Math.max(1, intParam(body.page, 1)); const size = Math.min(60, Math.max(1, intParam(body.size, 60))); const keyword = String(body.keyword || '').trim();
+  const body = (await readJson(request)) || {}; const page = Math.max(1, intParam(body.page, 1)); const size = Math.min(1000, Math.max(1, intParam(body.size, 60))); const keyword = String(body.keyword || '').trim();
   const photos = await publicPhotoMemos(request, env);
   const items = await env.DB.prepare("SELECT i.*, m.created_at AS memo_created_at, m.user_id, u.username, u.nickname, u.avatar_url FROM photo_album_items i LEFT JOIN memos m ON i.source_type='memo' AND i.source_ref=CAST(m.id AS TEXT) LEFT JOIN users u ON u.id=m.user_id ORDER BY i.sort_order ASC, i.created_at DESC LIMIT 500").all();
   const registry = new Map();
@@ -857,7 +857,10 @@ async function photoAll(request, env, headers) {
     const key = `${row.source_type}:${row.source_ref}:${row.source_index}`;
     registry.set(key, { albumItemId: Number(row.id), featured: Boolean(Number(row.featured) === 1) });
   }
-  const custom = (items.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView({ ...row, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
+  const custom = (items.results || []).map(row => {
+    const url = photoUrl(row.image_url); if (!url) return null;
+    return { ...photoView({ ...row, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index), featured: Boolean(Number(row.featured) === 1) };
+  }).filter(Boolean);
   const all = [...photos, ...custom];
   const seen = new Set();
   const unique = all.filter(photo => {
@@ -876,7 +879,7 @@ async function adminPhotoAlbumSave(request, env, headers) {
   const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
   const body = (await readJson(request)) || {}; const name = String(body.name || '').trim().slice(0, 80); if (!name) return json(fail('图集名称不能为空'), 400, headers);
   const description = String(body.description || '').trim().slice(0, 500); const id = intParam(body.id);
-  if (id) await env.DB.prepare('UPDATE photo_albums SET name=?,description=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND is_default=0').bind(name, description, id).run();
+  if (id) await env.DB.prepare('UPDATE photo_albums SET name=?,description=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(name, description, id).run();
   else await env.DB.prepare('INSERT INTO photo_albums (name,description,created_by,sort_order) VALUES (?,?,?,?)').bind(name, description, access.user.id, Date.now()).run();
   return json(ok({}), 200, headers);
 }
