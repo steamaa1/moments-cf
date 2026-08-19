@@ -81,6 +81,17 @@
         </span>
       </div>
       <div
+        v-if="$route.path !== '/photos'"
+        class="flex flex-col items-center"
+        @click="navigate('/photos')"
+        title="照片墙"
+      >
+        <span class="flex items-center bg-gray-200/75 dark:bg-gray-800/75 p-3 rounded-full">
+          <UIcon name="i-carbon-image-search" class="w-6 h-6 cursor-pointer" />
+        </span>
+        <span class="text-sm mt-1">照片墙</span>
+      </div>
+      <div
         v-if="$route.path !== '/user/calendar' && global.userinfo.token"
         class="flex flex-col items-center"
         @click="navigate('/user/calendar')"

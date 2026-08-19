@@ -23,6 +23,7 @@
           {{ route.params.tag || "话题专栏" }}
         </span>
         <span v-else-if="$route.path === '/friend'">友情链接</span>
+        <span v-else-if="$route.path === '/photos'">照片墙</span>
         <span v-else-if="$route.path === '/about'">关于</span>
         <span v-else>
           <span v-if="!global.userinfo.token && $route.path === '/user/login'">
@@ -93,6 +94,9 @@
         <path d="m19.07 4.93-1.41 1.41"></path>
       </svg>
 
+      <NuxtLink v-if="$route.path !== '/photos'" to="/photos" title="照片墙">
+        <UIcon name="i-carbon-image-search" class="text-[#9fc84a] w-5 h-5 cursor-pointer" />
+      </NuxtLink>
       <NuxtLink v-if="global.userinfo.token" to="/new" title="发表">
         <UIcon
           name="i-carbon-camera"

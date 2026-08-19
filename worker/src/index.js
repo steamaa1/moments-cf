@@ -769,6 +769,120 @@ async function listMemos(request, env, headers) {
   await attachStatuses(env, list.map(memo => memo.user).filter(Boolean));
   return json(ok({ list, total, hasNext: page * size < total }), 200, headers);
 }
+function photoUrl(value) {
+  const text = String(value || '').trim();
+  if (text.startsWith('/upload/') && !text.includes('..')) return text.slice(0, 2048);
+  const url = validHttpUrl(text);
+  return url ? url.href.slice(0, 2048) : '';
+}
+function photoView(row, url, thumbUrl, source = 'memo', sourceIndex = 0) {
+  return {
+    id: `${source}:${Number(row.id)}:${sourceIndex}`,
+    albumItemId: row.album_item_id ? Number(row.album_item_id) : (source === 'upload' && row.source_type === 'upload' ? Number(row.id) : undefined),
+    url, thumbUrl: thumbUrl || url, sourceType: source, sourceId: Number(row.id), sourceIndex,
+    memoId: source === 'memo' ? Number(row.id) : null,
+    memoUrl: source === 'memo' ? `/memo/${Number(row.id)}` : '',
+    caption: String(row.caption || ''), createdAt: row.memo_created_at || row.created_at || row.createdAt || '',
+    user: row.user_id ? { id: Number(row.user_id), username: row.username || '', nickname: row.nickname || '', avatarUrl: row.avatar_url || '' } : null,
+  };
+}
+function photoMemoVisible(row, user) {
+  return Number(row.show_type) === 1 && Date.parse(row.created_at) <= Date.now() || Boolean(user && Number(user.id) === Number(row.user_id));
+}
+async function photoMediaMap(env, keys) {
+  const values = [...new Set(keys.filter(Boolean))];
+  if (!values.length) return new Map();
+  const placeholders = values.map(() => '?').join(',');
+  const result = await env.DB.prepare(`SELECT r2_key, thumbnail_key FROM media WHERE r2_key IN (${placeholders}) AND trashed_at IS NULL AND upload_state='ready'`).bind(...values).all();
+  const map = new Map();
+  for (const row of result.results || []) if (row.thumbnail_key) map.set(row.r2_key, `/upload/${row.thumbnail_key}`);
+  return map;
+}
+async function publicPhotoMemos(request, env) {
+  const user = await currentUser(request, env);
+  const result = await env.DB.prepare(`${MEMO_SELECT} WHERE m.imgs<>'' AND (m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP OR m.user_id=?) ORDER BY m.created_at DESC, m.id DESC LIMIT 500`).bind(user?.id || 0).all();
+  const rows = (result.results || []).filter(row => photoMemoVisible(row, user));
+  const keys = rows.flatMap(row => String(row.imgs || '').split(',').map(value => value.startsWith('/upload/') ? value.slice('/upload/'.length) : '').filter(Boolean));
+  const thumbs = await photoMediaMap(env, keys);
+  const photos = [];
+  for (const row of rows) String(row.imgs || '').split(',').filter(Boolean).forEach((value, index) => {
+    const url = photoUrl(normalizeMediaUrls(value)); if (!url) return;
+    const key = url.startsWith('/upload/') ? url.slice('/upload/'.length) : '';
+    photos.push(photoView(row, url, thumbs.get(key) || url, 'memo', index));
+  });
+  return photos;
+}
+async function photoWall(request, env, headers) {
+  const photos = await publicPhotoMemos(request, env);
+  const today = new Date();
+  const monthDay = `${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
+  const history = photos.filter(photo => photo.createdAt.slice(5, 10) === monthDay && photo.createdAt.slice(0, 10) !== today.toISOString().slice(0, 10)).slice(0, 18);
+  const albums = await env.DB.prepare('SELECT id,name,description,cover_url,is_default,sort_order FROM photo_albums ORDER BY sort_order ASC, id ASC').all();
+  const albumViews = [];
+  for (const album of albums.results || []) {
+    const items = await env.DB.prepare('SELECT i.*, m.created_at AS memo_created_at, m.user_id, u.username, u.nickname, u.avatar_url FROM photo_album_items i LEFT JOIN memos m ON i.source_type=\'memo\' AND i.source_ref=CAST(m.id AS TEXT) LEFT JOIN users u ON u.id=m.user_id WHERE i.album_id=? ORDER BY i.sort_order ASC, i.created_at DESC LIMIT 9').bind(album.id).all();
+    const custom = (items.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView({ ...row, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
+    const combined = Number(album.is_default) === 1 ? photos.slice(0, 9) : custom;
+    albumViews.push({ id: Number(album.id), name: album.name, description: album.description, isDefault: Boolean(album.is_default), count: Number(album.is_default) ? photos.length : custom.length, photos: combined });
+  }
+  const featured = await env.DB.prepare("SELECT i.*,m.imgs,m.show_type,m.created_at AS memo_created_at,m.user_id,u.username,u.nickname,u.avatar_url FROM photo_album_items i LEFT JOIN memos m ON i.source_type='memo' AND i.source_ref=CAST(m.id AS TEXT) LEFT JOIN users u ON u.id=m.user_id WHERE i.featured=1 ORDER BY i.sort_order ASC,i.created_at DESC LIMIT 30").all();
+  const viewer = await currentUser(request, env);
+  const featuredPhotos = (featured.results || []).map(row => {
+    if (row.source_type === 'memo') {
+      if (!photoMemoVisible({ ...row, created_at: row.memo_created_at }, viewer)) return null;
+      const value = String(row.imgs || '').split(',').filter(Boolean)[Number(row.source_index)]; const url = photoUrl(normalizeMediaUrls(value)); return url ? photoView({ ...row, album_item_id: row.id, id: Number(row.source_ref), created_at: row.memo_created_at }, url, url, 'memo', Number(row.source_index)) : null;
+    }
+    const url = photoUrl(row.image_url); return url ? photoView(row, url, url, 'upload', 0) : null;
+  }).filter(Boolean).slice(0, 12);
+  return json(ok({ today: history, featured: featuredPhotos, albums: albumViews }), 200, headers);
+}
+async function photoAlbum(request, env, headers) {
+  const body = (await readJson(request)) || {};
+  const albumId = intParam(body.id, 1); const page = Math.max(1, intParam(body.page, 1)); const size = Math.min(60, Math.max(1, intParam(body.size, 18)));
+  const album = await env.DB.prepare('SELECT id,name,description,is_default FROM photo_albums WHERE id=?').bind(albumId).first();
+  if (!album) return json(fail('图集不存在'), 404, headers);
+  if (Number(album.is_default) === 1) { const photos = await publicPhotoMemos(request, env); const list = photos.slice((page - 1) * size, page * size); return json(ok({ album: { id: 1, name: album.name, description: album.description, isDefault: true }, list, total: photos.length, hasNext: page * size < photos.length }), 200, headers); }
+  const count = await env.DB.prepare('SELECT COUNT(*) AS total FROM photo_album_items WHERE album_id=?').bind(albumId).first();
+  const rows = await env.DB.prepare('SELECT * FROM photo_album_items WHERE album_id=? ORDER BY sort_order ASC, created_at DESC LIMIT ? OFFSET ?').bind(albumId, size, (page - 1) * size).all();
+  const list = (rows.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView(row, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
+  const total = Number(count?.total || 0); return json(ok({ album, list, total, hasNext: page * size < total }), 200, headers);
+}
+async function adminPhotoAlbumSave(request, env, headers) {
+  const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
+  const body = (await readJson(request)) || {}; const name = String(body.name || '').trim().slice(0, 80); if (!name) return json(fail('图集名称不能为空'), 400, headers);
+  const description = String(body.description || '').trim().slice(0, 500); const id = intParam(body.id);
+  if (id) await env.DB.prepare('UPDATE photo_albums SET name=?,description=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND is_default=0').bind(name, description, id).run();
+  else await env.DB.prepare('INSERT INTO photo_albums (name,description,created_by,sort_order) VALUES (?,?,?,?)').bind(name, description, access.user.id, Date.now()).run();
+  return json(ok({}), 200, headers);
+}
+async function adminPhotoAlbumRemove(request, env, headers) {
+  const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
+  const id = intParam(new URL(request.url).searchParams.get('id')); if (id === 1) return json(fail('默认图集不可删除'), 400, headers);
+  await env.DB.prepare('DELETE FROM photo_albums WHERE id=? AND is_default=0').bind(id).run(); return json(ok({}), 200, headers);
+}
+async function adminPhotoAlbumAdd(request, env, headers) {
+  const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
+  const body = (await readJson(request)) || {}; const albumId = intParam(body.albumId); const url = photoUrl(body.url); if (!albumId || !url) return json(fail('图集或图片地址无效'), 400, headers);
+  await env.DB.prepare('INSERT OR IGNORE INTO photo_album_items (album_id,source_type,source_ref,image_url,caption,featured,sort_order,created_by) VALUES (?,?,?,?,?,?,?,?)').bind(albumId, 'upload', url, url, String(body.caption || '').slice(0, 200), 0, Date.now(), access.user.id).run(); return json(ok({}), 200, headers);
+}
+async function adminPhotoFeatured(request, env, headers) {
+  const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
+  const body = (await readJson(request)) || {}; let id = intParam(body.id);
+  if (!id && body.memoId) {
+    const memoId = intParam(body.memoId); const sourceIndex = Math.max(0, intParam(body.sourceIndex, 0));
+    const memo = await env.DB.prepare('SELECT id,imgs FROM memos WHERE id=?').bind(memoId).first();
+    if (!memo || !String(memo.imgs || '').split(',').filter(Boolean)[sourceIndex]) return json(fail('动态图片不存在'), 404, headers);
+    await env.DB.prepare('INSERT OR IGNORE INTO photo_album_items (album_id,source_type,source_ref,source_index,created_by) VALUES (1,\'memo\',?,?,?)').bind(String(memoId), sourceIndex, access.user.id).run();
+    id = Number((await env.DB.prepare('SELECT id FROM photo_album_items WHERE album_id=1 AND source_type=\'memo\' AND source_ref=? AND source_index=?').bind(String(memoId), sourceIndex).first())?.id || 0);
+  }
+  if (!id) return json(fail('精选图片项无效'), 400, headers);
+  const featured = body.featured ? 1 : 0; await env.DB.prepare('UPDATE photo_album_items SET featured=?,sort_order=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(featured, intParam(body.sortOrder, 0), id).run(); return json(ok({ id }), 200, headers);
+}
+async function adminPhotoItemRemove(request, env, headers) {
+  const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
+  const id = intParam(new URL(request.url).searchParams.get('id')); if (!id) return json(fail('图片项无效'), 400, headers);
+  await env.DB.prepare('DELETE FROM photo_album_items WHERE id=?').bind(id).run(); return json(ok({}), 200, headers);
+}
 async function getMemo(request, env, headers) {
   const url = new URL(request.url);
   const id = intParam(url.searchParams.get('id'));
@@ -1018,6 +1132,7 @@ async function sitemap(request, env) {
   push('/', null, 'daily', '1.0');
   if (config.enableAbout) push('/about', null, 'monthly', '0.6');
   push('/friend', null, 'weekly', '0.6');
+  push('/photos', null, 'weekly', '0.7');
   for (const user of users.results || []) push(`/user/${Number(user.id)}`, user.updated_at || '', 'weekly', '0.7');
   for (const memo of memos.results || []) push(`/memo/${Number(memo.id)}`, memo.created_at || '', 'weekly', '0.8');
   const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`;
@@ -2155,6 +2270,8 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/file/trash/purge') return await purgeTrash(request, env, headers);
     if (url.pathname === '/api/file/s3PreSigned') return json(fail('Cloudflare 版本使用 R2 直连上传，请关闭旧 S3 设置'), 400, headers);
     if (url.pathname === '/api/memo/list') return await listMemos(request, env, headers);
+    if (url.pathname === '/api/photo/wall') return await photoWall(request, env, headers);
+    if (url.pathname === '/api/photo/album') return await photoAlbum(request, env, headers);
     if (url.pathname === '/api/memo/preview') return await previewUnfurl(request, env, headers);
     if (url.pathname === '/api/memo/get') return await getMemo(request, env, headers);
     if (url.pathname === '/api/memo/save') return await saveMemo(request, env, headers);
@@ -2170,6 +2287,11 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/memo/getFaviconAndTitle') return await externalInfo(request, env, headers);
     if (url.pathname === '/api/memo/getDoubanBookInfo') return await doubanInfo(request, env, headers, 'book');
     if (url.pathname === '/api/memo/getDoubanMovieInfo') return await doubanInfo(request, env, headers, 'movie');
+    if (url.pathname === '/api/admin/photo/album/save') return await adminPhotoAlbumSave(request, env, headers);
+    if (url.pathname === '/api/admin/photo/album/remove') return await adminPhotoAlbumRemove(request, env, headers);
+    if (url.pathname === '/api/admin/photo/album/add') return await adminPhotoAlbumAdd(request, env, headers);
+    if (url.pathname === '/api/admin/photo/featured/set') return await adminPhotoFeatured(request, env, headers);
+    if (url.pathname === '/api/admin/photo/album/removeItem') return await adminPhotoItemRemove(request, env, headers);
     if (url.pathname === '/api/admin/migration/preflight') return await migrationPreflight(request, env, headers);
     if (url.pathname === '/api/admin/migration/prepare') return await migrationPrepare(request, env, headers);
     if (url.pathname === '/api/admin/migration/backup/status') return await migrationBackupStatus(request, env, headers);
@@ -2200,7 +2322,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

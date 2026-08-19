@@ -64,6 +64,43 @@ export type UserVO = {
     telegramChatId?: string
     status?: UserStatusVO | null
 }
+export type PhotoVO = {
+    id: string | number
+    albumItemId?: number
+    url: string
+    thumbUrl: string
+    sourceType?: string
+    sourceId?: number | null
+    sourceIndex?: number
+    memoId?: number | null
+    memoUrl?: string
+    caption?: string
+    createdAt?: string
+    user?: Pick<UserVO, 'id' | 'username' | 'nickname' | 'avatarUrl'> | null
+}
+
+export type PhotoAlbumVO = {
+    id: number
+    name: string
+    description?: string
+    isDefault?: boolean
+    count?: number
+    photos?: PhotoVO[]
+}
+
+export type PhotoWallVO = {
+    today: PhotoVO[]
+    featured: PhotoVO[]
+    albums: PhotoAlbumVO[]
+}
+
+export type PhotoAlbumPageVO = {
+    album: PhotoAlbumVO
+    list: PhotoVO[]
+    total: number
+    hasNext: boolean
+}
+
 export type SysConfigVO = {
     version: string,
     commitId: string,
