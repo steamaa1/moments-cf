@@ -18,6 +18,7 @@ export const useGlobalState = createGlobalState(
                 const value = storage.value ?? { userinfo: {} }
                 if (!value.userinfo) value.userinfo = {}
                 return value
+
             },
             set: value => { storage.value = value },
         })

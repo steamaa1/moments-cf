@@ -7,7 +7,7 @@
     }"
   >
     <div
-      v-if="global.userinfo.token"
+      v-if="authUser.token"
       class="flex flex-col items-center p-4 pt-8 text-gray-500 dark:text-white"
       @click="navigate('/new')"
       title="发表"
@@ -92,7 +92,7 @@
         <span class="text-sm mt-1">照片墙</span>
       </div>
       <div
-        v-if="$route.path !== '/user/calendar' && global.userinfo.token"
+        v-if="$route.path !== '/user/calendar' && authUser.token"
         class="flex flex-col items-center"
         @click="navigate('/user/calendar')"
         title="日历检索"
@@ -122,7 +122,7 @@
         <span class="text-sm mt-1">友链</span>
       </div>
       <div
-        v-if="$route.path !== '/sys/settings' && global.userinfo.id === 1"
+        v-if="$route.path !== '/sys/settings' && authUser.id === 1"
         class="flex flex-col items-center"
         @click="navigate('/sys/settings')"
         title="系统设置"
@@ -135,7 +135,7 @@
         <span class="text-sm mt-1">系统</span>
       </div>
       <div
-        v-if="$route.path !== '/user/settings' && global.userinfo.token"
+        v-if="$route.path !== '/user/settings' && authUser.token"
         class="flex flex-col items-center"
         @click="navigate('/user/settings')"
         title="用户中心"
@@ -148,7 +148,7 @@
         <span class="text-sm mt-1">用户</span>
       </div>
       <div
-        v-if="$route.path === '/user/settings' && global.userinfo.token"
+        v-if="$route.path === '/user/settings' && authUser.token"
         class="flex flex-col items-center"
         title="登出"
         @click="logout"
@@ -171,6 +171,7 @@ import type { SysConfigVO } from "~/types";
 
 const sysConfig = useState<SysConfigVO>("sysConfig");
 const global = useGlobalState();
+const authUser = computed(() => global?.value?.userinfo ?? {});
 const mode = useColorMode();
 const open = useState<boolean>("sidebarOpen", () => false);
 

@@ -3,7 +3,7 @@
 </template>
 <script setup lang="ts">
 import type { PhotoAlbumVO, PhotoAlbumPageVO, PhotoVO, UserVO } from '~/types'
-const route=useRoute();const currentUser=useState<UserVO>('userinfo');const album=ref<PhotoAlbumVO|null>(null);const photos=ref<PhotoVO[]>([]);const page=ref(1);const hasNext=ref(false);const loading=ref(true);const loadingMore=ref(false)
+const route=useRoute();const currentUser=useState<UserVO | null>('userinfo', () => null);const album=ref<PhotoAlbumVO|null>(null);const photos=ref<PhotoVO[]>([]);const page=ref(1);const hasNext=ref(false);const loading=ref(true);const loadingMore=ref(false)
 const load=async()=>{try{const res=await useMyFetch<PhotoAlbumPageVO>('/photo/album',{id:Number(route.params.id),page:1,size:60});album.value=res.album;photos.value=res.list;hasNext.value=res.hasNext}finally{loading.value=false}}
 const loadMore=async()=>{if(loadingMore.value)return;loadingMore.value=true;try{const res=await useMyFetch<PhotoAlbumPageVO>('/photo/album',{id:Number(route.params.id),page:page.value+1,size:60});photos.value.push(...res.list);page.value++;hasNext.value=res.hasNext}finally{loadingMore.value=false}}
 onMounted(load);useHead(()=>({title:album.value?.name?`${album.value.name} · 照片墙`:'图集 · 照片墙',meta:[{name:'description',content:album.value?.description||'照片图集'}]}))

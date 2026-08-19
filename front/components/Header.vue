@@ -26,19 +26,19 @@
         <span v-else-if="$route.path === '/photos'">照片墙</span>
         <span v-else-if="$route.path === '/about'">关于</span>
         <span v-else>
-          <span v-if="!global.userinfo.token && $route.path === '/user/login'">
+          <span v-if="!authUser.token && $route.path === '/user/login'">
             登录
           </span>
           <span
-            v-else-if="!global.userinfo.token && $route.path === '/user/reg'"
+            v-else-if="!authUser.token && $route.path === '/user/reg'"
           >
             注册
           </span>
-          <span v-else>{{ props.user.nickname }} 的空间</span>
+          <span v-else>{{ props.user?.nickname || props.user?.username || '个人空间' }} 的空间</span>
         </span>
       </NuxtLink>
       <NuxtLink
-        v-if="$route.path === '/user/settings' && global.userinfo.token"
+        v-if="$route.path === '/user/settings' && authUser.token"
         class="hidden sm:flex"
         title="登出"
         @click="logout"
@@ -97,14 +97,14 @@
       <NuxtLink v-if="$route.path !== '/photos'" to="/photos" title="照片墙">
         <UIcon name="i-carbon-image-search" class="text-[#9fc84a] w-5 h-5 cursor-pointer" />
       </NuxtLink>
-      <NuxtLink v-if="global.userinfo.token" to="/new" title="发表">
+      <NuxtLink v-if="authUser.token" to="/new" title="发表">
         <UIcon
           name="i-carbon-camera"
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
       </NuxtLink>
       <NuxtLink
-        v-if="$route.path !== '/user/calendar' && global.userinfo.token"
+        v-if="$route.path !== '/user/calendar' && authUser.token"
         to="/user/calendar"
         title="日历检索"
       >
@@ -123,7 +123,7 @@
         />
       </NuxtLink>
       <NuxtLink
-        v-if="$route.path !== '/sys/settings' && global.userinfo.id === 1"
+        v-if="$route.path !== '/sys/settings' && authUser.id === 1"
         to="/sys/settings"
         title="系统设置"
       >
@@ -133,7 +133,7 @@
         />
       </NuxtLink>
       <NuxtLink
-        v-if="$route.path !== '/user/settings' && global.userinfo.token"
+        v-if="$route.path !== '/user/settings' && authUser.token"
         to="/user/settings"
         title="用户中心"
       >
@@ -142,7 +142,7 @@
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
       </NuxtLink>
-      <NuxtLink v-if="!global.userinfo.token" to="/user/login" title="登录">
+      <NuxtLink v-if="!authUser.token" to="/user/login" title="登录">
         <UIcon
           name="i-carbon-login"
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
@@ -150,23 +150,25 @@
       </NuxtLink>
     </div>
 
-    <img class="header-img w-full" :src="props.user.coverUrl" alt="" />
-    <div class="absolute right-2 bottom-[-40px]">
-      <div class="userinfo flex flex-col">
-        <div class="flex flex-row items-center gap-4 justify-end">
-          <div class="username text-lg font-bold text-white flex items-center gap-1.5">
-            <StatusIcon v-if="props.user" :status="props.user.status || null" :userId="Number(props.user.id)" :editable="Number(global.userinfo.id) === Number(props.user.id)"/>
-            {{ props.user.nickname }}
+    <template v-if="props.user">
+      <img class="header-img w-full" :src="props.user.coverUrl || '/cover.jpg'" alt="" />
+      <div class="absolute right-2 bottom-[-40px]">
+        <div class="userinfo flex flex-col">
+          <div class="flex flex-row items-center gap-4 justify-end">
+            <div class="username text-lg font-bold text-white flex items-center gap-1.5">
+              <StatusIcon :status="props.user.status || null" :userId="Number(props.user.id)" :editable="Number(authUser.id) === Number(props.user.id)"/>
+              {{ props.user.nickname || props.user.username || '个人空间' }}
+            </div>
+            <NuxtLink :to="`/user/${props.user.id}`" :aria-label="`查看${props.user.nickname || props.user.username || '用户'}的时间轴`">
+              <img :src="props.user.avatarUrl || '/favicon.png'" class="avatar w-[70px] h-[70px] rounded-xl" alt="用户头像"/>
+            </NuxtLink>
           </div>
-          <NuxtLink :to="`/user/${props.user.id}`" :aria-label="`查看${props.user.nickname}的时间轴`">
-            <img :src="props.user.avatarUrl" class="avatar w-[70px] h-[70px] rounded-xl" alt="用户头像"/>
-          </NuxtLink>
-        </div>
-        <div class="slogon text-gray truncate w-full text-end text-xs mt-2">
-          {{ props.user.slogan }}
+          <div class="slogon text-gray truncate w-full text-end text-xs mt-2">
+            {{ props.user.slogan || '' }}
+          </div>
         </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 <script setup lang="ts">
@@ -175,10 +177,11 @@ import type { SysConfigVO, UserVO } from "~/types";
 import { useGlobalState } from "~/store";
 
 const global = useGlobalState();
+const authUser = computed(() => global?.value?.userinfo ?? {});
 const route = useRoute();
 const sysConfig = useState<SysConfigVO>('sysConfig');
 
-const props = defineProps<{ user: UserVO }>();
+const props = defineProps<{ user?: UserVO | null }>();
 const mode = useColorMode();
 const { y } = useWindowScroll();
 

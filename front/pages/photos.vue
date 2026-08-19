@@ -5,7 +5,7 @@
       <p class="eyebrow">VISUAL JOURNAL</p>
       <div class="flex items-end justify-between gap-4">
         <div><h1 id="photos-title">照片墙</h1><p class="subtitle">把值得记住的光影，留在这里。</p></div>
-        <UButton v-if="isAdmin" icon="i-carbon-settings" color="gray" variant="soft" @click="showAdmin = true">管理照片</UButton>
+        <UButton v-if="isAdmin" icon="i-carbon-add" color="primary" size="lg" class="min-h-11 shadow-sm" aria-label="添加照片或图集" @click="showAdmin = true">添加照片</UButton>
       </div>
     </section>
 
@@ -32,8 +32,10 @@ import type { PhotoAlbumVO, PhotoVO, PhotoWallVO, UserVO } from '~/types'
 import { useGlobalState } from '~/store'
 import { useUpload } from '~/utils'
 
-const currentUser = useState<UserVO>('userinfo'); const global = useGlobalState()
-const isAdmin = computed(() => Boolean(global.value.userinfo?.token) && Number(global.value.userinfo?.id) === 1)
+const currentUser = useState<UserVO | null>('userinfo', () => null)
+const global = useGlobalState()
+const authUser = computed(() => global?.value?.userinfo ?? {})
+const isAdmin = computed(() => Boolean(authUser.value.token) && Number(authUser.value.id ?? currentUser.value?.id) === 1)
 const wall = reactive<PhotoWallVO>({ today: [], featured: [], albums: [] }); const loading = ref(true); const featuredIndex = ref(0)
 const lightbox = ref(false); const selectedPhoto = ref<PhotoVO | null>(null); const showAdmin = ref(false); const adminLoading = ref(false); const uploadAlbumId = ref<number>(); const featuredMemoId = ref<number>(); const featuredIndexInput = ref(0); const newAlbum = reactive({ name: '', description: '' })
 const loadWall = async () => { loading.value = true; try { Object.assign(wall, await useMyFetch<PhotoWallVO>('/photo/wall')) } catch (e: any) { toast.error(e?.message || '照片墙加载失败') } finally { loading.value = false } }

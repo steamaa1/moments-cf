@@ -33,7 +33,7 @@
         </div>
         <NuxtLink
           to="/new"
-          v-if="global.userinfo.token && $route.path === '/'"
+          v-if="authUser.token && $route.path === '/'"
           class="dark:bg-gray-900/85 mr-4 rounded-full bg-slate-50 w-10 h-10 flex items-center justify-center shadow-xl"
         >
           <UIcon name="i-carbon-camera" class="w-6 h-6 text-[#9fc84a]"></UIcon>
@@ -49,7 +49,7 @@
         </div>
         <NuxtLink
           to="/user/login"
-          v-if="!global.userinfo.token && $route.path === '/'"
+          v-if="!authUser.token && $route.path === '/'"
           class="dark:bg-gray-900/85 mr-4 rounded-full bg-slate-50 w-10 h-10 flex items-center justify-center shadow-xl"
         >
           <UIcon name="i-carbon-login" class="w-6 h-6 text-[#9fc84a]"></UIcon>
@@ -67,6 +67,7 @@ import { useGlobalState } from "~/store";
 import site from "~/site.config";
 
 const global = useGlobalState();
+const authUser = computed(() => global?.value?.userinfo ?? {});
 const open = useState<boolean>("sidebarOpen", () => false);
 const currentUser = useState<UserVO>("userinfo");
 const sysConfig = useState<SysConfigVO>("sysConfig");
