@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { photoMemoVisible, photoUrl } from '../worker/src/index.js';
+import { readFile } from 'node:fs/promises';
 
 assert.equal(photoUrl('/upload/media/2026/08/test.webp'), '/upload/media/2026/08/test.webp');
 assert.equal(photoUrl('https://images.example/photo.jpg'), 'https://images.example/photo.jpg');

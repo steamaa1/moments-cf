@@ -151,7 +151,7 @@
     </div>
 
     <template v-if="props.user">
-      <img class="header-img w-full" :src="props.user.coverUrl || '/cover.jpg'" alt="" />
+      <img class="header-img block h-48 w-full object-cover sm:h-52" :src="props.user.coverUrl || '/cover.jpg'" alt="" />
       <div class="absolute right-2 bottom-[-40px]">
         <div class="userinfo flex flex-col">
           <div class="flex flex-row items-center gap-4 justify-end">

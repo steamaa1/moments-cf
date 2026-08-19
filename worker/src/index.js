@@ -817,13 +817,13 @@ async function photoWall(request, env, headers) {
   const today = new Date();
   const monthDay = `${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
   const history = photos.filter(photo => photo.createdAt.slice(5, 10) === monthDay && photo.createdAt.slice(0, 10) !== today.toISOString().slice(0, 10)).slice(0, 18);
-  const albums = await env.DB.prepare('SELECT id,name,description,cover_url,is_default,sort_order FROM photo_albums ORDER BY sort_order ASC, id ASC').all();
+  const albums = await env.DB.prepare('SELECT a.id,a.name,a.description,a.cover_url,a.is_default,a.sort_order,(SELECT COUNT(*) FROM photo_album_items i WHERE i.album_id=a.id) AS item_count FROM photo_albums a ORDER BY a.sort_order ASC, a.id ASC').all();
   const albumViews = [];
   for (const album of albums.results || []) {
     const items = await env.DB.prepare('SELECT i.*, m.created_at AS memo_created_at, m.user_id, u.username, u.nickname, u.avatar_url FROM photo_album_items i LEFT JOIN memos m ON i.source_type=\'memo\' AND i.source_ref=CAST(m.id AS TEXT) LEFT JOIN users u ON u.id=m.user_id WHERE i.album_id=? ORDER BY i.sort_order ASC, i.created_at DESC LIMIT 9').bind(album.id).all();
     const custom = (items.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView({ ...row, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
     const combined = Number(album.is_default) === 1 ? photos.slice(0, 9) : custom;
-    albumViews.push({ id: Number(album.id), name: album.name, description: album.description, isDefault: Boolean(album.is_default), count: Number(album.is_default) ? photos.length : custom.length, photos: combined });
+    albumViews.push({ id: Number(album.id), name: album.name, description: album.description, isDefault: Boolean(album.is_default), count: Number(album.is_default) ? photos.length : Number(album.item_count || 0), photos: combined });
   }
   const featured = await env.DB.prepare("SELECT i.*,m.imgs,m.show_type,m.created_at AS memo_created_at,m.user_id,u.username,u.nickname,u.avatar_url FROM photo_album_items i LEFT JOIN memos m ON i.source_type='memo' AND i.source_ref=CAST(m.id AS TEXT) LEFT JOIN users u ON u.id=m.user_id WHERE i.featured=1 ORDER BY i.sort_order ASC,i.created_at DESC LIMIT 30").all();
   const viewer = await currentUser(request, env);
@@ -846,6 +846,31 @@ async function photoAlbum(request, env, headers) {
   const rows = await env.DB.prepare('SELECT * FROM photo_album_items WHERE album_id=? ORDER BY sort_order ASC, created_at DESC LIMIT ? OFFSET ?').bind(albumId, size, (page - 1) * size).all();
   const list = (rows.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView(row, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
   const total = Number(count?.total || 0); return json(ok({ album, list, total, hasNext: page * size < total }), 200, headers);
+}
+async function photoAll(request, env, headers) {
+  const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
+  const body = (await readJson(request)) || {}; const page = Math.max(1, intParam(body.page, 1)); const size = Math.min(60, Math.max(1, intParam(body.size, 60))); const keyword = String(body.keyword || '').trim();
+  const photos = await publicPhotoMemos(request, env);
+  const items = await env.DB.prepare("SELECT i.*, m.created_at AS memo_created_at, m.user_id, u.username, u.nickname, u.avatar_url FROM photo_album_items i LEFT JOIN memos m ON i.source_type='memo' AND i.source_ref=CAST(m.id AS TEXT) LEFT JOIN users u ON u.id=m.user_id ORDER BY i.sort_order ASC, i.created_at DESC LIMIT 500").all();
+  const registry = new Map();
+  for (const row of items.results || []) {
+    const key = `${row.source_type}:${row.source_ref}:${row.source_index}`;
+    registry.set(key, { albumItemId: Number(row.id), featured: Boolean(Number(row.featured) === 1) });
+  }
+  const custom = (items.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView({ ...row, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
+  const all = [...photos, ...custom];
+  const seen = new Set();
+  const unique = all.filter(photo => {
+    const key = String(photo.id);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    const registered = registry.get(String(photo.id));
+    if (registered) Object.assign(photo, registered);
+    return true;
+  });
+  const filtered = keyword ? unique.filter(photo => String(photo.caption || '').toLowerCase().includes(keyword.toLowerCase())) : unique;
+  const list = filtered.slice((page - 1) * size, page * size);
+  return json(ok({ list, total: filtered.length, hasNext: page * size < filtered.length }), 200, headers);
 }
 async function adminPhotoAlbumSave(request, env, headers) {
   const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
@@ -876,7 +901,9 @@ async function adminPhotoFeatured(request, env, headers) {
     id = Number((await env.DB.prepare('SELECT id FROM photo_album_items WHERE album_id=1 AND source_type=\'memo\' AND source_ref=? AND source_index=?').bind(String(memoId), sourceIndex).first())?.id || 0);
   }
   if (!id) return json(fail('精选图片项无效'), 400, headers);
-  const featured = body.featured ? 1 : 0; await env.DB.prepare('UPDATE photo_album_items SET featured=?,sort_order=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(featured, intParam(body.sortOrder, 0), id).run(); return json(ok({ id }), 200, headers);
+  const featured = body.featured ? 1 : 0; const sortOrder = intParam(body.sortOrder, Date.now());
+  await env.DB.prepare('UPDATE photo_album_items SET featured=?,sort_order=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(featured, featured ? sortOrder : 0, id).run();
+  return json(ok({ id, featured }), 200, headers);
 }
 async function adminPhotoItemRemove(request, env, headers) {
   const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
@@ -2272,6 +2299,7 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/memo/list') return await listMemos(request, env, headers);
     if (url.pathname === '/api/photo/wall') return await photoWall(request, env, headers);
     if (url.pathname === '/api/photo/album') return await photoAlbum(request, env, headers);
+    if (url.pathname === '/api/photo/all') return await photoAll(request, env, headers);
     if (url.pathname === '/api/memo/preview') return await previewUnfurl(request, env, headers);
     if (url.pathname === '/api/memo/get') return await getMemo(request, env, headers);
     if (url.pathname === '/api/memo/save') return await saveMemo(request, env, headers);
@@ -2322,7 +2350,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

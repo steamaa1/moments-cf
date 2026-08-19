@@ -67,6 +67,7 @@ export type UserVO = {
 export type PhotoVO = {
     id: string | number
     albumItemId?: number
+    featured?: boolean
     url: string
     thumbUrl: string
     sourceType?: string

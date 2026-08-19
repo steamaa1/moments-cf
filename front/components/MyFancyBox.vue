@@ -5,35 +5,29 @@ const props = defineProps({
   options: Object,
 });
 const container = ref(null);
-
 const randomId = randomHexStr();
-onMounted(() => {
-  Array.from(container.value.children).map((el) => {
-    el.setAttribute('data-fancybox', `gallery-${randomId}`);
+const selector = `[data-fancybox="gallery-${randomId}"]`;
+
+function bindGallery() {
+  if (!container.value) return;
+  Array.from(container.value.children).forEach((element) => {
+    element.setAttribute('data-fancybox', `gallery-${randomId}`);
   });
-  Fancybox.bind(`[data-fancybox="gallery-${randomId}"]`, {
+  Fancybox.unbind(selector);
+  Fancybox.bind(selector, {
     Thumbs: {
       type: 'modern',
     },
     ...(props.options || {}),
   });
-});
+}
 
-nextTick(() => {
-  Fancybox.unbind(container.value);
-  Fancybox.close();
-
-  Fancybox.bind(`[data-fancybox="gallery-${randomId}"]`, {
-    Thumbs: {
-      type: 'modern',
-    },
-    ...(props.options || {}),
-  });
-});
+onMounted(() => nextTick(bindGallery));
+onUpdated(() => nextTick(bindGallery));
 
 function randomHexStr(len = 16, chars = '0123456789abcdefghijklmnopqrstuvwxyz') {
   let str = '';
-  let length = chars.length;
+  const length = chars.length;
   while (len > 0) {
     str += chars[Math.floor(Math.random() * length)];
     len--;
@@ -42,7 +36,7 @@ function randomHexStr(len = 16, chars = '0123456789abcdefghijklmnopqrstuvwxyz') 
 }
 
 onUnmounted(() => {
-  Fancybox.destroy();
+  Fancybox.unbind(selector);
 });
 </script>
 
