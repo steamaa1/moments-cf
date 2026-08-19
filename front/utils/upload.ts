@@ -40,6 +40,11 @@ export async function imageThumbnail(file: File): Promise<File | null> {
   const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/webp', 0.78))
   return blob ? new File([blob], `${file.name.replace(/\.[^.]+$/, '')}_thumb.webp`, { type: 'image/webp' }) : null
 }
+function hexToBase64(hex: string) {
+  let binary = ''
+  for (let index = 0; index < hex.length; index += 2) binary += String.fromCharCode(parseInt(hex.slice(index, index + 2), 16))
+  return btoa(binary)
+}
 function xhrUpload(url: string, method: string, body: XMLHttpRequestBodyInit, headers: Record<string,string>, progress?: Progress) {
   return new Promise<string>((resolve, reject) => {
     const xhr = new XMLHttpRequest(); xhr.open(method, url, true)
@@ -64,7 +69,7 @@ async function uploadOne(file: File, progress?: Progress, expectedSha256 = '') {
   }
   const init = await api<{exists:boolean;path:string;uploadUrl:string;key:string;contentType:string;thumbnailKey:string;thumbnailUploadUrl:string}>('/file/direct/init', { filename:file.name, contentType:file.type, size:file.size, sha256 })
   if (init.exists) return init.path
-  await xhrUpload(init.uploadUrl, 'PUT', file, { 'content-type': init.contentType }, progress)
+  await xhrUpload(init.uploadUrl, 'PUT', file, { 'content-type': init.contentType, 'x-amz-checksum-sha256': hexToBase64(sha256) }, progress)
   if (thumbnail && init.thumbnailUploadUrl) await xhrUpload(init.thumbnailUploadUrl, 'PUT', thumbnail, { 'content-type': 'image/webp' })
   const completed = await api<{path:string}>('/file/direct/complete', { key:init.key, thumbnailKey:thumbnail ? init.thumbnailKey : '' })
   return completed.path

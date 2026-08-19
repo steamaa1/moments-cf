@@ -93,7 +93,7 @@ async function hmac(key, value) {
   return crypto.subtle.sign('HMAC', material, typeof value === 'string' ? encoder.encode(value) : value);
 }
 function awsEncode(value) { return encodeURIComponent(value).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`); }
-export async function createR2PresignedPut({ accountId, bucket, key, accessKeyId, secretAccessKey, contentType, expires = 900, now = new Date() }) {
+export async function createR2PresignedPut({ accountId, bucket, key, accessKeyId, secretAccessKey, contentType, checksumSha256, expires = 900, now = new Date() }) {
   if (!accountId || !bucket || !accessKeyId || !secretAccessKey) throw new Error('R2 直传凭据未配置');
   const host = `${accountId}.r2.cloudflarestorage.com`;
   const date = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
@@ -102,12 +102,13 @@ export async function createR2PresignedPut({ accountId, bucket, key, accessKeyId
   const params = new URLSearchParams({
     'X-Amz-Algorithm': 'AWS4-HMAC-SHA256', 'X-Amz-Credential': `${accessKeyId}/${scope}`,
     'X-Amz-Date': date, 'X-Amz-Expires': String(Math.min(3600, Math.max(60, expires))),
-    'X-Amz-SignedHeaders': 'content-type;host',
+    'X-Amz-SignedHeaders': checksumSha256 ? 'content-type;host;x-amz-checksum-sha256' : 'content-type;host',
   });
   const canonicalQuery = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${awsEncode(k)}=${awsEncode(v)}`).join('&');
   const canonicalUri = `/${awsEncode(bucket)}/${key.split('/').map(awsEncode).join('/')}`;
-  const canonicalHeaders = `content-type:${contentType}\nhost:${host}\n`;
-  const canonicalRequest = `PUT\n${canonicalUri}\n${canonicalQuery}\n${canonicalHeaders}\ncontent-type;host\nUNSIGNED-PAYLOAD`;
+  const canonicalHeaders = `content-type:${contentType}\nhost:${host}\n${checksumSha256 ? `x-amz-checksum-sha256:${checksumSha256}\n` : ''}`;
+  const signedHeaders = checksumSha256 ? 'content-type;host;x-amz-checksum-sha256' : 'content-type;host';
+  const canonicalRequest = `PUT\n${canonicalUri}\n${canonicalQuery}\n${canonicalHeaders}\n${signedHeaders}\nUNSIGNED-PAYLOAD`;
   const stringToSign = `AWS4-HMAC-SHA256\n${date}\n${scope}\n${bytesToHex(await sha256(canonicalRequest))}`;
   const kDate = await hmac(`AWS4${secretAccessKey}`, shortDate);
   const kRegion = await hmac(kDate, 'auto');
@@ -115,6 +116,13 @@ export async function createR2PresignedPut({ accountId, bucket, key, accessKeyId
   const kSigning = await hmac(kService, 'aws4_request');
   const signature = bytesToHex(await hmac(kSigning, stringToSign));
   return `https://${host}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+}
+export function hexToBase64(hex) {
+  const value = String(hex || '');
+  if (!/^[a-f0-9]{64}$/i.test(value)) throw new Error('SHA-256 格式错误');
+  let binary = '';
+  for (let index = 0; index < value.length; index += 2) binary += String.fromCharCode(parseInt(value.slice(index, index + 2), 16));
+  return btoa(binary);
 }
 export function validateDirectUpload(input, allowedTypes) {
   const size = Number(input?.size);

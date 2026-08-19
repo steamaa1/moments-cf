@@ -68,6 +68,12 @@ assert.equal(initResponse.status, 200, initBody.message);
 assert.ok(initBody.data.thumbnailKey.startsWith('thumbs/'));
 assert.equal(pending.thumbnail_key, initBody.data.thumbnailKey, 'init 必须把预期缩略图 Key 保存到 pending 记录');
 
+objects.set(initBody.data.key, { size: 25 * 1024 * 1024, httpMetadata: { contentType: 'application/octet-stream' } });
+const wrongTypeResponse = await worker.fetch(new Request('https://moments.example/api/file/direct/complete', {
+  method: 'POST', headers,
+  body: JSON.stringify({ key: initBody.data.key }),
+}), env);
+assert.equal(wrongTypeResponse.status, 409, '主对象 Content-Type 不一致时不得完成上传');
 objects.set(initBody.data.key, { size: 25 * 1024 * 1024, httpMetadata: { contentType: 'image/png' } });
 objects.set(initBody.data.thumbnailKey, { size: 100, httpMetadata: { contentType: 'image/webp' } });
 objects.set('thumbs/other-user.webp', { size: 100, httpMetadata: { contentType: 'image/webp' } });

@@ -1,5 +1,5 @@
 import {
-  sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
+  sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, hexToBase64, buildCommentEmail,
   sendNotification, createD1Backup, listBackups, restoreD1Backup, renderRssDescription,
   encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
   startD1Export, pollD1Export, storeD1Backup, sendTelegram,
@@ -530,7 +530,7 @@ async function directUploadInit(request, env, headers) {
   const extension = mediaExtension(file.filename);
   const key = mediaObjectKey(extension);
   // 先完成预签名，成功后再写 pending 记录；签名失败时不留下 pending 垃圾
-  const uploadUrl = await backend.presignPut({ key, contentType: file.contentType });
+  const uploadUrl = await backend.presignPut({ key, contentType: file.contentType, checksumSha256: file.sha256 });
   const thumbnailKey = file.contentType.startsWith('image/') ? mediaThumbKey() : '';
   const thumbnailUploadUrl = thumbnailKey ? await backend.presignPut({ key: thumbnailKey, contentType: 'image/webp' }) : '';
   const old = await env.DB.prepare('SELECT id FROM media WHERE owner_id=? AND r2_key=? LIMIT 1').bind(access.user.id, key).first();
@@ -546,6 +546,9 @@ async function directUploadComplete(request, env, headers) {
   const storageConfig = await loadStorageConfig(env);
   const backend = storageBackend(env, storageConfig, mediaStorageBackend(media));
   const object = await backend.head(key); if (!object || Number(object.size)!==Number(media.size_bytes)) return json(fail('文件不存在或大小不一致'),409,headers);
+  if (String(object.httpMetadata?.contentType || '').toLowerCase() !== String(media.content_type || '').toLowerCase()) return json(fail('文件类型与初始化声明不一致'), 409, headers);
+  const checksum = object.httpMetadata?.contentSha256 || object.checksumSha256 || object.httpChecksumSha256;
+  if (checksum && String(checksum) !== hexToBase64(media.sha256)) return json(fail('文件校验和不一致'), 409, headers);
   let thumbnailKey = null;
   if (body.thumbnailKey) {
     thumbnailKey = String(body.thumbnailKey);

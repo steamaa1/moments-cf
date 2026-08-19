@@ -68,9 +68,9 @@ export function r2Backend(env) {
       } while (cursor);
       return objects;
     },
-    async presignPut({ key, contentType, expires = 900, now = new Date() }) {
+    async presignPut({ key, contentType, checksumSha256, expires = 900, now = new Date() }) {
       const { createR2PresignedPut } = await import('./phase7.js');
-      return createR2PresignedPut({ accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: env.R2_BUCKET_NAME || 'moments-media', key, accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, contentType, expires, now });
+      return createR2PresignedPut({ accountId: env.CLOUDFLARE_ACCOUNT_ID, bucket: env.R2_BUCKET_NAME || 'moments-media', key, accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, contentType, checksumSha256, expires, now });
     },
   };
 }
