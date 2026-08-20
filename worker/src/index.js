@@ -615,9 +615,11 @@ async function cleanFiles(request, env, headers) {
 async function listTrash(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
-  const rows = await env.DB.prepare('SELECT id, r2_key, original_filename, content_type, size_bytes, trashed_at FROM media WHERE owner_id=? AND trashed_at IS NOT NULL ORDER BY trashed_at DESC').bind(access.user.id).all();
+  const rows = await env.DB.prepare('SELECT id, r2_key, thumbnail_key, original_filename, content_type, size_bytes, trashed_at FROM media WHERE owner_id=? AND trashed_at IS NOT NULL ORDER BY trashed_at DESC').bind(access.user.id).all();
   return json(ok({ list: (rows.results || []).map(row => ({
-    id: Number(row.id), path: `/upload/${row.r2_key}`, filename: row.original_filename,
+    id: Number(row.id), path: `/upload/${row.r2_key}`,
+    thumbPath: row.thumbnail_key ? `/upload/${row.thumbnail_key}` : '',
+    filename: row.original_filename,
     contentType: row.content_type, size: Number(row.size_bytes), trashedAt: row.trashed_at,
   })), retentionDays: TRASH_RETENTION_DAYS }), 200, headers);
 }
@@ -2375,7 +2377,10 @@ function parseRangeHeader(header, size) {
 }
 async function serveMedia(request, env, key) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
-  const media = await env.DB.prepare("SELECT id, storage_backend FROM media WHERE (r2_key=? OR thumbnail_key=?) AND trashed_at IS NULL AND upload_state='ready'").bind(key, key).first();
+  // 回收站中的原图禁止访问，但其缩略图放行，供回收站列表预览。
+  // 条件1：正常媒体（原图或缩略图，未回收）；条件2：已回收媒体的缩略图。
+  const media = await env.DB.prepare("SELECT id, storage_backend, r2_key, thumbnail_key, trashed_at FROM media WHERE (r2_key=? OR thumbnail_key=?) AND upload_state='ready'").bind(key, key).first();
+  if (media && media.trashed_at && media.r2_key === key) return new Response('Not Found', { status: 404 });
   if (!media) return new Response('Not Found', { status: 404 });
   const storageConfig = await loadStorageConfig(env);
   const backendType = mediaStorageBackend(media);

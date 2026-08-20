@@ -229,8 +229,9 @@
       <div v-else-if="trashFiles.length === 0" class="rounded-lg border border-dashed border-gray-300 py-10 text-center text-sm text-gray-500 dark:border-gray-600">回收站是空的</div>
       <div v-else class="space-y-3">
         <div v-for="file in trashFiles" :key="file.id" class="flex items-center gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-neutral-700">
-            <UIcon :name="file.contentType.startsWith('image/') ? 'i-carbon-image' : 'i-carbon-video'" class="h-5 w-5 text-gray-600 dark:text-gray-300"/>
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100 dark:bg-neutral-700">
+            <img v-if="file.thumbPath" :src="file.thumbPath" :alt="file.filename" class="h-full w-full object-cover" loading="lazy" @error="file.thumbPath = ''"/>
+            <UIcon v-else :name="file.contentType.startsWith('image/') ? 'i-carbon-image' : 'i-carbon-video'" class="h-5 w-5 text-gray-600 dark:text-gray-300"/>
           </div>
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-100">{{ file.filename }}</p>
@@ -309,7 +310,7 @@ const state = reactive({
   smtpPasswordConfigured: false,
 })
 
-type TrashFile = { id: number; path: string; filename: string; contentType: string; size: number; trashedAt: string }
+type TrashFile = { id: number; path: string; thumbPath: string; filename: string; contentType: string; size: number; trashedAt: string }
 type BackupFile = { key: string; name: string; size: number; uploaded: string }
 const showBackupModal = ref(false)
 const backupLoading = ref(false)

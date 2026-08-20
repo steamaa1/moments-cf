@@ -7,20 +7,7 @@
     }"
   >
     <div
-      v-if="authUser.token"
-      class="flex flex-col items-center p-4 pt-8 text-gray-500 dark:text-white"
-      @click="navigate('/new')"
-      title="发表"
-    >
-      <span
-        class="flex items-center bg-gray-200/75 dark:bg-gray-800/75 p-3 rounded-full"
-      >
-        <UIcon name="i-carbon-camera" class="w-7 h-7 cursor-pointer" />
-      </span>
-      <span class="text-sm mt-1">发表</span>
-    </div>
-    <div
-      class="flex items-center justify-center gap-3 p-4 text-gray-500 dark:text-white min-h-[120px]"
+      class="grid grid-cols-4 gap-x-4 gap-y-5 p-5 text-gray-500 dark:text-white min-h-[180px]"
     >
       <div class="flex flex-col items-center gap-1">
         <span
