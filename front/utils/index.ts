@@ -16,11 +16,17 @@ export const useMyFetch = async <T>(url: string, data?: any) => {
     headers["x-api-token"] = userinfo.token
   }
 
-  const res = await $fetch<ResultVO<T>>(`/api${url}`, {
-    method: "post",
-    body: data ? JSON.stringify(data) : null,
-    headers: headers,
-  })
+  let res: ResultVO<T> | null = null
+  try {
+    res = await $fetch<ResultVO<T>>(`/api${url}`, {
+      method: "post",
+      body: data ? JSON.stringify(data) : null,
+      headers: headers,
+    })
+  } catch (error: any) {
+    // ofetch 对非 2xx 直接抛错，这里提取服务端 ResultVO.message，避免用户只看到 FetchError。
+    throw new Error(error?.data?.message || error?.message || "网络请求失败")
+  }
 
   if (!res || res.code !== 0) {
     if (!res) {

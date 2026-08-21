@@ -23,4 +23,7 @@ assert.match(workerSource, /Math\.min\(1000, Math\.max\(1, intParam\(body\.size,
 assert.match(workerSource, /UPDATE photo_albums SET name=\?,description=\?,updated_at=CURRENT_TIMESTAMP WHERE id=\?'/, '管理员必须能修改包括默认图集在内的图集名称');
 assert.doesNotMatch(workerSource, /UPDATE photo_albums SET name=\?,description=\?,updated_at=CURRENT_TIMESTAMP WHERE id=\? AND is_default=0/, '图集改名不得排除默认图集');
 
+assert.match(workerSource, /row\.source_type === 'memo' \? \{ \.\.\.row, id: Number\(row\.source_ref\) \} : row/, 'photoAll 自定义图集项必须使用动态 ID 作为照片标识，避免重复与精选状态丢失');
+assert.match(workerSource, /album: \{ id: Number\(album\.id\)/, '默认图集详情必须返回真实图集 ID');
+
 console.log('Photo wall visibility and URL tests: PASS');

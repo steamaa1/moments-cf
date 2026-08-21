@@ -21,8 +21,10 @@ class Statement {
     const sql = this.sql.toLowerCase();
     if (sql.includes('select * from users where id')) return user;
     if (sql.includes('select content from sys_config')) return { content: JSON.stringify(config) };
-    if (sql.includes('select id, storage_backend from media')) {
-      return media.trashed_at == null && this.args.includes(media.r2_key) ? { id: media.id, storage_backend: media.storage_backend } : null;
+    if (sql.includes('from media where (r2_key=? or thumbnail_key=?)')) {
+      // 与 serveMedia 新语义一致：回收站原图 404，回收站缩略图放行。
+      if (!this.args.includes(media.r2_key)) return null;
+      return { id: media.id, storage_backend: media.storage_backend, r2_key: media.r2_key, thumbnail_key: media.thumbnail_key, trashed_at: media.trashed_at };
     }
     if (sql.includes('select id, r2_key, thumbnail_key, storage_backend from media')) {
       return Number(this.args[0]) === media.id && Number(this.args[1]) === media.owner_id && media.trashed_at ? media : null;

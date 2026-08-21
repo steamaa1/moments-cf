@@ -843,7 +843,7 @@ async function photoAlbum(request, env, headers) {
   const albumId = intParam(body.id, 1); const page = Math.max(1, intParam(body.page, 1)); const size = Math.min(60, Math.max(1, intParam(body.size, 18)));
   const album = await env.DB.prepare('SELECT id,name,description,is_default FROM photo_albums WHERE id=?').bind(albumId).first();
   if (!album) return json(fail('图集不存在'), 404, headers);
-  if (Number(album.is_default) === 1) { const photos = await publicPhotoMemos(request, env); const list = photos.slice((page - 1) * size, page * size); return json(ok({ album: { id: 1, name: album.name, description: album.description, isDefault: true }, list, total: photos.length, hasNext: page * size < photos.length }), 200, headers); }
+  if (Number(album.is_default) === 1) { const photos = await publicPhotoMemos(request, env); const list = photos.slice((page - 1) * size, page * size); return json(ok({ album: { id: Number(album.id), name: album.name, description: album.description, isDefault: true }, list, total: photos.length, hasNext: page * size < photos.length }), 200, headers); }
   const count = await env.DB.prepare('SELECT COUNT(*) AS total FROM photo_album_items WHERE album_id=?').bind(albumId).first();
   const rows = await env.DB.prepare('SELECT * FROM photo_album_items WHERE album_id=? ORDER BY sort_order ASC, created_at DESC LIMIT ? OFFSET ?').bind(albumId, size, (page - 1) * size).all();
   const list = (rows.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView(row, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
@@ -861,7 +861,8 @@ async function photoAll(request, env, headers) {
   }
   const custom = (items.results || []).map(row => {
     const url = photoUrl(row.image_url); if (!url) return null;
-    return { ...photoView({ ...row, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index), featured: Boolean(Number(row.featured) === 1) };
+    const identityRow = row.source_type === 'memo' ? { ...row, id: Number(row.source_ref) } : row;
+    return { ...photoView({ ...identityRow, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index), featured: Boolean(Number(row.featured) === 1) };
   }).filter(Boolean);
   const all = [...photos, ...custom];
   const seen = new Set();

@@ -14,7 +14,7 @@ assert.match(header, /props\.user\?\.nickname/, 'Header 必须安全读取用户
 assert.match(layout, /const authUser = computed\(\(\) => global\?\.value\?\.userinfo \?\? \{\}\)/, '布局必须安全读取全局登录状态');
 assert.doesNotMatch(layout, /global\.userinfo\./, '布局模板不得直接读取可能为空的 userinfo');
 assert.match(photos, /<MyFancyBox class="album-grid"/, '图集图片必须复用既有 Fancybox 点击预览逻辑');
-assert.match(photos, /while \(state\.hasNext\)/, '查看全部必须在当前页面拉取完整图集');
+assert.match(photos, /while \(state\.hasNext && guard < 100\)/, '查看全部必须在当前页面拉取完整图集且有安全上限');
 assert.doesNotMatch(photos, /navigateTo\(`\/photos\/album\//, '查看全部不得只跳转到图集链接');
 assert.match(photos, /v-model="showAdmin"/, '照片管理必须合并为一个弹窗');
 assert.match(photos, /fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur/, '移动端弹窗必须复用原有居中容器逻辑');
@@ -30,5 +30,14 @@ assert.match(photos, /toggleFeatured/, '精选必须从全部图片中选择并�
 assert.doesNotMatch(photos, /featuredMemoId/, '精选不得要求手填动态 ID');
 assert.match(photos, /\/photo\/all/, '精选选择器必须从全部图片接口加载');
 assert.match(fancybox, /onUpdated\(\(\) => nextTick\(bindGallery\)\)/, 'Fancybox 必须在图集展开后绑定新增图片');
+
+const albumPage = await readFile(new URL('../front/pages/photos/album/[id].vue', import.meta.url), 'utf8');
+assert.match(photos, /guard < 100/, '查看全部必须有分页安全上限，防止接口异常导致死循环');
+assert.match(photos, /fresh\.length > 0/, '查看全部必须在无新数据时停止，防止重复数据死循环');
+assert.match(albumPage, /requestGeneration/, '图集详情必须有请求代际保护，防止路由切换竞态');
+assert.match(albumPage, /watch\(albumId/, '图集详情必须监听路由参数变化重新加载');
+assert.match(albumPage, /errorMessage/, '图集详情必须显示加载失败状态而非空白');
+assert.match(albumPage, /<MyFancyBox/, '图集详情必须复用 Fancybox 预览而非新窗口打开');
+assert.doesNotMatch(albumPage, /target="_blank"/, '图集详情不得新窗口打开图片');
 
 console.log('Photo wall frontend regression tests: PASS');

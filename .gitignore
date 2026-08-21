@@ -28,6 +28,10 @@ progress.md
 # Cloudflare local development state
 .wrangler/
 
+# Node dependencies & package manifests (worker local run artifacts)
+node_modules
+worker/pnpm-lock.yaml
+
 # Per-account Cloudflare bootstrap output (contains resource IDs, never commit)
 worker/wrangler.local.toml
 .moments-cf-bootstrap.json

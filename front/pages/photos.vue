@@ -241,13 +241,16 @@ const loadAll = async (album: PhotoAlbumVO) => {
     state.photos = []
     state.page = 0
     state.hasNext = true
-    while (state.hasNext) {
+    let guard = 0
+    while (state.hasNext && guard < 100) {
+      guard++
       const nextPage = state.page + 1
       const result = await useMyFetch<PhotoAlbumPageVO>('/photo/album', { id: album.id, page: nextPage, size: 60 })
       const known = new Set(state.photos.map(photo => String(photo.id)))
-      state.photos.push(...result.list.filter(photo => !known.has(String(photo.id))))
+      const fresh = (result.list || []).filter(photo => !known.has(String(photo.id)))
+      state.photos.push(...fresh)
       state.page = nextPage
-      state.hasNext = result.hasNext
+      state.hasNext = Boolean(result.hasNext) && fresh.length > 0
     }
   } catch (error: any) {
     toast.error(error?.message || '图集加载失败')

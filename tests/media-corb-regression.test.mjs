@@ -46,6 +46,7 @@ assert.match(userSettings, /autocomplete="new-password"/);
 const mdUtils = await readFile(new URL('../front/utils/index.ts', import.meta.url), 'utf8');
 assert.match(mdUtils, /md\.renderer\.rules\.image/, '动态正文 Markdown 图片应规范化');
 assert.match(mdUtils, /attrSet\('src'/, 'image 规则应重写 src 为相对路径');
+assert.match(mdUtils, /error\?\.data\?\.message/, 'useMyFetch 必须提取服务端错误消息，避免用户只看到 FetchError');
 const about = await readFile(new URL('../front/pages/about.vue', import.meta.url), 'utf8');
 assert.match(about, /renderer\.renderer\.rules\.image/, '关于页 Markdown 图片应规范化');
 
