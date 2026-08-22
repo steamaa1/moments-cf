@@ -39,13 +39,10 @@
           </div>
         </div>
         <UFormGroup label="自定义状态" :ui="{label:{base:'font-bold'}}">
-          <div class="flex gap-2">
-            <UInput v-model="custom" placeholder="输入状态文字，如：在看海" @keyup.enter="useCustom"/>
-            <UButton variant="soft" @click="useCustom">使用</UButton>
-          </div>
+          <UInput v-model="custom" placeholder="输入状态文字，如：在看海" @keyup.enter="useCustom"/>
           <div class="mt-2 flex flex-wrap items-center gap-1">
             <button v-for="e in quickEmojis" :key="e" type="button" class="status-quick-emoji" :class="{ active: customIcon === e }" :title="e" @click="customIcon = e">{{ e }}</button>
-            <UButton size="xs" color="gray" variant="soft" icon="i-carbon-smile-add" :label="emojiOpen ? '收起' : '更多'" @click="emojiOpen = !emojiOpen"/>
+            <UButton size="xs" color="gray" variant="soft" :label="emojiOpen ? '收起' : '更多'" @click="emojiOpen = !emojiOpen"/>
           </div>
           <Emoji v-if="emojiOpen" class="mt-2" @selected="onEmojiSelected"/>
           <p class="mt-1 text-xs text-gray-500">已选 emoji：<span class="text-base align-middle">{{ customIcon || '💬' }}</span></p>

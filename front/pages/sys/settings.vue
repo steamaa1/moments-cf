@@ -42,7 +42,7 @@
           <UToggle v-model="state.enableRegisterApproval"/>
           <p class="text-xs text-gray-500 mt-1">开启后新用户注册需填写理由，待管理员批准后方可登录</p>
         </div>
-        <UButton color="gray" variant="soft" icon="i-carbon-user-check" to="/sys/approve">注册审批</UButton>
+        <UButton color="gray" variant="soft" to="/sys/approve">注册审批</UButton>
       </div>
     </UFormGroup>
     <div class="rounded-xl border border-gray-200 p-4 space-y-3 dark:border-gray-700">
