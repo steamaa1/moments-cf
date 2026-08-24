@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { fetchGitSnapshot, fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseGitEmbedUrl, parseMemoRefUrl, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../worker/src/index.js';
+import worker, { fetchGitSnapshot, fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseGitEmbedUrl, parseMemoRefUrl, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../../worker/src/index.js';
 
-const userPage = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
+const userPage = await readFile(new URL('../../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userPage, /const userId = computed\(\(\) => Number\(route\.params\.id\)\)/);
 assert.match(userPage, /reactive\(\{ page: 1, size: 10, userId: userId\.value \}\)/);
 assert.match(userPage, /['"]\/memo\/list['"], \{ \.\.\.state, page: 1 \}/);
 assert.match(userPage, /const page = state\.page \+ 1/);
 assert.match(userPage, /ref<'timeline' \| 'cards'>\('timeline'\)/);
 
-const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');
+const settings = await readFile(new URL('../../front/pages/sys/settings.vue', import.meta.url), 'utf8');
 assert.doesNotMatch(settings, /是否启用S3存储|smtp服务器|smtp密码/);
 assert.match(settings, /回收站/);
 

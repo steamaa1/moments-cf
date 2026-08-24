@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createD1Backup, restoreD1Backup, storeD1Backup } from '../worker/src/phase7.js';
+import { createD1Backup, restoreD1Backup, storeD1Backup } from '../../worker/src/phase7.js';
 
 const stored = new Map();
 const env = {

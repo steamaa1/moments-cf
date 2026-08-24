@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { injectSeoMeta } from '../worker/src/index.js';
+import { injectSeoMeta } from '../../worker/src/index.js';
 
 /**
  * SEO Meta 回归：
@@ -69,18 +69,18 @@ const html = `<!doctype html><html><head>
 }
 
 // 静态断言：配置保存、公开配置、设置页、运行时回退
-const source = await readFile(new URL('../worker/src/index.js', import.meta.url), 'utf8');
+const source = await readFile(new URL('../../worker/src/index.js', import.meta.url), 'utf8');
 assert.match(source, /config\.seoDescription = String\(body\.seoDescription/);
 assert.match(source, /'seoDescription', 'seoKeywords'/);
 assert.match(source, /injectSeoMeta\(await assetsResponse\.text\(\), config, url\.pathname\)/);
-const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');
+const settings = await readFile(new URL('../../front/pages/sys/settings.vue', import.meta.url), 'utf8');
 assert.match(settings, /v-model="state\.seoDescription"/);
 assert.match(settings, /v-model="state\.seoKeywords"/);
 assert.match(settings, /v-model="state\.siteUrl"/);
 assert.match(settings, /SEO 描述/);
 assert.match(settings, /SEO 关键词/);
 assert.match(settings, /站点规范域名/);
-const layoutDefault = await readFile(new URL('../front/layouts/default.vue', import.meta.url), 'utf8');
+const layoutDefault = await readFile(new URL('../../front/layouts/default.vue', import.meta.url), 'utf8');
 assert.match(layoutDefault, /sysConfigVO\.seoDescription \|\|/);
 assert.match(layoutDefault, /sysConfigVO\.seoKeywords \|\|/);
 assert.match(layoutDefault, /sysConfigVO\.siteUrl/);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import worker, { passwordHash } from '../worker/src/index.js';
+import worker, { passwordHash } from '../../worker/src/index.js';
 
 const JWT_SECRET = 'login-rate-secret-at-least-32-characters';
 const attempts = [];

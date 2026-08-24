@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bootstrap, parseArgs, renderConfig } from '../scripts/cloudflare-bootstrap.mjs';
+import { bootstrap, parseArgs, renderConfig } from '../../scripts/cloudflare-bootstrap.mjs';
 
 assert.equal(parseArgs([]).deploy, false);
 assert.equal(parseArgs(['--deploy', '--d1-name', 'demo-db']).d1Name, 'demo-db');

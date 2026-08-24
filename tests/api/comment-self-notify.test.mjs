@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import worker, { signJwt } from '../worker/src/index.js';
-import { encryptConfigSecret } from '../worker/src/phase7.js';
+import worker, { signJwt } from '../../worker/src/index.js';
+import { encryptConfigSecret } from '../../worker/src/phase7.js';
 
 /**
  * 评论通知的“自己评论不打扰自己”规则：

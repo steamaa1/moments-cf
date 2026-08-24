@@ -3,7 +3,7 @@ import {
   sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
   sendNotification, md5Hex, renderRssDescription, listBackups, purgeOldBackups,
   encryptConfigSecret, decryptConfigSecret,
-} from '../worker/src/phase7.js';
+} from '../../worker/src/phase7.js';
 
 const safe = sanitizeSafeHtml(`<a href="https://example.com" target="_blank" onclick="bad()">链接</a><script>alert(1)</script><img src="javascript:bad"><strong>粗体</strong>`);
 assert.match(safe, /href="https:\/\/example\.com\/"/);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import worker, { signJwt } from '../worker/src/index.js';
-import { encryptConfigSecret } from '../worker/src/phase7.js';
+import worker, { signJwt } from '../../worker/src/index.js';
+import { encryptConfigSecret } from '../../worker/src/phase7.js';
 
 const JWT_SECRET = 'media-routing-secret-at-least-32-characters';
 const user = { id: 1, username: 'admin', nickname: 'Admin', token_version: 0, password_hash: 'x' };

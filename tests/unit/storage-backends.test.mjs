@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { s3Backend, webdavBackend, r2Backend } from '../worker/src/storage.js';
+import { s3Backend, webdavBackend, r2Backend } from '../../worker/src/storage.js';
 
 const requests = [];
 let s3ListPage = 0;

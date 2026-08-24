@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import worker from '../worker/src/index.js';
+import worker from '../../worker/src/index.js';
 
 const user = {
   id: 2,

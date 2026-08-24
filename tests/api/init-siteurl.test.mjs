@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import worker from '../worker/src/index.js';
+import worker from '../../worker/src/index.js';
 
 const JWT_SECRET = 'init-siteurl-secret-at-least-32-characters';
 const base = {

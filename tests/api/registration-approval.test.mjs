@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { signJwt, passwordHash } from '../worker/src/index.js';
-import { encryptConfigSecret } from '../worker/src/phase7.js';
+import worker, { signJwt, passwordHash } from '../../worker/src/index.js';
+import { encryptConfigSecret } from '../../worker/src/phase7.js';
 
 /**
  * 注册审批功能回归：
@@ -168,20 +168,20 @@ const botToken = await encryptConfigSecret('123456789:test', JWT_SECRET);
 
 // 5. 静态断言：设置开关、注册理由表单、审批页 API 与守卫、migration
 {
-  const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');
+  const settings = await readFile(new URL('../../front/pages/sys/settings.vue', import.meta.url), 'utf8');
   assert.match(settings, /enableRegisterApproval/, '设置页应有审批开关');
   assert.match(settings, /to="\/sys\/approve"/, '设置页应有审批入口');
   assert.match(settings, /userinfo\.id !== 1/, '系统设置页应限管理员访问');
-  const reg = await readFile(new URL('../front/pages/user/reg.vue', import.meta.url), 'utf8');
+  const reg = await readFile(new URL('../../front/pages/user/reg.vue', import.meta.url), 'utf8');
   assert.match(reg, /state\.reason/, '注册页应有理由字段');
   assert.match(reg, /请填写注册理由/, '理由必填校验');
-  const approve = await readFile(new URL('../front/pages/sys/approve.vue', import.meta.url), 'utf8');
+  const approve = await readFile(new URL('../../front/pages/sys/approve.vue', import.meta.url), 'utf8');
   assert.match(approve, /admin\/registration\/requests/, '审批页应调用列表 API');
   assert.match(approve, /admin\/registration\/approve/, '审批页应调用批准 API');
   assert.match(approve, /admin\/registration\/reject/, '审批页应调用拒绝 API');
   assert.match(approve, /userinfo\.id !== 1/, '审批页应限管理员');
   assert.match(approve, /\$dayjs\.utc/, '审批时间应按 UTC 解析');
-  const migration = await readFile(new URL('../worker/migrations/0014_registration_approval.sql', import.meta.url), 'utf8');
+  const migration = await readFile(new URL('../../worker/migrations/0014_registration_approval.sql', import.meta.url), 'utf8');
   assert.match(migration, /registration_reason/, 'migration 应有注册理由字段');
   assert.match(migration, /registration_state/, 'migration 应有审批状态字段');
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker, { publicUser, commentView, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken } from '../worker/src/index.js';
+import worker, { publicUser, commentView, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken } from '../../worker/src/index.js';
 
 const user = {
   id: 1,
@@ -81,13 +81,13 @@ assert.equal(internalFailure.status, 503);
 assert.match(internalFailureBody.message, /服务暂时不可用/);
 assert.doesNotMatch(internalFailureBody.message, /prepare|binding|undefined/i);
 
-const markdown = await readFile(new URL('../front/utils/index.ts', import.meta.url), 'utf8');
+const markdown = await readFile(new URL('../../front/utils/index.ts', import.meta.url), 'utf8');
 assert.match(markdown, /markdownit\(\{[\s\S]*?html:\s*false/);
 assert.doesNotMatch(markdown, /markdownit\(\{[\s\S]*?html:\s*true/);
-const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');
+const settings = await readFile(new URL('../../front/pages/sys/settings.vue', import.meta.url), 'utf8');
 assert.match(settings, /v-model="state\.googleSecretKey"[^>]*type="password"/);
 
-const workerSource = await readFile(new URL('../worker/src/index.js', import.meta.url), 'utf8');
+const workerSource = await readFile(new URL('../../worker/src/index.js', import.meta.url), 'utf8');
 assert.match(workerSource, /service: 'moments-cf', phase: 7/);
 assert.match(workerSource, /memo_id IN \(\$\{placeholders\}\)/);
 assert.match(workerSource, /config\.commentOrder === 'asc' \? 'ASC' : 'DESC'/);

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile, rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 
-const workerDir = new URL('../worker/', import.meta.url);
-const output = new URL('../worker/wrangler.build.toml', import.meta.url);
+const workerDir = new URL('../../worker/', import.meta.url);
+const output = new URL('../../worker/wrangler.build.toml', import.meta.url);
 const env = { ...process.env, MOMENTS_WORKER_NAME: 'test-worker', MOMENTS_D1_NAME: 'test-db', MOMENTS_R2_BUCKET: 'test-media', CLOUDFLARE_ACCOUNT_ID: 'test-account' };
 const processResult = spawn(process.execPath, ['scripts/render-build-config.mjs', 'test-d1-id'], { cwd: workerDir, env });
 let stderr = '';

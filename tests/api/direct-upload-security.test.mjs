@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import worker, { signJwt } from '../worker/src/index.js';
+import worker, { signJwt } from '../../worker/src/index.js';
 
 const JWT_SECRET = 'direct-upload-test-secret-at-least-32-chars';
 const user = { id: 1, username: 'admin', nickname: 'Admin', token_version: 0, password_hash: 'x' };

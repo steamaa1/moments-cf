@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import worker from '../worker/src/index.js';
+import worker from '../../worker/src/index.js';
 
 const health = await worker.fetch(new Request('https://moments.example/api/health'), {});
 const healthBody = await health.json();
 assert.equal(healthBody.data.phase, 7);
 
-const footer = await readFile(new URL('../front/components/Footer.vue', import.meta.url), 'utf8');
+const footer = await readFile(new URL('../../front/components/Footer.vue', import.meta.url), 'utf8');
 assert.match(footer, /v-html="sysConfig\.beiAnNo"/);
-const settings = await readFile(new URL('../front/pages/sys/settings.vue', import.meta.url), 'utf8');
+const settings = await readFile(new URL('../../front/pages/sys/settings.vue', import.meta.url), 'utf8');
 assert.doesNotMatch(settings, /备案信息（安全 HTML）|允许 a、span/);
 assert.match(settings, /是否启用 Cloudflare 人机验证/);
 assert.match(settings, /发件邮箱（SMTP 用户名）/);
@@ -30,7 +30,7 @@ assert.match(settings, /enableD1Backup/);
 assert.match(settings, /一键导入/);
 assert.match(settings, /exportLocalBackup/);
 assert.match(settings, /aboutContent/);
-const friendPage = await readFile(new URL('../front/pages/friend.vue', import.meta.url), 'utf8');
+const friendPage = await readFile(new URL('../../front/pages/friend.vue', import.meta.url), 'utf8');
 assert.match(friendPage, /友情链接申请与须知/);
 assert.match(friendPage, /sendApply/);
 assert.match(friendPage, /friendNotice/);
@@ -38,19 +38,19 @@ assert.match(friendPage, /mailto:/);
 assert.match(footer, />原项目<|>原项目\s*</);
 assert.match(footer, /Cloudflare 版/);
 assert.doesNotMatch(footer, /img\.shields\.io|github\/stars/);
-const bookPreview = await readFile(new URL('../front/components/DoubanBookPreview.vue', import.meta.url), 'utf8');
-const moviePreview = await readFile(new URL('../front/components/DoubanMoviePreview.vue', import.meta.url), 'utf8');
+const bookPreview = await readFile(new URL('../../front/components/DoubanBookPreview.vue', import.meta.url), 'utf8');
+const moviePreview = await readFile(new URL('../../front/components/DoubanMoviePreview.vue', import.meta.url), 'utf8');
 assert.match(bookPreview, /douban-cover/);
 assert.match(moviePreview, /douban-cover/);
-const about = await readFile(new URL('../front/pages/about.vue', import.meta.url), 'utf8');
-const timeline = await readFile(new URL('../front/components/TimelineList.vue', import.meta.url), 'utf8');
-const userTimeline = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
-const tagTimeline = await readFile(new URL('../front/pages/tags/[username]/[tag].vue', import.meta.url), 'utf8');
-const calendar = await readFile(new URL('../front/pages/user/calendar.vue', import.meta.url), 'utf8');
+const about = await readFile(new URL('../../front/pages/about.vue', import.meta.url), 'utf8');
+const timeline = await readFile(new URL('../../front/components/TimelineList.vue', import.meta.url), 'utf8');
+const userTimeline = await readFile(new URL('../../front/pages/user/[id].vue', import.meta.url), 'utf8');
+const tagTimeline = await readFile(new URL('../../front/pages/tags/[username]/[tag].vue', import.meta.url), 'utf8');
+const calendar = await readFile(new URL('../../front/pages/user/calendar.vue', import.meta.url), 'utf8');
 // 翻页回归：首页、用户页、标签页、日历页必须防止并发重复请求，失败不提前推进页码，旧 reload 结果不能覆盖新状态。
-const memoDetailForBus = await readFile(new URL('../front/pages/memo/[id].vue', import.meta.url), 'utf8');
-const editPage = await readFile(new URL('../front/pages/edit/[id].vue', import.meta.url), 'utf8');
-const indexPageForBus = await readFile(new URL('../front/pages/index.vue', import.meta.url), 'utf8');
+const memoDetailForBus = await readFile(new URL('../../front/pages/memo/[id].vue', import.meta.url), 'utf8');
+const editPage = await readFile(new URL('../../front/pages/edit/[id].vue', import.meta.url), 'utf8');
+const indexPageForBus = await readFile(new URL('../../front/pages/index.vue', import.meta.url), 'utf8');
 // 事件总线回归：所有注册的监听必须保存取消函数，并在页面卸载时移除。
 for (const page of [indexPageForBus, userTimeline, tagTimeline, calendar, memoDetailForBus]) {
   const reloadSubscriptions = (page.match(/memoReloadEvent\.on/g) || []).length;
@@ -69,8 +69,8 @@ for (const page of [indexPageForBus, userTimeline, tagTimeline, calendar]) {
   assert.match(page, /incoming\.filter\(memo => !existing\.has\(memo\.id\)\)/);
   assert.match(page, /if \(generation !== requestGeneration\) return/);
 }
-const music = await readFile(new URL('../front/components/Music.vue', import.meta.url), 'utf8');
-const musicPreview = await readFile(new URL('../front/components/MusicPreview.vue', import.meta.url), 'utf8');
+const music = await readFile(new URL('../../front/components/Music.vue', import.meta.url), 'utf8');
+const musicPreview = await readFile(new URL('../../front/components/MusicPreview.vue', import.meta.url), 'utf8');
 assert.match(about, /markdownit\(\{ html: true/);
 assert.match(about, /enableAbout/);
 assert.match(timeline, /朋友圈时间轴/);
@@ -93,12 +93,12 @@ assert.match(musicPreview, /lrcType: props\.lrc \? 2 : 0/);
 assert.match(musicPreview, /lrc: props\.lrc \|\| ''/);
 assert.match(music, /overflow-y-auto/);
 assert.doesNotMatch(musicPreview, /\{\{ lrc \|\| '' \}\}/);
-const layoutDefault = await readFile(new URL('../front/layouts/default.vue', import.meta.url), 'utf8');
+const layoutDefault = await readFile(new URL('../../front/layouts/default.vue', import.meta.url), 'utf8');
 assert.match(layoutDefault, /runCustomJs/);
 assert.match(layoutDefault, /router\.afterEach/);
 assert.doesNotMatch(layoutDefault, /innerHTML: sysConfigVO\.js/);
-const migrationPage = await readFile(new URL('../front/pages/sys/migration.vue', import.meta.url), 'utf8');
-const migrationScript = await readFile(new URL('../scripts/migrate/build-package.py', import.meta.url), 'utf8');
+const migrationPage = await readFile(new URL('../../front/pages/sys/migration.vue', import.meta.url), 'utf8');
+const migrationScript = await readFile(new URL('../../scripts/migrate/build-package.py', import.meta.url), 'utf8');
 assert.match(migrationPage, /一键导入/);
 assert.match(migrationPage, /DecompressionStream/);
 assert.match(migrationPage, /\/admin\/migration\/preflight/);
@@ -107,13 +107,13 @@ assert.match(migrationPage, /uploadFile\(file/);
 assert.match(migrationScript, /moments-cf-migration/);
 assert.match(migrationScript, /packageId/);
 assert.match(migrationScript, /row\.pop\("password"/);
-const upload = await readFile(new URL('../front/utils/upload.ts', import.meta.url), 'utf8');
+const upload = await readFile(new URL('../../front/utils/upload.ts', import.meta.url), 'utf8');
 assert.match(upload, /500 \* 1024 \* 1024/);
 assert.match(upload, /imageThumbnail/);
 assert.match(upload, /\/file\/direct\/init/);
 assert.match(upload, /\/file\/exist\?sha256=/);
 
-const source = await readFile(new URL('../worker/src/index.js', import.meta.url), 'utf8');
+const source = await readFile(new URL('../../worker/src/index.js', import.meta.url), 'utf8');
 assert.match(source, /\/api\/admin\/backup\/export/);
 assert.match(source, /enableD1Backup === false/);
 assert.match(source, /sendTelegram/);
@@ -122,18 +122,18 @@ assert.match(source, /enableTelegram === true/);
 assert.match(settings, /Telegram 评论通知/);
 assert.match(settings, /telegramBotToken/);
 assert.match(settings, /telegramBotUsername/);
-const userSettings = await readFile(new URL('../front/pages/user/settings.vue', import.meta.url), 'utf8');
+const userSettings = await readFile(new URL('../../front/pages/user/settings.vue', import.meta.url), 'utf8');
 // 登录态持久化回归：global 的 get 必须直接返回 storage.value 引用，
 // 否则属性赋值不会触发 useStorage deep watch 写回 localStorage，刷新后登录态丢失。
-const storeSource = await readFile(new URL('../front/store.ts', import.meta.url), 'utf8');
+const storeSource = await readFile(new URL('../../front/store.ts', import.meta.url), 'utf8');
 assert.match(storeSource, /get: \(\) => \{\s*const value = storage\.value/);
 assert.doesNotMatch(storeSource, /get: \(\) => \(\{ userinfo: \{\}, \.\.\.\(storage\.value/);
 assert.match(userSettings, /Telegram User ID/);
 // 静态 SEO meta：爬虫（Bing）不执行 JS，index.html 必须预置 description/title/og
-const siteConfig = await readFile(new URL('../front/site.config.ts', import.meta.url), 'utf8');
+const siteConfig = await readFile(new URL('../../front/site.config.ts', import.meta.url), 'utf8');
 assert.match(siteConfig, /description: '极简朋友圈 - 记录生活的每个瞬间/);
 assert.match(siteConfig, /title: '极简朋友圈'/);
-const nuxtConfig = await readFile(new URL('../front/nuxt.config.ts', import.meta.url), 'utf8');
+const nuxtConfig = await readFile(new URL('../../front/nuxt.config.ts', import.meta.url), 'utf8');
 assert.match(nuxtConfig, /import site from '\.\/site\.config'/);
 assert.match(nuxtConfig, /name: "description", content: site\.description/);
 assert.match(nuxtConfig, /title: site\.title/);
@@ -150,7 +150,7 @@ assert.match(source, /\/api\/user\/status\/clear/);
 assert.match(source, /\/api\/user\/status\/get/);
 assert.match(source, /BUILTIN_STATUSES/);
 assert.match(source, /attachStatuses/);
-const statusIcon = await readFile(new URL('../front/components/StatusIcon.vue', import.meta.url), 'utf8');
+const statusIcon = await readFile(new URL('../../front/components/StatusIcon.vue', import.meta.url), 'utf8');
 assert.match(statusIcon, /美滋滋/);
 assert.match(statusIcon, /摸鱼/);
 assert.match(statusIcon, /持续时间/);
@@ -197,19 +197,19 @@ assert.match(source, /passwordHash\(randomToken\(32\)\)/);
 assert.match(source, /const keys = \['title','favicon'/);
 assert.match(source, /mode: 'direct'/);
 assert.doesNotMatch(source, /openApiDocument|openApiHtml|\/openapi\.json/);
-const captcha = await readFile(new URL('../front/composables/useHumanVerification.ts', import.meta.url), 'utf8');
+const captcha = await readFile(new URL('../../front/composables/useHumanVerification.ts', import.meta.url), 'utf8');
 assert.match(captcha, /enableTurnstile/);
 assert.match(captcha, /turnstileToken/);
 assert.match(captcha, /interaction-only/);
 assert.match(captcha, /role', 'dialog/);
 
-const backendMain = await readFile(new URL('../backend/main.go', import.meta.url), 'utf8');
-const backendRouter = await readFile(new URL('../backend/router.go', import.meta.url), 'utf8');
-const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+const backendMain = await readFile(new URL('../../backend/main.go', import.meta.url), 'utf8');
+const backendRouter = await readFile(new URL('../../backend/router.go', import.meta.url), 'utf8');
+const readme = await readFile(new URL('../../README.md', import.meta.url), 'utf8');
 assert.doesNotMatch(backendMain + backendRouter, /swagger|echoSwagger|\/docs/i);
 assert.match(readme, /## API 使用说明/);
 assert.match(readme, /\/api\/memo\/list/);
-const template = await readFile(new URL('../worker/wrangler.toml.template', import.meta.url), 'utf8');
+const template = await readFile(new URL('../../worker/wrangler.toml.template', import.meta.url), 'utf8');
 assert.match(template, /crons = \["0 3 \* \* SUN"\]/);
 assert.match(template, /R2_BUCKET_NAME/);
 assert.match(template, /binding = "ASSETS"/);
@@ -217,8 +217,8 @@ assert.match(source, /sitemap\.xml/);
 assert.match(source, /robots\.txt/);
 assert.match(source, /urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9"/);
 assert.match(layoutDefault, /og:site_name/);
-const gitEditor = await readFile(new URL('../front/components/GitEmbed.vue', import.meta.url), 'utf8');
-const gitPreview = await readFile(new URL('../front/components/GitPreview.vue', import.meta.url), 'utf8');
+const gitEditor = await readFile(new URL('../../front/components/GitEmbed.vue', import.meta.url), 'utf8');
+const gitPreview = await readFile(new URL('../../front/components/GitPreview.vue', import.meta.url), 'utf8');
 assert.match(gitEditor, /GitHub、GitLab、Gitea、Forgejo、Codeberg/);
 assert.match(gitEditor, /嵌入 Git 仓库/);
 assert.match(gitEditor, /i-carbon-logo-github/);
@@ -235,13 +235,13 @@ assert.match(gitPreview, /stateClass/);
 assert.match(gitPreview, /avatar/);
 assert.match(gitPreview, /noopener noreferrer/);
 assert.match(gitPreview, /providerLabel/);
-const typesSrc = await readFile(new URL('../front/types/index.ts', import.meta.url), 'utf8');
+const typesSrc = await readFile(new URL('../../front/types/index.ts', import.meta.url), 'utf8');
 assert.match(typesSrc, /itemTitle\?: string/);
 assert.match(typesSrc, /itemState\?: string/);
 assert.match(typesSrc, /itemDate\?: string/);
-const xEditor = await readFile(new URL('../front/components/XEmbed.vue', import.meta.url), 'utf8');
-const xPreview = await readFile(new URL('../front/components/XPreview.vue', import.meta.url), 'utf8');
-const memoEdit = await readFile(new URL('../front/components/MemoEdit.vue', import.meta.url), 'utf8');
+const xEditor = await readFile(new URL('../../front/components/XEmbed.vue', import.meta.url), 'utf8');
+const xPreview = await readFile(new URL('../../front/components/XPreview.vue', import.meta.url), 'utf8');
+const memoEdit = await readFile(new URL('../../front/components/MemoEdit.vue', import.meta.url), 'utf8');
 assert.match(xEditor, /x\.com 或 twitter\.com/);
 assert.match(xEditor, /\/memo\/preview/);
 assert.match(xEditor, /kind: 'x'/);
@@ -262,12 +262,12 @@ assert.match(memoEdit, /X 原帖将在发表时抓取/);
 assert.match(memoEdit, /Git 链接将在发表时抓取/);
 assert.match(memoEdit, /git-embed/);
 assert.match(memoEdit, /updateGit/);
-const memoComponent = await readFile(new URL('../front/components/Memo.vue', import.meta.url), 'utf8');
+const memoComponent = await readFile(new URL('../../front/components/Memo.vue', import.meta.url), 'utf8');
 assert.match(memoComponent, /try \{ return JSON\.parse\(props\.memo\.ext/);
 assert.match(memoComponent, /catch \{ return \{\} as ExtDTO/);
 assert.match(memoEdit, /try \{ return JSON\.parse\(res\.ext\) as ExtDTO \}/);
-const memoRefEditor = await readFile(new URL('../front/components/MemoRefEmbed.vue', import.meta.url), 'utf8');
-const memoRefPreview = await readFile(new URL('../front/components/MemoRefPreview.vue', import.meta.url), 'utf8');
+const memoRefEditor = await readFile(new URL('../../front/components/MemoRefEmbed.vue', import.meta.url), 'utf8');
+const memoRefPreview = await readFile(new URL('../../front/components/MemoRefPreview.vue', import.meta.url), 'utf8');
 assert.match(memoRefEditor, /引用站内动态/);
 assert.match(memoRefEditor, /\/memo\/preview/);
 assert.match(memoRefEditor, /kind: 'memo'/);
@@ -301,53 +301,53 @@ assert.match(source, /cdn\.syndication\.twimg\.com\/tweet-result/);
 assert.match(source, /serveXMedia/);
 assert.match(source, /url.pathname === '\/x-media'/);
 assert.doesNotMatch(source, /status\.d420\.de|healthyNitterInstances|CF-IPCountry|x\/embed\/resolve/);
-const memoDetail = await readFile(new URL('../front/pages/memo/[id].vue', import.meta.url), 'utf8');
+const memoDetail = await readFile(new URL('../../front/pages/memo/[id].vue', import.meta.url), 'utf8');
 assert.match(memoDetail, /og:image/);
 assert.match(memoDetail, /canonical/);
-const catchAll = await readFile(new URL('../front/pages/[...slug].vue', import.meta.url), 'utf8');
+const catchAll = await readFile(new URL('../../front/pages/[...slug].vue', import.meta.url), 'utf8');
 assert.match(catchAll, /页面不存在/);
 assert.doesNotMatch(catchAll, /isSeoPath|window\.location|sessionStorage|fetch\(raw\)/);
 assert.match(template, /run_worker_first = \["\/\*"\]/);
-const userDetail = await readFile(new URL('../front/pages/user/[id].vue', import.meta.url), 'utf8');
+const userDetail = await readFile(new URL('../../front/pages/user/[id].vue', import.meta.url), 'utf8');
 assert.match(userDetail, /watch\(profile/);
 assert.match(userDetail, /canonical/);
 
 // 友链入口在非友链页（关于页/系统页等）均应显示，不限于首页
-const headerNav = await readFile(new URL('../front/components/Header.vue', import.meta.url), 'utf8');
+const headerNav = await readFile(new URL('../../front/components/Header.vue', import.meta.url), 'utf8');
 assert.match(headerNav, /\$route\.path !== '\/friend'/, '桌面端友链入口应在非友链页显示');
-const mobileNav = await readFile(new URL('../front/components/MobileNav.vue', import.meta.url), 'utf8');
+const mobileNav = await readFile(new URL('../../front/components/MobileNav.vue', import.meta.url), 'utf8');
 assert.match(mobileNav, /\$route\.path !== '\/friend'/, '移动端友链入口应在非友链页显示');
 
 // 加载性能：并行 API、静态资源缓存、音乐按需、图片懒加载
 assert.match(source, /url\.pathname\.startsWith\('\/_nuxt\/'\)/, 'Worker 应对 _nuxt 构建产物设置缓存');
 assert.match(source, /max-age=31536000, immutable/, '构建产物应永久缓存');
 assert.match(layoutDefault, /Promise\.all\(\[\s*useMyFetch/, '首页 profile/sysConfig 应并行请求');
-const nuxtConfigSrc = await readFile(new URL('../front/nuxt.config.ts', import.meta.url), 'utf8');
+const nuxtConfigSrc = await readFile(new URL('../../front/nuxt.config.ts', import.meta.url), 'utf8');
 assert.doesNotMatch(nuxtConfigSrc, /APlayer|Meting/, '音乐库不应全局加载');
 assert.match(musicPreview, /loadMusicAssets/, '音乐组件应按需加载 APlayer/Meting');
 assert.match(musicPreview, /metingReady/, 'Meting 模式应等脚本就绪再渲染标签');
 assert.match(musicPreview, /mode === 'direct'/, '直链与 Meting 模式分流加载');
 assert.match(musicPreview, /loadMusicAssets/, '音乐组件应按需加载 APlayer/Meting');
-const uploadPreviewImg = await readFile(new URL('../front/components/UploadImagePreview.vue', import.meta.url), 'utf8');
+const uploadPreviewImg = await readFile(new URL('../../front/components/UploadImagePreview.vue', import.meta.url), 'utf8');
 assert.match(uploadPreviewImg, /loading="lazy"/, '动态图片应懒加载');
 assert.match(uploadPreviewImg, /@error="fallbackToOriginal\(\$event, imageConfig\.url\)"/, '缩略图失败应使用 Vue 事件回退');
 assert.match(uploadPreviewImg, /dataset\.fallbackApplied/, '图片回退应避免错误循环');
 assert.doesNotMatch(uploadPreviewImg, /:onerror=|javascript:this\.src/, '不得把图片 URL 拼入内联 JavaScript');
-const mdUtilsSrc = await readFile(new URL('../front/utils/index.ts', import.meta.url), 'utf8');
+const mdUtilsSrc = await readFile(new URL('../../front/utils/index.ts', import.meta.url), 'utf8');
 assert.match(mdUtilsSrc, /export function loadMusicAssets/, '应导出音乐资源按需加载函数');
 
 // 状态 emoji 与首页加载文案
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /Emoji v-if="emojiOpen"/, '自定义状态应支持 emoji 选择');
 assert.match(statusIcon, /customIcon/, '自定义状态应记录 emoji');
-const emojiComp = await readFile(new URL('../front/components/Emoji.vue', import.meta.url), 'utf8');
+const emojiComp = await readFile(new URL('../../front/components/Emoji.vue', import.meta.url), 'utf8');
 assert.match(emojiComp, /currentTarget.*textContent/s, 'Emoji 取值应使用 currentTarget+textContent');
 const externalLinkFiles = [
-  '../front/components/Comment.vue',
-  '../front/components/DoubanBookPreview.vue',
-  '../front/components/DoubanMoviePreview.vue',
-  '../front/components/ExternalUrlPreview.vue',
-  '../front/pages/friend.vue',
+  '../../front/components/Comment.vue',
+  '../../front/components/DoubanBookPreview.vue',
+  '../../front/components/DoubanMoviePreview.vue',
+  '../../front/components/ExternalUrlPreview.vue',
+  '../../front/pages/friend.vue',
 ];
 for (const path of externalLinkFiles) {
   const content = await readFile(new URL(path, import.meta.url), 'utf8');
@@ -355,7 +355,7 @@ for (const path of externalLinkFiles) {
     assert.match(link[0], /rel="noopener noreferrer"/, `${path} 的新窗口外链必须隔离 opener`);
   }
 }
-const commentBox = await readFile(new URL('../front/components/CommentBox.vue', import.meta.url), 'utf8');
+const commentBox = await readFile(new URL('../../front/components/CommentBox.vue', import.meta.url), 'utf8');
 assert.match(commentBox, /localCommentUserinfo\.value = \{/);
 assert.doesNotMatch(commentBox, /state\.username = ''|state\.website = ''|state\.email = ''/, '匿名评论成功后应保留已记住的身份字段');
 assert.match(commentBox, /state\.content = ''/, '评论成功后仍应清空正文');

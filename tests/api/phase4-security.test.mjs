@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import worker, { validHttpUrl, forbiddenHost } from '../worker/src/index.js';
+import worker, { validHttpUrl, forbiddenHost } from '../../worker/src/index.js';
 
 assert.equal(validHttpUrl('https://example.com')?.hostname, 'example.com');
 assert.equal(validHttpUrl('javascript:alert(1)'), null);
@@ -14,7 +14,7 @@ const assets = { fetch: async () => new Response('asset') };
 const authUser = { id: 1, username: 'admin', nickname: '管理员', token_version: 0 };
 const authDb = { prepare(sql) { return { bind() { return this; }, async first() { return sql.startsWith('SELECT * FROM users WHERE id') ? authUser : null; } }; } };
 const now = Math.floor(Date.now() / 1000);
-const signed = await (await import('../worker/src/index.js')).signJwt({ sub: '1', tv: 0, exp: now + 60 }, 'security-secret');
+const signed = await (await import('../../worker/src/index.js')).signJwt({ sub: '1', tv: 0, exp: now + 60 }, 'security-secret');
 const authEnv = { ASSETS: assets, DB: authDb, JWT_SECRET: 'security-secret' };
 const anonymous = await worker.fetch(new Request('https://moments.example/api/memo/getFaviconAndTitle?url=https%3A%2F%2Fexample.com', { method: 'POST' }), { ASSETS: assets, DB: authDb, JWT_SECRET: 'security-secret' });
 assert.equal(anonymous.status, 401);

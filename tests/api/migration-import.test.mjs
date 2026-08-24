@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { migrationFinish, migrationImport, migrationPreflight, migrationPrepare, passwordHash, previewUnfurl, signJwt } from '../worker/src/index.js';
-import worker from '../worker/src/index.js';
+import { migrationFinish, migrationImport, migrationPreflight, migrationPrepare, passwordHash, previewUnfurl, signJwt } from '../../worker/src/index.js';
+import worker from '../../worker/src/index.js';
 
 const secret = 'migration-test-secret-at-least-sixteen-characters';
 const packageId = 'a'.repeat(64);

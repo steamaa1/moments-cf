@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const photos = await readFile(new URL('../front/pages/photos.vue', import.meta.url), 'utf8');
-const header = await readFile(new URL('../front/components/Header.vue', import.meta.url), 'utf8');
-const layout = await readFile(new URL('../front/layouts/default.vue', import.meta.url), 'utf8');
-const fancybox = await readFile(new URL('../front/components/MyFancyBox.vue', import.meta.url), 'utf8');
+const photos = await readFile(new URL('../../front/pages/photos.vue', import.meta.url), 'utf8');
+const header = await readFile(new URL('../../front/components/Header.vue', import.meta.url), 'utf8');
+const layout = await readFile(new URL('../../front/layouts/default.vue', import.meta.url), 'utf8');
+const fancybox = await readFile(new URL('../../front/components/MyFancyBox.vue', import.meta.url), 'utf8');
 
 assert.match(photos, /global\?\.value\?\.userinfo \?\? \{\}/, '照片墙必须安全读取全局登录状态');
 assert.match(photos, />照片管理</, '管理员必须有明确的照片管理按钮');
@@ -31,7 +31,7 @@ assert.doesNotMatch(photos, /featuredMemoId/, '精选不得要求手填动态 ID
 assert.match(photos, /\/photo\/all/, '精选选择器必须从全部图片接口加载');
 assert.match(fancybox, /onUpdated\(\(\) => nextTick\(bindGallery\)\)/, 'Fancybox 必须在图集展开后绑定新增图片');
 
-const albumPage = await readFile(new URL('../front/pages/photos/album/[id].vue', import.meta.url), 'utf8');
+const albumPage = await readFile(new URL('../../front/pages/photos/album/[id].vue', import.meta.url), 'utf8');
 assert.match(photos, /guard < 100/, '查看全部必须有分页安全上限，防止接口异常导致死循环');
 assert.match(photos, /fresh\.length > 0/, '查看全部必须在无新数据时停止，防止重复数据死循环');
 assert.match(albumPage, /requestGeneration/, '图集详情必须有请求代际保护，防止路由切换竞态');
