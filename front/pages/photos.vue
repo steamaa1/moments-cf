@@ -99,13 +99,14 @@
         </div>
 
         <form class="admin-section" @submit.prevent="savePhoto">
-          <div><h3>添加照片</h3><p class="muted">选择图集和图片后保存。</p></div>
+          <div><h3>添加照片</h3><p class="muted">选择图集后，上传本地图片或填写图片直链保存，两者可混用。</p></div>
           <UFormGroup label="图集" required>
             <USelectMenu v-model="uploadAlbumId" :options="uploadAlbumOptions" value-attribute="value" option-attribute="label" placeholder="选择图集" />
           </UFormGroup>
-          <UFormGroup label="图片" required><UInput type="file" accept="image/*" multiple @change="selectPhoto" /></UFormGroup>
+          <UFormGroup label="本地图片"><UInput type="file" accept="image/*" multiple @change="selectPhoto" /></UFormGroup>
+          <UFormGroup label="图片直链"><UTextarea v-model="uploadDirectUrls" :rows="2" placeholder="每行一个图片直链，如 https://example.com/a.jpg，可与本地图片混用" /></UFormGroup>
           <UFormGroup label="说明"><UInput v-model="uploadCaption" maxlength="200" placeholder="可选" /></UFormGroup>
-          <div class="modal-actions"><UButton type="submit" icon="i-carbon-save" :loading="photoSaving" :disabled="!uploadAlbumId || !uploadFiles?.length">保存照片</UButton></div>
+          <div class="modal-actions"><UButton type="submit" icon="i-carbon-save" :loading="photoSaving" :disabled="!uploadAlbumId || (!uploadFiles?.length && !directUrlList.length)">保存照片</UButton></div>
         </form>
 
         <form class="admin-section" @submit.prevent="saveAlbum">
@@ -178,6 +179,8 @@ const albumStates = reactive<Record<number, AlbumViewState>>({})
 const showAdmin = ref(false)
 const uploadAlbumId = ref<number>()
 const uploadFiles = ref<FileList | null>(null)
+const uploadDirectUrls = ref('')
+const directUrlList = computed(() => uploadDirectUrls.value.split(/[\n,，;；\s]+/).map(item => item.trim()).filter(Boolean))
 const uploadCaption = ref('')
 const photoSaving = ref(false)
 const albumSaving = ref(false)
@@ -276,15 +279,20 @@ const selectPhoto = (value: FileList | Event) => {
 }
 
 const savePhoto = async () => {
-  if (!uploadAlbumId.value || !uploadFiles.value?.length) return toast.warning('请选择图集和图片')
+  if (!uploadAlbumId.value) return toast.warning('请选择图集')
+  if (!uploadFiles.value?.length && !directUrlList.value.length) return toast.warning('请选择本地图片或填写图片直链')
+  const invalid = directUrlList.value.find(item => !/^https?:\/\//i.test(item))
+  if (invalid) return toast.warning(`图片直链格式无效：${invalid}`)
   photoSaving.value = true
   try {
-    const urls = await useUpload(uploadFiles.value)
-    for (const url of urls || []) {
+    const urls = uploadFiles.value?.length ? await useUpload(uploadFiles.value) : []
+    const all = [...(urls || []), ...directUrlList.value]
+    for (const url of all) {
       await useMyFetch('/admin/photo/album/add', { albumId: uploadAlbumId.value, url, caption: uploadCaption.value })
     }
     toast.success('照片已保存')
     uploadFiles.value = null
+    uploadDirectUrls.value = ''
     uploadCaption.value = ''
     await loadWall()
   } catch (error: any) {
