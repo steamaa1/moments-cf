@@ -144,6 +144,7 @@ export type SysConfigVO = {
     smtpEncryption: 'ssl' | 'tls',
     smtpPort: '465' | '587',
     smtpUsername: string,
+    smtpFromName?: string,
     smtpPassword?: string,
     smtpPasswordConfigured: boolean,
     enableAbout: boolean,

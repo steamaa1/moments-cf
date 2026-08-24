@@ -59,6 +59,7 @@ const DEFAULT_CONFIG = {
   smtpPort: '465',
   smtpEncryption: 'ssl',
   smtpUsername: '',
+  smtpFromName: '',
   smtpPasswordEncrypted: '',
   s3: { thumbnailSuffix: '' },
 };
@@ -371,6 +372,7 @@ async function saveConfig(request, env, headers) {
   config.smtpPort = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : '465';
   config.smtpEncryption = ['ssl', 'tls'].includes(body.smtpEncryption) ? String(body.smtpEncryption) : (String(config.smtpPort) === '587' ? 'tls' : 'ssl');
   config.smtpUsername = String(body.smtpUsername || '').trim().slice(0, 254);
+  config.smtpFromName = String(body.smtpFromName || '').trim().slice(0, 80);
   config.googleSecretKey = String(body.googleSecretKey || previousConfig.googleSecretKey || '').trim().slice(0, 300);
   config.enableTurnstile = Boolean(body.enableTurnstile);
   config.turnstileSiteKey = String(body.turnstileSiteKey || '').trim().slice(0, 200);
@@ -1656,7 +1658,7 @@ async function addComment(request, env, headers, ctx) {
     // 非回复场景的通知对象即作者本人：作者自评时跳过，避免通知自己。
     if (target && config.smtpUsername && !(!replyTo && selfComment)) {
       const email = buildCommentEmail({ title: config.title, host: new URL(request.url).origin, poster: replyTo || owner.nickname, commenter: username || '匿名用户', content, memoId: memo.id, createdAt: new Date().toISOString().slice(0,19).replace('T',' ') });
-      const message = { from: config.smtpUsername, to: target, ...email };
+      const message = { from: mailFrom(config.smtpUsername, config.smtpFromName), to: target, ...email };
       let mailCredential = '';
       try { mailCredential = config.smtpPasswordEncrypted ? await decryptConfigSecret(config.smtpPasswordEncrypted, env.JWT_SECRET) : ''; }
       catch (error) { console.error('Mail credential decrypt failed', error); }
@@ -1864,7 +1866,7 @@ async function notifyAdminNewRegistration(env, config, { username, email, reason
     let mailCredential = '';
     try { mailCredential = config.smtpPasswordEncrypted ? await decryptConfigSecret(config.smtpPasswordEncrypted, env.JWT_SECRET) : ''; } catch (error) { console.error('Mail credential decrypt failed', error); }
     try {
-      await sendNotification(env, { ...config, mailCredential }, { from: config.smtpUsername, to: admin.email, subject, html: `<p>${escapeXml(text).replace(/\n/g, '<br>')}</p>`, text });
+      await sendNotification(env, { ...config, mailCredential }, { from: mailFrom(config.smtpUsername, config.smtpFromName), to: admin.email, subject, html: `<p>${escapeXml(text).replace(/\n/g, '<br>')}</p>`, text });
       return;
     } catch (error) { errors.push(`Email: ${error.message}`); }
   }
@@ -1882,7 +1884,7 @@ async function notifyUserRegistrationApproved(env, config, user) {
   const text = `${user.username}，您好！\n您的注册申请已通过审批，现在可以登录 ${title} 了。`;
   let mailCredential = '';
   try { mailCredential = config.smtpPasswordEncrypted ? await decryptConfigSecret(config.smtpPasswordEncrypted, env.JWT_SECRET) : ''; } catch (error) { console.error('Mail credential decrypt failed', error); }
-  await sendNotification(env, { ...config, mailCredential }, { from: config.smtpUsername, to: user.email, subject, html: `<p>${escapeXml(text).replace(/\n/g, '<br>')}</p>`, text });
+  await sendNotification(env, { ...config, mailCredential }, { from: mailFrom(config.smtpUsername, config.smtpFromName), to: user.email, subject, html: `<p>${escapeXml(text).replace(/\n/g, '<br>')}</p>`, text });
 }
 async function externalInfo(request, env, headers) {
   const access = await requireUser(request, env, headers);
@@ -1951,6 +1953,20 @@ async function backupRestore(request, env, headers) {
   return json(ok(await restoreD1Backup(env, key, {}, storageConfig.backupTarget, storageConfig)), 200, headers);
 }
 
+// 构造邮件 From：带发件人名称时编码为 RFC2047（非 ASCII 名称可被 SMTP/Resend 正常解析）
+function encodeFromName(value) {
+  const name = String(value || '').trim();
+  if (!name) return '';
+  if (/^[\x20-\x7E]+$/.test(name)) return name;
+  let binary = ''; for (const byte of new TextEncoder().encode(name)) binary += String.fromCharCode(byte);
+  return `=?UTF-8?B?${btoa(binary)}?=`;
+}
+function mailFrom(email, name) {
+  const from = String(email || '').trim();
+  const display = encodeFromName(name);
+  return display ? `${display} <${from}>` : from;
+}
+
 // 发送测试邮件：用当前表单填写的 SMTP/Resend 配置（与本接口同 body 传输，未保存也能先测）
 async function adminMailTest(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
@@ -1967,7 +1983,7 @@ async function adminMailTest(request, env, headers) {
   if (!password && saved.smtpPasswordEncrypted) { try { password = await decryptConfigSecret(saved.smtpPasswordEncrypted, env.JWT_SECRET); } catch (error) { console.error('Mail credential decrypt failed', error); } }
   if (!password) password = String(env.SMTP_PASSWORD || '').trim();
   if (!password) return json(fail('请填写 SMTP 密码 / 授权码（或以 re_ 开头的 Resend API Key）'), 400, headers);
-  const message = { from: username, to, subject: '【测试邮件】邮件通知配置验证', html: '<p style="font-family:system-ui">这是一封测试邮件，说明你的评论邮件通知配置可用，无需回复。</p>', text: '这是一封测试邮件，说明你的评论邮件通知配置可用，无需回复。' };
+  const message = { from: mailFrom(username, body.smtpFromName || saved.smtpFromName), to, subject: '【测试邮件】邮件通知配置验证', html: '<p style="font-family:system-ui">这是一封测试邮件，说明你的评论邮件通知配置可用，无需回复。</p>', text: '这是一封测试邮件，说明你的评论邮件通知配置可用，无需回复。' };
   try {
     if (password.startsWith('re_')) {
       await sendResend(password, message);

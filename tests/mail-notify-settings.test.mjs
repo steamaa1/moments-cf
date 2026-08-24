@@ -63,17 +63,32 @@ assert.equal(captured[captured.length - 1].extra.secureTransport, 'starttls', '�
 res = await post('/api/admin/mail/test', { to: 'a@b.com', smtpHost: 'smtp.example.com', smtpPort: '465', smtpEncryption: 'ssl', smtpUsername: 'noreply@example.com', smtpPassword: 'secret' }, { connectSockets: connectImpl });
 assert.equal(res.status, 400); assert.match((await res.json()).message, /邮件测试发送失败/);
 
-// 8) Resend 直发成功：re_ 开头凭据走 sendResend
+// 8) Resend 直发成功：re_ 开头凭据走 sendResend；发件人名称拼入 from（RFC2047 编码）
 const calls = [];
 const prevFetch = globalThis.fetch;
 globalThis.fetch = async (url, init = {}) => { calls.push({ url: String(url), init }); return new Response('{}', { status: 200 }); };
 try {
-  res = await post('/api/admin/mail/test', { to: 'a@b.com', smtpUsername: 'noreply@example.com', smtpPassword: 're_testkey' });
+  res = await post('/api/admin/mail/test', { to: 'a@b.com', smtpUsername: 'noreply@example.com', smtpFromName: '极简朋友圈', smtpPassword: 're_testkey' });
   const body = await res.json();
   assert.equal(res.status, 200); assert.equal(body.data.provider, 'resend');
-  assert.ok(calls.some(c => c.url.startsWith('https://api.resend.com/')));
+  const resendCall = calls.find(c => c.url.startsWith('https://api.resend.com/'));
+  assert.ok(resendCall, '应调用 Resend API');
+  const sentBody = JSON.parse(resendCall.init.body);
+  assert.ok(sentBody.from.includes('noreply@example.com'), 'from 应包含发件邮箱');
+  assert.match(sentBody.from, /=?UTF-8?B?/, '非 ASCII 发件人名称应 RFC2047 编码');
 } finally {
   globalThis.fetch = prevFetch;
+}
+
+// 9) 未填发件人名称时 from 保持纯邮箱
+const calls2 = [];
+const prevFetch2 = globalThis.fetch;
+globalThis.fetch = async (url, init) => { calls2.push({ url: String(url), init }); return new Response('{}', { status: 200 }); };
+try {
+  await post('/api/admin/mail/test', { to: 'a@b.com', smtpUsername: 'noreply@example.com', smtpPassword: 're_testkey2' });
+  assert.equal(JSON.parse(calls2[0].init.body).from, 'noreply@example.com', '无名称时 from 应为纯邮箱');
+} finally {
+  globalThis.fetch = prevFetch2;
 }
 
 console.log('Mail notify settings tests: PASS');

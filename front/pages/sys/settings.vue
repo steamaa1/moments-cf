@@ -113,14 +113,14 @@
           <USelectMenu v-model="state.smtpEncryption" :options="[{label:'SSL（端口 465）',value:'ssl'},{label:'TLS（端口 587）',value:'tls'}]" value-attribute="value" option-attribute="label"/>
         </UFormGroup>
         <UFormGroup label="服务器"><UInput v-model="state.smtpHost" placeholder="smtp.example.com"/></UFormGroup>
-        <UFormGroup label="用户名（即发件邮箱）"><UInput v-model="state.smtpUsername" type="email" placeholder="noreply@example.com"/></UFormGroup>
+        <UFormGroup label="发件人名称"><UInput v-model="state.smtpFromName" maxlength="80" placeholder="可选，如：极简朋友圈"/></UFormGroup>
+        <UFormGroup label="发件邮箱（SMTP 用户名）"><UInput v-model="state.smtpUsername" type="email" placeholder="noreply@example.com"/></UFormGroup>
         <UFormGroup label="密码 / 授权码"><UInput v-model="state.smtpPassword" type="password" autocomplete="new-password" :placeholder="state.smtpPasswordConfigured ? '已配置，留空保持不变' : 'SMTP 授权码或 re_ 开头的 Resend API Key'"/></UFormGroup>
-        <UFormGroup label="发送测试邮件">
+        <UFormGroup label="发送测试邮件" help="使用当前填写的 SMTP / Resend 配置（密码留空时用已保存的）向该邮箱发送验证邮件。">
           <div class="flex gap-2">
             <UInput v-model="mailTestTo" class="min-w-0 flex-1" type="email" placeholder="收件邮箱，如 admin@example.com"/>
             <UButton :loading="mailTestLoading" :disabled="!mailTestTo" @click="sendMailTest">发送测试</UButton>
           </div>
-          <p class="text-xs text-gray-500">使用当前填写的 SMTP / Resend 配置（密码留空时用已保存的）向该邮箱发送验证邮件。</p>
         </UFormGroup>
       </div>
     </div>
@@ -316,6 +316,7 @@ const state = reactive({
   smtpPort: "465" as '465' | '587',
   smtpEncryption: "ssl" as 'ssl' | 'tls',
   smtpUsername: "",
+  smtpFromName: "",
   smtpPassword: "",
   smtpPasswordConfigured: false,
 })
@@ -388,7 +389,7 @@ const sendMailTest = async () => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return toast.error('收件邮箱格式不正确')
   mailTestLoading.value = true
   try {
-    await useMyFetch('/admin/mail/test', { to, smtpHost: state.smtpHost, smtpPort: state.smtpPort, smtpEncryption: state.smtpEncryption, smtpUsername: state.smtpUsername, smtpPassword: state.smtpPassword })
+    await useMyFetch('/admin/mail/test', { to, smtpHost: state.smtpHost, smtpPort: state.smtpPort, smtpEncryption: state.smtpEncryption, smtpUsername: state.smtpUsername, smtpFromName: state.smtpFromName, smtpPassword: state.smtpPassword })
     toast.success('测试邮件已发送，请检查收件箱')
   } catch (error: any) {
     toast.error(error?.message || '测试邮件发送失败')
