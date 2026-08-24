@@ -193,7 +193,7 @@ export async function sendSmtp(config, message, connectImpl) {
   const port = Number(config.port);
   if (![465, 587].includes(port)) throw new Error('SMTP 仅允许 465 或 587 端口');
   const encryption = config.encryption || (port === 465 ? 'ssl' : 'tls');
-  const socket = connectImpl({ hostname: config.host, port }, { secureTransport: encryption === 'ssl' ? 'use' : 'starttls', allowHalfOpen: false });
+  const socket = connectImpl({ hostname: config.host, port }, { secureTransport: encryption === 'ssl' ? 'on' : 'starttls', allowHalfOpen: false });
   return smtpSession(socket, config, message, encryption === 'tls');
 }
 export async function sendResend(apiKey, message, fetchImpl = fetch) {

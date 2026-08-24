@@ -49,7 +49,7 @@ assert.equal(res.status, 400); assert.match((await res.json()).message, /密码/
 
 // 4) SSL（端口 465）→ secureTransport 'use'
 res = await post('/api/admin/mail/test', { to: 'a@b.com', smtpHost: 'smtp.example.com', smtpPort: '465', smtpEncryption: 'ssl', smtpUsername: 'noreply@example.com', smtpPassword: 'secret' }, { connectSockets: connectImpl });
-assert.equal(captured[captured.length - 1].extra.secureTransport, 'use', 'SSL 应使用隐式 TLS');
+assert.equal(captured[captured.length - 1].extra.secureTransport, 'on', 'SSL 应使用隐式 TLS（secureTransport=on）');
 
 // 5) TLS（端口 587）→ secureTransport 'starttls'
 res = await post('/api/admin/mail/test', { to: 'a@b.com', smtpHost: 'smtp.example.com', smtpPort: '587', smtpEncryption: 'tls', smtpUsername: 'noreply@example.com', smtpPassword: 'secret' }, { connectSockets: connectImpl });
