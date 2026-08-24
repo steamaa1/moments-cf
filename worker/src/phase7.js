@@ -192,8 +192,9 @@ export async function sendSmtp(config, message, connectImpl) {
   if (!connectImpl) ({ connect: connectImpl } = await import('cloudflare:sockets'));
   const port = Number(config.port);
   if (![465, 587].includes(port)) throw new Error('SMTP 仅允许 465 或 587 端口');
-  const socket = connectImpl({ hostname: config.host, port }, { secureTransport: port === 465 ? 'use' : 'starttls', allowHalfOpen: false });
-  return smtpSession(socket, config, message, port === 587);
+  const encryption = config.encryption || (port === 465 ? 'ssl' : 'tls');
+  const socket = connectImpl({ hostname: config.host, port }, { secureTransport: encryption === 'ssl' ? 'use' : 'starttls', allowHalfOpen: false });
+  return smtpSession(socket, config, message, encryption === 'tls');
 }
 export async function sendResend(apiKey, message, fetchImpl = fetch) {
   if (!apiKey) throw new Error('RESEND_API_KEY 未配置');
@@ -217,7 +218,7 @@ export async function sendNotification(env, config, message, dependencies = {}) 
   const resendKey = credential.startsWith('re_') ? credential : env.RESEND_API_KEY;
   const smtpPassword = credential && !credential.startsWith('re_') ? credential : env.SMTP_PASSWORD;
   if (config.smtpHost && config.smtpUsername && smtpPassword) {
-    try { await sendSmtp({ host: config.smtpHost, port: config.smtpPort || '465', username: config.smtpUsername, password: smtpPassword }, message, dependencies.connect); return { provider: 'smtp' }; }
+    try { await sendSmtp({ host: config.smtpHost, port: config.smtpPort || '465', username: config.smtpUsername, password: smtpPassword, encryption: config.smtpEncryption }, message, dependencies.connect); return { provider: 'smtp' }; }
     catch (error) { errors.push(`SMTP: ${error.message}`); }
   }
   try { await sendResend(resendKey, message, dependencies.fetch || fetch); return { provider: 'resend', fallback: errors.length > 0 }; }

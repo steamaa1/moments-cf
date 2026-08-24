@@ -3,6 +3,7 @@ import {
   sendNotification, createD1Backup, listBackups, restoreD1Backup, renderRssDescription,
   encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
   startD1Export, pollD1Export, storeD1Backup, sendTelegram,
+  sendSmtp, sendResend,
 } from './phase7.js';
 import { storageBackend } from './storage.js';
 /**
@@ -56,6 +57,7 @@ const DEFAULT_CONFIG = {
   enableEmail: false,
   smtpHost: '',
   smtpPort: '465',
+  smtpEncryption: 'ssl',
   smtpUsername: '',
   smtpPasswordEncrypted: '',
   s3: { thumbnailSuffix: '' },
@@ -367,6 +369,7 @@ async function saveConfig(request, env, headers) {
   config.enableEmail = Boolean(body.enableEmail);
   config.smtpHost = String(body.smtpHost || '').trim().slice(0, 253);
   config.smtpPort = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : '465';
+  config.smtpEncryption = ['ssl', 'tls'].includes(body.smtpEncryption) ? String(body.smtpEncryption) : (String(config.smtpPort) === '587' ? 'tls' : 'ssl');
   config.smtpUsername = String(body.smtpUsername || '').trim().slice(0, 254);
   config.googleSecretKey = String(body.googleSecretKey || previousConfig.googleSecretKey || '').trim().slice(0, 300);
   config.enableTurnstile = Boolean(body.enableTurnstile);
@@ -1948,6 +1951,37 @@ async function backupRestore(request, env, headers) {
   return json(ok(await restoreD1Backup(env, key, {}, storageConfig.backupTarget, storageConfig)), 200, headers);
 }
 
+// 发送测试邮件：用当前表单填写的 SMTP/Resend 配置（与本接口同 body 传输，未保存也能先测）
+async function adminMailTest(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = (await readJson(request)) || {};
+  const to = String(body.to || '').trim().slice(0, 254);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return json(fail('收件邮箱格式错误'), 400, headers);
+  const saved = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
+  const username = String(body.smtpUsername || saved.smtpUsername || '').trim().slice(0, 254);
+  if (!username) return json(fail('请先填写发件邮箱（用户名）'), 400, headers);
+  const port = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : (['465', '587'].includes(String(saved.smtpPort)) ? String(saved.smtpPort) : '465');
+  const encryption = body.smtpEncryption === 'tls' ? 'tls' : (body.smtpEncryption === 'ssl' ? 'ssl' : (port === '587' ? 'tls' : 'ssl'));
+  let password = String(body.smtpPassword || '').trim();
+  if (!password && saved.smtpPasswordEncrypted) { try { password = await decryptConfigSecret(saved.smtpPasswordEncrypted, env.JWT_SECRET); } catch (error) { console.error('Mail credential decrypt failed', error); } }
+  if (!password) password = String(env.SMTP_PASSWORD || '').trim();
+  if (!password) return json(fail('请填写 SMTP 密码 / 授权码（或以 re_ 开头的 Resend API Key）'), 400, headers);
+  const message = { from: username, to, subject: '【测试邮件】邮件通知配置验证', html: '<p style="font-family:system-ui">这是一封测试邮件，说明你的评论邮件通知配置可用，无需回复。</p>', text: '这是一封测试邮件，说明你的评论邮件通知配置可用，无需回复。' };
+  try {
+    if (password.startsWith('re_')) {
+      await sendResend(password, message);
+      return json(ok({ provider: 'resend' }), 200, headers);
+    }
+    const host = String(body.smtpHost || saved.smtpHost || '').trim();
+    if (!host) return json(fail('请填写 SMTP 服务器'), 400, headers);
+    await sendSmtp({ host, port, username, password, encryption }, message, env.connectSockets);
+    return json(ok({ provider: 'smtp' }), 200, headers);
+  } catch (error) {
+    return json(fail(`邮件测试发送失败：${String(error?.message || error).slice(0, 300)}`), 400, headers);
+  }
+}
+
 async function statusSet(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
@@ -2345,6 +2379,7 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/admin/backup/create') return await backupCreate(request, env, headers);
     if (url.pathname === '/api/admin/backup/download') return await backupDownload(request, env, headers);
     if (url.pathname === '/api/admin/backup/restore') return await backupRestore(request, env, headers);
+    if (url.pathname === '/api/admin/mail/test') return await adminMailTest(request, env, headers);
 
     return json(fail('Cloudflare API migration endpoint not implemented yet', 404), 404, headers);
   } catch (error) {

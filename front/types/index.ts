@@ -141,6 +141,7 @@ export type SysConfigVO = {
     telegramBotToken?: string,
     telegramBotTokenConfigured?: boolean,
     smtpHost: string,
+    smtpEncryption: 'ssl' | 'tls',
     smtpPort: '465' | '587',
     smtpUsername: string,
     smtpPassword?: string,

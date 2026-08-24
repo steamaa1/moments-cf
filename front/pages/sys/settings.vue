@@ -107,13 +107,22 @@
         <p class="text-xs text-gray-500">启用后评论和点赞优先使用 Cloudflare Turnstile。</p>
       </template>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-      <div class="flex items-center justify-between"><div><p class="font-semibold">评论邮件通知</p><p class="text-xs text-gray-500">支持 SMTP 465/587；填入 re_ 开头的 Resend API Key 时使用 Resend。</p></div><UToggle v-model="state.enableEmail"/></div>
-      <template v-if="state.enableEmail">
+      <div class="flex items-center justify-between"><div><p class="font-semibold">评论邮件通知</p><p class="text-xs text-gray-500">支持 SMTP（SSL 465 或 TLS 587）与 Resend（re_ 开头的 API Key）。</p></div><UToggle v-model="state.enableEmail"/></div>
+      <div v-if="state.enableEmail" class="space-y-3">
+        <UFormGroup label="加密方式" help="SSL 使用隐式 TLS（端口 465）；TLS 使用 STARTTLS（端口 587）。">
+          <USelectMenu v-model="state.smtpEncryption" :options="[{label:'SSL（端口 465）',value:'ssl'},{label:'TLS（端口 587）',value:'tls'}]" value-attribute="value" option-attribute="label"/>
+        </UFormGroup>
         <UFormGroup label="服务器"><UInput v-model="state.smtpHost" placeholder="smtp.example.com"/></UFormGroup>
-        <UFormGroup label="端口"><USelectMenu v-model="state.smtpPort" :options="['465','587']"/></UFormGroup>
         <UFormGroup label="用户名（即发件邮箱）"><UInput v-model="state.smtpUsername" type="email" placeholder="noreply@example.com"/></UFormGroup>
         <UFormGroup label="密码 / 授权码"><UInput v-model="state.smtpPassword" type="password" autocomplete="new-password" :placeholder="state.smtpPasswordConfigured ? '已配置，留空保持不变' : 'SMTP 授权码或 re_ 开头的 Resend API Key'"/></UFormGroup>
-      </template>
+        <UFormGroup label="发送测试邮件">
+          <div class="flex gap-2">
+            <UInput v-model="mailTestTo" class="min-w-0 flex-1" type="email" placeholder="收件邮箱，如 admin@example.com"/>
+            <UButton :loading="mailTestLoading" :disabled="!mailTestTo" @click="sendMailTest">发送测试</UButton>
+          </div>
+          <p class="text-xs text-gray-500">使用当前填写的 SMTP / Resend 配置（密码留空时用已保存的）向该邮箱发送验证邮件。</p>
+        </UFormGroup>
+      </div>
     </div>
     <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
       <div class="flex items-center justify-between"><div><p class="font-semibold">Telegram 评论通知</p><p class="text-xs text-gray-500">配置 Bot Token；用户在自己的“用户中心”填写 Telegram User ID 后，评论时通过 Bot 发送提醒（模板与邮件一致）。</p></div><UToggle v-model="state.enableTelegram"/></div>
@@ -305,6 +314,7 @@ const state = reactive({
   telegramBotToken: "",
   smtpHost: "",
   smtpPort: "465" as '465' | '587',
+  smtpEncryption: "ssl" as 'ssl' | 'tls',
   smtpUsername: "",
   smtpPassword: "",
   smtpPasswordConfigured: false,
@@ -334,10 +344,14 @@ const reload = async () => {
   const res = await useMyFetch<SysConfigVO>('/sysConfig/getFull')
   if (res) {
     Object.assign(state, res)
+    if (state.smtpEncryption !== 'ssl' && state.smtpEncryption !== 'tls') state.smtpEncryption = state.smtpPort === '587' ? 'tls' : 'ssl'
     version.value = res.version
     commitId.value = res.commitId
   }
 }
+
+// 加密方式联动端口：SSL→465，TLS→587
+watch(() => state.smtpEncryption, value => { state.smtpPort = value === 'tls' ? '587' : '465' })
 
 const save = async () => {
   await useMyFetch('/sysConfig/save', state)
@@ -366,6 +380,22 @@ const loadBackups = async () => {
 }
 const openBackups = async () => { showBackupModal.value = true; await loadBackups() }
 const createBackup = async () => { backupLoading.value = true; try { await useMyFetch('/admin/backup/create'); toast.success('备份已创建'); if(showBackupModal.value) await loadBackups() } finally { backupLoading.value = false } }
+const mailTestTo = ref('')
+const mailTestLoading = ref(false)
+const sendMailTest = async () => {
+  const to = mailTestTo.value.trim()
+  if (!to) return
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return toast.error('收件邮箱格式不正确')
+  mailTestLoading.value = true
+  try {
+    await useMyFetch('/admin/mail/test', { to, smtpHost: state.smtpHost, smtpPort: state.smtpPort, smtpEncryption: state.smtpEncryption, smtpUsername: state.smtpUsername, smtpPassword: state.smtpPassword })
+    toast.success('测试邮件已发送，请检查收件箱')
+  } catch (error: any) {
+    toast.error(error?.message || '测试邮件发送失败')
+  } finally {
+    mailTestLoading.value = false
+  }
+}
 const localBackupLoading = ref(false)
 const exportLocalBackup = async () => {
   localBackupLoading.value = true

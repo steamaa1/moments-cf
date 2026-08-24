@@ -36,3 +36,6 @@ worker/pnpm-lock.yaml
 worker/wrangler.local.toml
 .moments-cf-bootstrap.json
 worker/wrangler.build.toml
+
+# Local-only dev runner (pure-Node harness, never commit)
+worker/dev-server.mjs
