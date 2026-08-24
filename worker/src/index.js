@@ -235,6 +235,11 @@ async function initialize(request, env, headers) {
   if (exists) return json(fail('站点已初始化'), 409, headers);
   const hash = await passwordHash(String(body.password), pbkdf2Iterations(env.PBKDF2_ITERATIONS));
   const config = { ...DEFAULT_CONFIG, adminUserName: username };
+  // 站点规范域名默认自动改为初始化管理员时所请求的域名（本地回环地址除外，避免 canonical 被写成 localhost）
+  const requested = new URL(request.url).origin;
+  const requestedHost = requested.replace(/^[a-z]+:\/\//i, '').toLowerCase();
+  const isLoopback = /^localhost([.:]|$)|^127\.|^0\.0\.0\.0$|^\[?::1\]?$/.test(requestedHost);
+  if (!isLoopback && validHttpUrl(requested)) config.siteUrl = requested.replace(/\/+$/, '');
   await db.batch([
     db.prepare('INSERT INTO users (id, username, nickname, password_hash, slogan) VALUES (1, ?, ?, ?, ?)').bind(username, String(body.nickname || username).slice(0, 80), hash, '记录生活的每一个瞬间。'),
     db.prepare('INSERT INTO sys_config (id, content) VALUES (1, ?)').bind(JSON.stringify(config)),
