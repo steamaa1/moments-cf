@@ -3,7 +3,7 @@
     <UIcon name="i-carbon-link" class="w-6 h-6"/>
     <template #panel="{close}">
       <div class="p-4 flex flex-col gap-2">
-        <UInput v-model="url" placeholder="请输入分享的链接"/>
+        <UInput v-model="url" placeholder="请输入分享的链接" @keydown.enter.prevent="getFavicon"/>
         <UButtonGroup>
           <UInput v-model="title" placeholder="请输入分享的标题"/>
           <UButton color="white" variant="solid" @click="getFavicon" :disabled="pending"
@@ -53,14 +53,20 @@ const getFavicon = async () => {
     toast.error("请先填写地址")
     return
   }
+  // 用户省略协议时自动补全 https://，避免"example.com"这类输入被后端拒绝
+  if (!/^https?:\/\//i.test(url.value.trim())) url.value = 'https://' + url.value.trim()
   pending.value = true
   try {
     const res = await useMyFetch<{
       favicon: string,
       title: string
     }>('/memo/getFaviconAndTitle?url=' + encodeURIComponent(url.value))
-    title.value = res.title
-    favicon.value = res.favicon
+    title.value = res.title || ''
+    favicon.value = res.favicon || ''
+    if (!res.title) toast.warning("未能获取到标题，请手动填写")
+  } catch (error: any) {
+    // 抓取失败给出可见提示（此前静默失败让用户以为按钮无响应）
+    toast.error(error?.message || "获取失败，请检查链接是否可访问")
   } finally {
     pending.value = false
   }

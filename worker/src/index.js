@@ -1889,14 +1889,55 @@ async function notifyUserRegistrationApproved(env, config, user) {
 async function externalInfo(request, env, headers) {
   const access = await requireUser(request, env, headers);
   if (access.response) return access.response;
-  const target = validHttpUrl(new URL(request.url).searchParams.get('url')); if (!target || forbiddenHost(target.hostname)) return json(fail('不允许的链接地址'), 400, headers);
-  const response = await fetch(target.href, { redirect: 'manual', headers: { 'user-agent': 'Moments-CF/1.0' }, signal: AbortSignal.timeout(5000) });
-  if (response.status >= 300 && response.status < 400) return json(fail('不允许重定向链接'), 400, headers);
+  let target = validHttpUrl(new URL(request.url).searchParams.get('url'));
+  if (!target || forbiddenHost(target.hostname)) return json(fail('不允许的链接地址'), 400, headers);
+  // 安全跟随重定向：每跳重新校验目标，防止经 30x 跳转绕到内网（SSRF）
+  let response = null;
+  for (let hop = 0; hop < 3; hop++) {
+    response = await fetch(target.href, { redirect: 'manual', headers: { 'user-agent': 'Moments-CF/1.0' }, signal: AbortSignal.timeout(5000) });
+    const status = response.status;
+    if (status < 300 || status >= 400) break;
+    const location = response.headers.get('location');
+    if (!location) return json(fail('无法读取网页信息'), 400, headers);
+    let next; try { next = new URL(location, target); } catch { next = null; }
+    if (!next || (next.protocol !== 'https:' && next.protocol !== 'http:') || forbiddenHost(next.hostname)) return json(fail('不允许的链接地址'), 400, headers);
+    target = next;
+  }
   const type = response.headers.get('content-type') || ''; if (!response.ok || !type.includes('text/html')) return json(fail('无法读取网页信息'), 400, headers);
-  const html = (await response.text()).slice(0, 512000); const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/<[^>]*>/g, '').trim().slice(0, 300);
+  const raw = await response.arrayBuffer();
+  const html = decodeHtmlBytes(raw, response.headers.get('content-type')).slice(0, 512000);
+  const title = extractHtmlTitle(html).slice(0, 300);
   const href = html.match(/<link[^>]+rel=["'][^"']*(?:icon|shortcut icon)[^"']*["'][^>]+href=["']([^"']+)["']/i)?.[1];
   let favicon = `${target.protocol}//${target.host}/favicon.ico`; try { if (href) favicon = new URL(href, target).href; } catch {}
   return json(ok({ title, favicon }), 200, headers);
+}
+
+// 提取页面标题：优先 og:title / twitter:title，退化到 <title>
+function extractHtmlTitle(html) {
+  const metaMatch = html.match(/<meta[^>]+property=["'](?:og:title|twitter:title)["'][^>]*content=["']([^"']*)["']/i)
+    || html.match(/<meta[^>]+content=["']([^"']*)["'][^>]*property=["'](?:og:title|twitter:title)["']/i);
+  const text = metaMatch?.[1] ?? (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '');
+  return decodeHtmlEntities(text.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
+}
+function decodeHtmlEntities(text) {
+  if (!text.includes('&')) return text;
+  const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', mdash: '—', ndash: '–', laquo: '«', raquo: '»', copy: '©', reg: '®', trade: '™' };
+  return text
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => { try { return String.fromCodePoint(parseInt(hex, 16)); } catch { return ''; } })
+    .replace(/&#(\d+);/g, (_, dec) => { try { return String.fromCodePoint(Number(dec)); } catch { return ''; } })
+    .replace(/&([a-z][a-z0-9]*);/gi, (_, name) => named[name.toLowerCase()] ?? _);
+}
+// 按响应头 / meta charset 解码字节流（兼容 GBK 等非 UTF-8 中文站点），失败回退 UTF-8
+function decodeHtmlBytes(buffer, contentTypeHeader) {
+  const bytes = new Uint8Array(buffer);
+  const head = (() => { try { return new TextDecoder('utf-8').decode(bytes.slice(0, 4096)); } catch { return ''; } })();
+  const charset = ((contentTypeHeader || '').match(/charset=["']?([\w-]+)/i)?.[1]
+    || head.match(/<meta[^>]+charset=["']?([\w-]+)/i)?.[1]
+    || '').toLowerCase();
+  if (charset && charset !== 'utf-8' && charset !== 'utf8') {
+    try { return new TextDecoder(charset).decode(bytes); } catch {}
+  }
+  return new TextDecoder('utf-8').decode(bytes);
 }
 
 function requireBackupConfig(env, headers) {
