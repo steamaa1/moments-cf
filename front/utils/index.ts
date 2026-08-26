@@ -24,7 +24,14 @@ export const useMyFetch = async <T>(url: string, data?: any) => {
       headers: headers,
     })
   } catch (error: any) {
-    // ofetch 对非 2xx 直接抛错，这里提取服务端 ResultVO.message，避免用户只看到 FetchError。
+    // ofetch 对非 2xx 直接抛错；携带了 token 却收到 401/code 3/4，即 token 已失效，
+    // 清空登录态让界面回到未登录，否则会一直"看似已登录"直到某个操作才报错。
+    const status = error?.response?.status || error?.status
+    const bodyCode = error?.data?.code
+    if (userinfo.token && (status === 401 || bodyCode === 3 || bodyCode === 4)) {
+      global.value.userinfo = {}
+      toast.error("登录已过期，请重新登录")
+    }
     throw new Error(error?.data?.message || error?.message || "网络请求失败")
   }
 

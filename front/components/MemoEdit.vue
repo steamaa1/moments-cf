@@ -6,7 +6,7 @@
         <span v-if="$route.path==='/new'">新增内容</span>
         <span v-else>修改内容</span>
       </NuxtLink>
-      <UButton @click="saveMemo">发表</UButton>
+      <UButton @click="saveMemo" :loading="memoSaving" :disabled="memoSaving">发表</UButton>
     </div>
     <div class="flex gap-2 text-lg text-gray-600 pt-4 ">
       <ExternalUrl v-model:favicon="state.externalFavicon" v-model:title="state.externalTitle"
@@ -297,6 +297,8 @@ const clickTag = (tag: string) => {
   //@ts-ignore
   (contentRef.value?.textarea as HTMLTextAreaElement).focus()
 }
+const memoSaving = ref(false)
+
 onMounted(async () => {
   if (state.id > 0) {
     const res = await useMyFetch<MemoVO>('/memo/get?id=' + state.id)
@@ -328,30 +330,45 @@ const removeDouban = (kind: 'book' | 'movie', index: number) => {
 }
 
 const saveMemo = async () => {
-
-  await useMyFetch('/memo/save', {
-    id: state.id,
-    content: state.content,
-    ext: {
-      music: state.music.id || state.music.url ? state.music : {},
-      x: state.x.url && state.x.id ? state.x : {},
-      git: state.git.url ? state.git : {},
-      memoRef: state.memoRef.id ? state.memoRef : {},
-      doubanBooks: doubanBooks.value.filter(book => book && book.title),
-      doubanMovies: doubanMovies.value.filter(movie => movie && movie.title),
-      video: state.video.value ? state.video : {},
-    },
-    showType: state.showType ? 1 : 0,
-    externalFavicon: state.externalUrl ? state.externalFavicon : "",
-    externalTitle: state.externalTitle,
-    externalUrl: state.externalUrl,
-    imgs: state.imgs.split(",").filter(Boolean),
-    location: state.location,
-    tags: selectedLabel.value,
-    createdAt: state.createdAt || dayjs().format(),
-  })
-  toast.success("保存成功!")
-  await navigateTo('/')
+  const hasImage = Boolean(state.imgs.split(",").filter(Boolean).length)
+  const hasExt = Boolean(
+    state.music?.id || state.music?.url || state.x?.url || state.git?.url || state.video?.value || state.memoRef?.id || state.externalUrl
+    || doubanBooks.value.some(book => book?.title) || doubanMovies.value.some(movie => movie?.title)
+  )
+  if (!state.content.trim() && !hasImage && !hasExt) {
+    toast.warning("动态内容不能为空")
+    return
+  }
+  memoSaving.value = true
+  try {
+    await useMyFetch('/memo/save', {
+      id: state.id,
+      content: state.content,
+      ext: {
+        music: state.music.id || state.music.url ? state.music : {},
+        x: state.x.url && state.x.id ? state.x : {},
+        git: state.git.url ? state.git : {},
+        memoRef: state.memoRef.id ? state.memoRef : {},
+        doubanBooks: doubanBooks.value.filter(book => book && book.title),
+        doubanMovies: doubanMovies.value.filter(movie => movie && movie.title),
+        video: state.video.value ? state.video : {},
+      },
+      showType: state.showType ? 1 : 0,
+      externalFavicon: state.externalUrl ? state.externalFavicon : "",
+      externalTitle: state.externalTitle,
+      externalUrl: state.externalUrl,
+      imgs: state.imgs.split(",").filter(Boolean),
+      location: state.location,
+      tags: selectedLabel.value,
+      createdAt: state.createdAt || dayjs().format(),
+    })
+    toast.success("保存成功!")
+    await navigateTo('/')
+  } catch (error: any) {
+    toast.error(error?.message || "发表失败，请稍后再试")
+  } finally {
+    memoSaving.value = false
+  }
 }
 
 </script>

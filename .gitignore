@@ -24,6 +24,7 @@ moments.exe
 task_plan.md
 findings.md
 progress.md
+AGENTS.md
 
 # Cloudflare local development state
 .wrangler/
