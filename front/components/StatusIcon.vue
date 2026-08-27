@@ -101,10 +101,14 @@ function useCustom() {
   selected.value = { icon: customIcon.value, content }
 }
 async function save(close: Function) {
-  if (!selected.value) { toast.error('请选择或输入状态'); return }
+  const customContent = custom.value.trim()
+  const selectedValue = selected.value
+  // 自定义输入框有内容时优先使用自定义状态（无需先按回车），否则用已选的预设状态
+  if (!customContent && !selectedValue) { toast.error('请选择或输入状态'); return }
+  const payload = customContent ? { icon: customIcon.value, content: customContent } : { icon: selectedValue!.icon, content: selectedValue!.content }
   saving.value = true
   try {
-    const updated = await api<UserStatusVO>('/user/status/set', { ...selected.value, remark: remark.value.trim(), durationHours: duration.value })
+    const updated = await api<UserStatusVO>('/user/status/set', { ...payload, remark: remark.value.trim(), durationHours: duration.value })
     localStatus.value = updated
     toast.success('状态已更新')
     emit('refresh')
