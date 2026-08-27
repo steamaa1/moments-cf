@@ -1891,19 +1891,28 @@ async function externalInfo(request, env, headers) {
   if (access.response) return access.response;
   let target = validHttpUrl(new URL(request.url).searchParams.get('url'));
   if (!target || forbiddenHost(target.hostname)) return json(fail('不允许的链接地址'), 400, headers);
+  // 使用更接近浏览器的请求头，减少被反爬 UA 拦截的概率
+  const reqHeaders = {
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+  };
   // 安全跟随重定向：每跳重新校验目标，防止经 30x 跳转绕到内网（SSRF）
   let response = null;
   for (let hop = 0; hop < 3; hop++) {
-    response = await fetch(target.href, { redirect: 'manual', headers: { 'user-agent': 'Moments-CF/1.0' }, signal: AbortSignal.timeout(5000) });
+    try { response = await fetch(target.href, { redirect: 'manual', headers: reqHeaders, signal: AbortSignal.timeout(8000) }); }
+    catch { return json(fail('抓取超时，请稍后重试'), 504, headers); }
     const status = response.status;
     if (status < 300 || status >= 400) break;
     const location = response.headers.get('location');
-    if (!location) return json(fail('无法读取网页信息'), 400, headers);
+    if (!location) return json(fail('重定向地址无效'), 400, headers);
     let next; try { next = new URL(location, target); } catch { next = null; }
     if (!next || (next.protocol !== 'https:' && next.protocol !== 'http:') || forbiddenHost(next.hostname)) return json(fail('不允许的链接地址'), 400, headers);
     target = next;
   }
-  const type = response.headers.get('content-type') || ''; if (!response.ok || !type.includes('text/html')) return json(fail('无法读取网页信息'), 400, headers);
+  const type = response.headers.get('content-type') || '';
+  if (!response.ok) return json(fail(`目标站点返回状态 ${response.status}`), 400, headers);
+  if (!type.includes('text/html') && !type.includes('application/xhtml+xml')) return json(fail('该链接不是网页，无法获取标题'), 400, headers);
   const raw = await response.arrayBuffer();
   const html = decodeHtmlBytes(raw, response.headers.get('content-type')).slice(0, 512000);
   const title = extractHtmlTitle(html).slice(0, 300);
