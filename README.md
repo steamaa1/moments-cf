@@ -76,16 +76,16 @@ Worker 的 **Settings → Variables and Secrets** 添加加密 Secret：
 | --- | --- |
 | `JWT_SECRET` | 至少 32 字符随机值，用于 JWT 与配置加密 |
 | `INIT_SECRET` | 至少 24 字符随机值，仅用于首次管理员初始化 |
-| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 S3 API 凭据，用于大文件直传签名 |
-| `D1_BACKUP_API_TOKEN` | 目标账户 D1 Read/Write，用于备份导出与恢复 |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 S3 API 凭据，用于大文件直传签名（可选） |
+| `D1_BACKUP_API_TOKEN` | 目标账户 D1 Read/Write，用于备份导出与恢复（可选） |
 
-可选变量：`SMTP_PASSWORD`、`RESEND_API_KEY`（评论邮件回退）、`PBKDF2_ITERATIONS`（默认并最大 100000）、`CORS_ORIGIN`。
+其它变量：`SMTP_PASSWORD`、`RESEND_API_KEY`（评论邮件回退）、`PBKDF2_ITERATIONS`（默认并最大 100000）、`CORS_ORIGIN`。
 
 > 不要将 Secret 或 Token 提交到 Git。
 
 ### 3. 初始化管理员
 
-部署完成后，若数据库为空，通过初始化接口创建管理员（只成功一次）：
+部署完成后，通过初始化接口创建管理员：
 
 ```bash
 curl -X POST "https://your-worker.workers.dev/api/admin/initialize" \
@@ -94,11 +94,66 @@ curl -X POST "https://your-worker.workers.dev/api/admin/initialize" \
   -d '{"username":"admin","nickname":"管理员","password":"至少8位密码"}'
 ```
 
+## 配置
+
+### Cloudflare 资源
+
+| 类型 | 名称 | Binding |
+| --- | --- | --- |
+| Worker | `moments-cf` | — |
+| D1 | `moments-db` | `DB` |
+| R2 | `moments-media` | `MEDIA` |
+| Workers Assets | `front/.output/public` | `ASSETS` |
+
+可用 `scripts/cloudflare-bootstrap.mjs` 创建或复用 D1/R2（默认只处理资源，`--deploy` 才应用 Migration 并部署）。见 [scripts/README.md](scripts/README.md)。
+
+### 检查与手动绑定
+
+部署完成后，进入 Worker 的 **Settings → Bindings**，确认以下绑定均已连接：
+
+| 绑定名 | 类型 | 目标 |
+| --- | --- | --- |
+| `DB` | D1 Database | `moments-db` |
+| `MEDIA` | R2 Bucket | `moments-media` |
+| `ASSETS` | Workers Assets | `front/.output/public` |
+
+若某项显示未绑定，需手动添加：
+
+1. **D1**：Bindings → Add → **D1 Database** → 选择 `moments-db`
+2. **R2**：Bindings → Add → **R2 Bucket** → 选择 `moments-media`
+
+绑定缺失时站点会出现“DB binding is not configured”或“R2 binding is not configured”等错误。
+
 ## 使用指南
 
 - **系统设置**（`/sys/settings`）：网站信息、评论/注册开关、人机验证、关于页、媒体存储（R2/S3/WebDAV）、D1 备份（间隔/保留/目标/立即备份/管理恢复）、本地备份导出
 - **一键导入**（`/sys/migration`）：旧 Docker 站数据迁移。先用本地转换器生成迁移包（见 [迁移文档](scripts/migrate/README.md)），再后台上传预检导入；数据库导出异常时可勾选“跳过导入前备份”
 - **微信状态**：自己空间页封面昵称左侧点击设置（内置状态/自定义/备注/时长），他人状态显示在动态作者昵称右侧
+
+
+## 本地开发
+
+Worker 检查无需额外运行时依赖：
+
+```bash
+cd worker
+npm run check
+```
+
+完整前端构建：
+
+```bash
+cd front
+pnpm install --frozen-lockfile
+pnpm run generate
+```
+
+部署前只读检查与部署后冒烟检查：
+
+```bash
+node scripts/release/preflight.mjs
+MOMENTS_BASE_URL=https://your-worker.workers.dev node scripts/release/smoke-test.mjs
+```
 
 ## API 使用说明
 
@@ -144,59 +199,6 @@ curl -X POST "https://your-worker.workers.dev/api/user/login" \
 
 完整接口以当前 `cf` 分支实现为准；网站不提供公开 Swagger/OpenAPI 页面。
 
-## 配置
-
-### Cloudflare 资源
-
-| 类型 | 名称 | Binding |
-| --- | --- | --- |
-| Worker | `moments-cf` | — |
-| D1 | `moments-db` | `DB` |
-| R2 | `moments-media` | `MEDIA` |
-| Workers Assets | `front/.output/public` | `ASSETS` |
-
-可用 `scripts/cloudflare-bootstrap.mjs` 创建或复用 D1/R2（默认只处理资源，`--deploy` 才应用 Migration 并部署）。见 [scripts/README.md](scripts/README.md)。
-
-### 检查与手动绑定
-
-部署完成后，进入 Worker 的 **Settings → Bindings**，确认以下绑定均已连接：
-
-| 绑定名 | 类型 | 目标 |
-| --- | --- | --- |
-| `DB` | D1 Database | `moments-db` |
-| `MEDIA` | R2 Bucket | `moments-media` |
-| `ASSETS` | Workers Assets | `front/.output/public` |
-
-若某项显示未绑定，需手动添加：
-
-1. **D1**：Bindings → Add → **D1 Database** → 选择 `moments-db`
-2. **R2**：Bindings → Add → **R2 Bucket** → 选择 `moments-media`
-
-绑定缺失时站点会出现“DB binding is not configured”或“R2 binding is not configured”等错误。
-
-## 本地开发
-
-Worker 检查无需额外运行时依赖：
-
-```bash
-cd worker
-npm run check
-```
-
-完整前端构建：
-
-```bash
-cd front
-pnpm install --frozen-lockfile
-pnpm run generate
-```
-
-部署前只读检查与部署后冒烟检查：
-
-```bash
-node scripts/release/preflight.mjs
-MOMENTS_BASE_URL=https://your-worker.workers.dev node scripts/release/smoke-test.mjs
-```
 
 ## 架构
 
