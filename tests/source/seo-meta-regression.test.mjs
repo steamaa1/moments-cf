@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { injectSeoMeta } from '../../worker/src/index.js';
+import { injectSeoMeta, buildJsonLd } from '../../worker/src/index.js';
 
 /**
  * SEO Meta 回归：
  * - Worker 把后台配置（title/seoDescription/seoKeywords/slogan）动态注入
  *   SPA index.html，让不执行 JS 的爬虫读到；默认值兜底与 HTML 转义。
+ * - 页面级 SEO（/memo/:id、/user/:id）：title/描述/og:type/og:image/noindex/JSON-LD 覆盖。
  * - 系统设置页提供 SEO 描述/关键词配置项。
  */
 const html = `<!doctype html><html><head>
@@ -68,11 +69,70 @@ const html = `<!doctype html><html><head>
   assert.match(out, /<title>极简朋友圈<\/title>/);
 }
 
-// 静态断言：配置保存、公开配置、设置页、运行时回退
+// 6. 页面级 meta（page 参数）：title/描述/og:type/og:image/JSON-LD 覆盖站点级
+{
+  const out = injectSeoMeta(html, { siteUrl: 'https://wb.me-i.top' }, '/memo/9', {
+    title: '小明 的动态',
+    description: '动态摘要',
+    ogType: 'article',
+    ogImage: 'https://wb.me-i.top/upload/p.jpg',
+    jsonLd: '{"@type":"SocialMediaPosting"}',
+  });
+  assert.match(out, /<title>小明 的动态<\/title>/);
+  assert.match(out, /<meta name="description" content="动态摘要">/);
+  assert.match(out, /<meta property="og:type" content="article">/);
+  assert.match(out, /<meta property="og:image" content="https:\/\/wb\.me-i\.top\/upload\/p\.jpg">/);
+  assert.match(out, /<meta name="twitter:card" content="summary_large_image">/);
+  assert.match(out, /<script type="application\/ld\+json">\{"@type":"SocialMediaPosting"\}<\/script>/);
+}
+
+// 7. 页面级 noindex：有 robots 标签时替换，缺失时插入
+{
+  const out = injectSeoMeta(html, {}, '/', { noindex: true });
+  assert.match(out, /<meta name="robots" content="noindex, nofollow">/);
+  const without = injectSeoMeta('<html><head><title>t</title></head></html>', {}, '/', { noindex: true });
+  assert.match(without, /<meta name="robots" content="noindex, nofollow">/);
+}
+
+// 8. 相对 og:image 绝对化（有规范域名时）
+{
+  const htmlWithOg = html.replace('<meta property="og:title"', '<meta property="og:image" content="/cover.webp">\n<meta property="og:title"');
+  const out = injectSeoMeta(htmlWithOg, { siteUrl: 'https://wb.me-i.top' }, '/');
+  assert.match(out, /<meta property="og:image" content="https:\/\/wb\.me-i\.top\/cover\.webp">/);
+  assert.match(out, /<meta name="twitter:card" content="summary_large_image">/);
+  // 页面级 og:image 优先于生成 HTML 里的相对值
+  const overridden = injectSeoMeta(htmlWithOg, { siteUrl: 'https://wb.me-i.top' }, '/memo/1', { ogImage: 'https://wb.me-i.top/upload/pic.jpg' });
+  assert.match(overridden, /<meta property="og:image" content="https:\/\/wb\.me-i\.top\/upload\/pic\.jpg">/);
+}
+
+// 9. buildJsonLd：JSON-LD 序列化转义 <，防止 </script> 注入
+{
+  const ld = buildJsonLd('WebSite', { description: '</script><b>x</b>' });
+  assert.match(ld, /\\u003c/);
+  assert.doesNotMatch(ld, /<\/script>/);
+  assert.equal(buildJsonLd('WebSite', null), null);
+  assert.equal(buildJsonLd('', { a: 1 }), null);
+  // JSON.stringify 后仍是合法 JSON
+  assert.deepEqual(JSON.parse(ld), { '@context': 'https://schema.org', '@type': 'WebSite', description: '</script><b>x</b>' });
+}
+
+// 静态断言：配置保存、公开配置、设置页、运行时回退、GEO 能力
 const source = await readFile(new URL('../../worker/src/index.js', import.meta.url), 'utf8');
 assert.match(source, /config\.seoDescription = String\(body\.seoDescription/);
 assert.match(source, /'seoDescription', 'seoKeywords'/);
-assert.match(source, /injectSeoMeta\(await assetsResponse\.text\(\), config, url\.pathname\)/);
+assert.match(source, /injectSeoMeta\(await assetsResponse\.text\(\), config, url\.pathname, page\)/);
+assert.match(source, /export function buildJsonLd/);
+assert.match(source, /async function pageSeo/);
+assert.match(source, /normalizedPath === '\/llms\.txt'/);
+// robots.txt：搜索引用类 AI 爬虫放行、训练类屏蔽、图片/社交爬虫取图
+assert.match(source, /OAI-SearchBot/);
+assert.match(source, /PerplexityBot/);
+assert.match(source, /ClaudeBot/);
+assert.match(source, /Applebot/);
+assert.match(source, /GPTBot/);
+assert.match(source, /Google-Extended/);
+assert.match(source, /Googlebot-Image/);
+assert.match(source, /facebookexternalhit/);
 const settings = await readFile(new URL('../../front/pages/sys/settings.vue', import.meta.url), 'utf8');
 assert.match(settings, /v-model="state\.seoDescription"/);
 assert.match(settings, /v-model="state\.seoKeywords"/);
@@ -84,5 +144,9 @@ const layoutDefault = await readFile(new URL('../../front/layouts/default.vue', 
 assert.match(layoutDefault, /sysConfigVO\.seoDescription \|\|/);
 assert.match(layoutDefault, /sysConfigVO\.seoKeywords \|\|/);
 assert.match(layoutDefault, /sysConfigVO\.siteUrl/);
+assert.match(layoutDefault, /og:image/, 'layouts 输出 og:image');
+assert.match(layoutDefault, /summary_large_image/, 'twitter:card 升级大图卡');
+const nuxtConfig = await readFile(new URL('../../front/nuxt.config.ts', import.meta.url), 'utf8');
+assert.match(nuxtConfig, /lang: 'zh-CN'/, 'html lang 声明中文');
 
 console.log('SEO meta injection regression tests: PASS');

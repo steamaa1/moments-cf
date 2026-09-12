@@ -32,6 +32,9 @@ export default defineNuxtConfig({
     },
     app: {
         head: {
+            htmlAttrs: {
+                lang: 'zh-CN',
+            },
             title: site.title,
             meta: [
                 { name: "viewport", content: "width=device-width, initial-scale=1, user-scalable=no" },

@@ -12,7 +12,7 @@ Cloudflare Workers Builds：
 | Build command | `npm run build:cf` |
 | Deploy command | `npm run deploy:cf` |
 
-部署脚本会按名称查询 `moments-db`，应用 `0001`～`0007` Migration，设置 R2 CORS，再部署 Worker。计划任务每日 `03:00 UTC` 触发，按后台配置的备份间隔（默认 7 天）与保留天数（默认 90 天）执行。
+部署脚本会按名称查询 `moments-db`，应用 `0001`～`0016` 全部 Migration，设置 R2 CORS，再部署 Worker。计划任务每日 `03:00 UTC` 触发，按后台配置的备份间隔（默认 7 天）与保留天数（默认 90 天）执行。
 
 ## Bindings 与 Variables
 
@@ -57,6 +57,13 @@ Host、端口、用户名和发件地址在管理员设置页保存；密码/授
 - 恢复要求当前管理员密码和完整备份名称，并在覆盖前自动再备份
 - RSS 包含 Markdown、外链、图片、音乐、视频和豆瓣卡片链接
 
+## SEO 与 GEO
+
+- **页面级 SEO 注入**：所有 SPA HTML 响应动态注入站点 title/描述/关键词/og/twitter/canonical；`/memo/:id` 额外注入该条动态专属的标题、摘要、首图 og:image 与 JSON-LD `SocialMediaPosting`，`/user/:id` 注入 `ProfilePage`，首页注入 `WebSite`，`/` 以外路径按需回退。私密（`show_type=0`）、定时未发布或不存在的动态/用户页注入 `noindex, nofollow`。
+- **`/llms.txt` 与 `/llms-full.txt`**（GEO，零配置默认启用）：面向 AI 搜索引擎的纯文本站点摘要（llmstxt.org 格式）。`/llms.txt` 列页面链接与最近 50 条公开动态；`/llms-full.txt` 附最近 100 条动态正文（markdown 原文，单条截断 2000 字符）。D1 未配置时返回 503。
+- **`/robots.txt`**：通配组禁抓 `/api/`、`/upload/` 与私密路径；`Googlebot-Image` 与社交预览爬虫（facebookexternalhit/Twitterbot/Slackbot/Discordbot）放行媒体抓取；搜索引用类 AI 爬虫（OAI-SearchBot、PerplexityBot/Perplexity-User、ClaudeBot/Claude-User/Claude-SearchBot、Applebot/Applebot-Extended、YouBot、DuckAssistBot）放行公开内容；训练类爬虫（GPTBot、CCBot、Google-Extended、meta-externalagent、Amazonbot）全站禁止。
+- **`/sitemap.xml`**：Google 图片站点地图扩展（`xmlns:image`，每条 URL 最多 10 张配图）；首页 `lastmod` 取最新公开动态；收录自定义图集页（`/photos/album/:id`，默认图集除外）与标签聚合页（`/tags/:username/:tag`，按用户+标签去重）；memo `lastmod` 用 `created_at`（`updated_at` 会被点赞触发器更新）；响应 `cache-control: public, max-age=3600`。
+
 ## Migration
 
 ```text
@@ -67,9 +74,18 @@ Host、端口、用户名和发件地址在管理员设置页保存；密码/授
 0005_phase6_consistency_trash.sql
 0006_phase7_media.sql
 0007_migration_runs.sql
+0008_user_status.sql
+0009_telegram_notify.sql
+0010_media_storage_backend.sql
+0011_comment_network_rate.sql
+0012_like_network_dedup.sql
+0013_login_rate_limit.sql
+0014_registration_approval.sql
+0015_comment_rate_buckets.sql
+0016_photo_albums.sql
 ```
 
-`0006` 增加 `sha256`、`thumbnail_key`、`upload_state` 及索引；`0007` 记录迁移包状态，防止重复导入。
+`0006` 增加 `sha256`、`thumbnail_key`、`upload_state` 及索引；`0007` 记录迁移包状态，防止重复导入；`0016` 增加照片墙图集（`photo_albums`/`photo_album_items`）。Migration 真值以 `worker/migrations/` 目录与 `deploy-cf.mjs` 为准。
 
 ## 检查
 

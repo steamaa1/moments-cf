@@ -86,6 +86,8 @@ const seoDescription = sysConfigVO.seoDescription || (sysConfigVO.slogan ? `${sy
 const seoKeywords = sysConfigVO.seoKeywords || site.keywords;
 const canonicalBase = (sysConfigVO.siteUrl || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
 const canonicalUrl = computed(() => canonicalBase ? canonicalBase + route.path : '');
+// og:image 需绝对地址才能被社交与部分搜索引擎爬虫识别；默认站点封面
+const seoOgImage = canonicalBase + (site.ogImage || '/cover.webp');
 const noindex = ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix));
 useHead(() => ({
   title: seoTitle,
@@ -115,8 +117,9 @@ useHead(() => ({
     { property: "og:type", content: "website" },
     { property: "og:title", content: seoTitle },
     { property: "og:description", content: seoDescription },
+    { property: "og:image", content: seoOgImage },
     ...(canonicalUrl.value ? [{ property: "og:url", content: canonicalUrl.value }] : []),
-    { name: "twitter:card", content: "summary" },
+    { name: "twitter:card", content: "summary_large_image" },
     { name: "twitter:title", content: seoTitle },
     { name: "twitter:description", content: seoDescription },
   ],

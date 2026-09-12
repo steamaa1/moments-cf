@@ -1167,9 +1167,11 @@ const DEFAULT_SEO = {
 };
 // 把后台配置的 SEO 信息动态注入 SPA index.html，
 // 让不执行 JS 的爬虫（Bing 等）也能读到站点标题/描述/关键词。
-export function injectSeoMeta(html, config, path = '/') {
-  const title = escapeXml(String(config?.title || DEFAULT_SEO.title));
-  const description = escapeXml(String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${config.title || DEFAULT_SEO.title}` : DEFAULT_SEO.description)));
+// page（可选）为 /memo/:id、/user/:id 的页面级 SEO 数据：
+// { title, description, ogType, ogImage, noindex, jsonLd }，字段缺省回退站点级。
+export function injectSeoMeta(html, config, path = '/', page = null) {
+  const title = escapeXml(String(page?.title || config?.title || DEFAULT_SEO.title));
+  const description = escapeXml(String(page?.description || config?.seoDescription || (config?.slogan ? `${config.slogan} · ${config.title || DEFAULT_SEO.title}` : DEFAULT_SEO.description)));
   const keywords = escapeXml(String(config?.seoKeywords || DEFAULT_SEO.keywords));
   const siteUrl = String(config?.siteUrl || '').trim().replace(/\/+$/, '');
   const canonical = siteUrl ? `${siteUrl}${String(path || '/').replace(/^([^/])/, '/$1')}` : '';
@@ -1191,37 +1193,184 @@ export function injectSeoMeta(html, config, path = '/') {
       if (!/<meta property="og:url"[^>]*>/.test(output)) output = output.replace('</head>', `${ogUrlTag}</head>`);
     }
   }
+  // og:type：动态页 article、用户主页 profile，其余 website
+  output = output.replace(/<meta property="og:type"[^>]*>/, `<meta property="og:type" content="${escapeXml(String(page?.ogType || 'website'))}">`);
+  // og:image：页面级首图优先；否则把生成 HTML 里的相对 og:image 绝对化（有规范域名时）
+  let ogImage = String(page?.ogImage || '').trim();
+  const existingOgImage = output.match(/<meta property="og:image"[^>]*content="([^"]*)"/)?.[1] || '';
+  if (!ogImage && canonical && existingOgImage && !/^https?:\/\//i.test(existingOgImage)) ogImage = `${canonical.replace(/\/+$/, '')}${existingOgImage.startsWith('/') ? existingOgImage : `/${existingOgImage}`}`;
+  if (ogImage) {
+    if (/<meta property="og:image"[^>]*>/.test(output)) output = output.replace(/<meta property="og:image"[^>]*>/, `<meta property="og:image" content="${escapeXml(ogImage)}">`);
+    else output = output.replace('</head>', `<meta property="og:image" content="${escapeXml(ogImage)}"></head>`);
+    output = output.replace(/<meta name="twitter:card"[^>]*>/, '<meta name="twitter:card" content="summary_large_image">');
+  }
+  // 页面级 noindex：私密/定时未发布动态页、不存在的动态或用户页，防止被抓取收录
+  if (page?.noindex) {
+    if (/<meta name="robots"[^>]*>/.test(output)) output = output.replace(/<meta name="robots"[^>]*>/, '<meta name="robots" content="noindex, nofollow">');
+    else output = output.replace('</head>', '<meta name="robots" content="noindex, nofollow"></head>');
+  }
+  // JSON-LD 结构化数据：帮助 Google 生成富结果、AI 引擎理解页面内容
+  if (page?.jsonLd) output = output.replace('</head>', `<script type="application/ld+json">${page.jsonLd}</script>\n</head>`);
   return output;
+}
+// JSON-LD 序列化：< 转义为 \u003c，防止正文里的 </script> 提前闭合标签注入。
+export function buildJsonLd(type, data) {
+  if (!type || !data || typeof data !== 'object') return null;
+  return JSON.stringify({ '@context': 'https://schema.org', '@type': type, ...data }).replace(/</g, '\\u003c');
+}
+// D1 时间戳（YYYY-MM-DD HH:MM:SS UTC）→ ISO 8601（末尾 Z）
+function toIsoTime(value) { return value ? `${String(value).replace(' ', 'T')}Z` : undefined; }
+// 组装 /memo/:id、/user/:id 的页面级 SEO 数据（页面级 meta 与 JSON-LD）。
+// env.DB 缺失或路径不匹配时返回 null，回退站点级 meta；私密/不存在的页面返回 noindex。
+async function pageSeo(env, config, path, origin = '') {
+  if (!env.DB) return null;
+  const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || String(origin || '').replace(/\/+$/, '');
+  const cleanPath = String(path || '/').replace(/\/+$/, '') || '/';
+  const memoMatch = cleanPath.match(/^\/memo\/(\d+)$/);
+  if (memoMatch) {
+    const view = memoView(await env.DB.prepare(`${MEMO_SELECT} WHERE m.id = ?`).bind(Number(memoMatch[1])).first());
+    if (!view || Number(view.showType) !== 1 || Date.parse(view.createdAt) > Date.now()) return { noindex: true };
+    const summary = rssText(view.content).split('\n')[0].slice(0, 120) || `${view.user?.nickname || '有人'} 发布了一条动态`;
+    const pageTitle = view.user?.nickname ? `${view.user.nickname} 的动态` : '动态';
+    const memoUrl = `${host}/memo/${view.id}`;
+    const images = String(view.imgs || '').split(',').filter(Boolean).slice(0, 10).map(image => (image.startsWith('http') ? image : host + image));
+    return {
+      title: pageTitle,
+      description: summary,
+      ogType: 'article',
+      ogImage: images[0] || '',
+      jsonLd: buildJsonLd('SocialMediaPosting', {
+        headline: pageTitle,
+        description: summary,
+        datePublished: toIsoTime(view.createdAt),
+        dateModified: toIsoTime(view.updatedAt),
+        author: { '@type': 'Person', name: String(view.user?.nickname || view.user?.username || '') },
+        image: images,
+        url: memoUrl,
+        mainEntityOfPage: memoUrl,
+        inLanguage: 'zh-CN',
+      }),
+    };
+  }
+  const userMatch = cleanPath.match(/^\/user\/(\d+)$/);
+  if (userMatch) {
+    const user = await env.DB.prepare('SELECT id, username, nickname, avatar_url, slogan FROM users WHERE id = ?').bind(Number(userMatch[1])).first();
+    if (!user) return { noindex: true };
+    const name = String(user.nickname || user.username || '');
+    const avatar = String(user.avatar_url || '');
+    return {
+      title: `${name} 的主页`,
+      description: String(user.slogan || `${name} 的个人主页`),
+      ogType: 'profile',
+      jsonLd: buildJsonLd('ProfilePage', {
+        mainEntity: {
+          '@type': 'Person',
+          name,
+          url: `${host}/user/${Number(user.id)}`,
+          ...(avatar ? { image: avatar.startsWith('http') ? avatar : host + avatar } : {}),
+          ...(user.slogan ? { description: String(user.slogan) } : {}),
+        },
+      }),
+    };
+  }
+  if (cleanPath === '/') {
+    return { jsonLd: buildJsonLd('WebSite', {
+      name: String(config?.title || DEFAULT_SEO.title),
+      url: `${host}/`,
+      description: String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${config.title || DEFAULT_SEO.title}` : DEFAULT_SEO.description)),
+      inLanguage: 'zh-CN',
+    }) };
+  }
+  return null;
 }
 function rssText(value) { return String(value || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[>#*_`~-]/g, '').trim(); }
 async function sitemap(request, env) {
-  const [memos, users, configRow] = await Promise.all([
-    env.DB.prepare('SELECT id, created_at FROM memos WHERE show_type=1 AND created_at<=CURRENT_TIMESTAMP LIMIT 50000').all(),
+  if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
+  const [memos, users, tags, albums, configRow] = await Promise.all([
+    env.DB.prepare('SELECT id, created_at, imgs FROM memos WHERE show_type=1 AND created_at<=CURRENT_TIMESTAMP LIMIT 50000').all(),
     env.DB.prepare('SELECT id, updated_at FROM users LIMIT 5000').all(),
+    env.DB.prepare('SELECT u.username, m.tags FROM memos m JOIN users u ON u.id=m.user_id WHERE m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP AND m.tags<>\'\' LIMIT 50000').all(),
+    env.DB.prepare('SELECT id, updated_at FROM photo_albums WHERE is_default=0 LIMIT 5000').all(),
     env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(),
   ]);
   const config = parseConfig(configRow?.content);
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || new URL(request.url).origin;
   const urls = [];
-  const push = (loc, lastmod, freq, priority) => {
+  const push = (loc, lastmod, freq, priority, images) => {
     const lastmodTag = lastmod ? `<lastmod>${escapeXml(lastmod.replace(' ', 'T') + 'Z')}</lastmod>` : '';
-    urls.push(`<url><loc>${host}${loc}</loc>${lastmodTag}<changefreq>${freq}</changefreq><priority>${priority}</priority></url>`);
+    // Google 图片站点地图扩展：每条 URL 最多列 10 张配图，配图需绝对地址
+    const imageTags = (images || []).slice(0, 10).map(image => `<image:image><image:loc>${escapeXml(image)}</image:loc></image:image>`).join('');
+    urls.push(`<url><loc>${host}${loc}</loc>${lastmodTag}<changefreq>${freq}</changefreq><priority>${priority}</priority>${imageTags}</url>`);
   };
-  push('/', null, 'daily', '1.0');
+  const absolute = image => (image.startsWith('http') ? image : host + image);
+  // 首页 lastmod 取最新公开动态时间，提示 Google 首页内容已更新
+  const latestMemoAt = (memos.results || []).map(row => String(row.created_at || '')).sort().pop() || '';
+  push('/', latestMemoAt, 'daily', '1.0');
   if (config.enableAbout) push('/about', null, 'monthly', '0.6');
   push('/friend', null, 'weekly', '0.6');
   push('/photos', null, 'weekly', '0.7');
   for (const user of users.results || []) push(`/user/${Number(user.id)}`, user.updated_at || '', 'weekly', '0.7');
-  for (const memo of memos.results || []) push(`/memo/${Number(memo.id)}`, memo.created_at || '', 'weekly', '0.8');
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`;
-  return new Response(xml, { headers: { 'content-type': 'application/xml; charset=UTF-8', 'cache-control': 'no-store' } });
+  for (const memo of memos.results || []) push(`/memo/${Number(memo.id)}`, memo.created_at || '', 'weekly', '0.8', String(memo.imgs || '').split(',').filter(Boolean).map(absolute));
+  // 标签聚合页：按用户+标签去重（lastmod 省略，聚合页内容随动态持续变化）
+  const tagUrls = new Map();
+  for (const row of tags.results || []) {
+    const username = String(row.username || '');
+    for (const tag of String(row.tags || '').split(',').filter(Boolean)) tagUrls.set(`${username}\n${tag}`, `${encodeURIComponent(username)}/${encodeURIComponent(tag)}`);
+  }
+  for (const tagPath of tagUrls.values()) push(`/tags/${tagPath}`, null, 'weekly', '0.5');
+  // 自定义图集页（默认图集「全部照片」等价于 /photos，不重复收录）
+  for (const album of albums.results || []) push(`/photos/album/${Number(album.id)}`, album.updated_at || '', 'weekly', '0.6');
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${urls.join('')}</urlset>`;
+  return new Response(xml, { headers: { 'content-type': 'application/xml; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
 }
 async function robots(request, env) {
   const row = env.DB ? await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : null;
   const config = parseConfig(row?.content);
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || new URL(request.url).origin;
-  const text = `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /upload/\nSitemap: ${host}/sitemap.xml\n`;
-  return new Response(text, { headers: { 'content-type': 'text/plain; charset=UTF-8', 'cache-control': 'no-store' } });
+  // 私密路径：与 front/layouts/default.vue 的 noindex 前缀保持一致
+  const privatePaths = ['/api/', '/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'];
+  const group = (agents, disallows) => `${agents.map(agent => `User-agent: ${agent}`).join('\n')}\nAllow: /\n${disallows.map(path => `Disallow: ${path}`).join('\n')}\n`;
+  const text = [
+    // 通配组：全站可抓，媒体/API/私密页不抓（媒体禁抓会影响图片搜索与社交预览，下方专用组放行）
+    group(['*'], ['/upload/', ...privatePaths]),
+    // 图片爬虫：放行 /upload/ 媒体，让动态配图可进 Google 图片搜索、og:image 可被引用
+    group(['Googlebot-Image'], privatePaths),
+    // 社交预览爬虫：需要抓取 og:image 才能生成链接预览
+    group(['facebookexternalhit', 'Twitterbot', 'Slackbot', 'Discordbot'], privatePaths),
+    // 搜索引用类 AI 爬虫：允许抓取公开内容用于检索与引用（GEO）
+    group(['OAI-SearchBot', 'PerplexityBot', 'Perplexity-User', 'ClaudeBot', 'Claude-User', 'Claude-SearchBot', 'Applebot', 'Applebot-Extended', 'YouBot', 'DuckAssistBot'], privatePaths),
+    // 训练类爬虫：全部禁止
+    `${['GPTBot', 'CCBot', 'Google-Extended', 'meta-externalagent', 'Amazonbot'].map(agent => `User-agent: ${agent}`).join('\n')}\nDisallow: /\n`,
+    `Sitemap: ${host}/sitemap.xml\n`,
+  ].join('\n');
+  return new Response(text, { headers: { 'content-type': 'text/plain; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
+}
+// GEO：面向 AI 搜索引擎的纯文本站点摘要（llmstxt.org 格式）。
+// /llms.txt 只列页面与最近动态链接；/llms-full.txt 附最近动态正文（markdown 原文，截断防超大响应）。
+async function llmsIndex(request, env, full = false) {
+  if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
+  const url = new URL(request.url);
+  const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
+  const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || url.origin;
+  const limit = full ? 100 : 50;
+  const rows = await env.DB.prepare(`${MEMO_SELECT} WHERE m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP ORDER BY m.created_at DESC LIMIT ?`).bind(limit).all();
+  const title = String(config?.title || DEFAULT_SEO.title);
+  const description = String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${title}` : DEFAULT_SEO.description));
+  const lines = [`# ${title}`, '', `> ${description}`, '', '## 站点页面', '', `- [首页](${host}/)：${description}`, `- [照片墙](${host}/photos)：照片墙与图集`, `- [友链](${host}/friend)：朋友们`, ...(config.enableAbout ? [`- [关于](${host}/about)：关于本站`] : []), `- [RSS 订阅](${host}/rss)：最新动态订阅`, ''];
+  lines.push(full ? '## 最近动态（全文）' : '## 最近动态', '');
+  for (const row of rows.results || []) {
+    const memo = memoView(row);
+    // 链接标签内不能出现嵌套方括号（会破坏 markdown 链接与 AI 解析），统一剥离
+    const summary = (rssText(memo.content).split('\n')[0] || `动态 #${memo.id}`).slice(0, 60).replace(/[[\]]/g, '');
+    const tags = String(memo.tags || '').split(',').filter(Boolean);
+    const tagLabel = tags.length ? ` · ${tags.join('/')}` : '';
+    lines.push(`- [${String(memo.createdAt || '').slice(0, 10)} ${summary}${tagLabel}](${host}/memo/${memo.id})`);
+    if (full) {
+      const body = String(memo.content || '').trim().slice(0, 2000);
+      if (body) lines.push('', body, '');
+    }
+  }
+  return new Response(lines.join('\n') + '\n', { headers: { 'content-type': 'text/plain; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
 }
 async function rss(request, env) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
@@ -2580,6 +2729,8 @@ export default {
     if (normalizedPath === '/rss') return rss(request, env);
     if (normalizedPath === '/sitemap.xml') return sitemap(request, env);
     if (normalizedPath === '/robots.txt') return robots(request, env);
+    if (normalizedPath === '/llms.txt') return llmsIndex(request, env, false);
+    if (normalizedPath === '/llms-full.txt') return llmsIndex(request, env, true);
     if (!env.ASSETS) return new Response('Workers Assets binding is not configured', { status: 503 });
     const assetsResponse = await env.ASSETS.fetch(request);
     // SPA fallback（HTML）不缓存：避免 Cloudflare 边缘把 index.html 缓存到
@@ -2588,10 +2739,12 @@ export default {
       const headers = new Headers(assetsResponse.headers);
       headers.set('content-type', 'text/html; charset=UTF-8');
       headers.set('cache-control', 'no-store');
-      // 注入后台配置的 SEO meta，让不执行 JS 的爬虫读取到动态标题/描述/关键词
+      // 注入后台配置的 SEO meta，让不执行 JS 的爬虫读取到动态标题/描述/关键词；
+      // /memo/:id、/user/:id 再注入该页专属 meta 与 JSON-LD 结构化数据（GEO）。
       const row = env.DB ? await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : null;
       const config = parseConfig(row?.content);
-      const injected = injectSeoMeta(await assetsResponse.text(), config, url.pathname);
+      const page = await pageSeo(env, config, url.pathname, url.origin);
+      const injected = injectSeoMeta(await assetsResponse.text(), config, url.pathname, page);
       return new Response(injected, { status: assetsResponse.status, headers });
     }
     // 静态资源缓存：_nuxt/ 构建产物按内容 hash 命名，可永久缓存；

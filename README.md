@@ -45,7 +45,7 @@
 - **友情链接申请与须知**：系统可配置须知内容与申请邮箱，友链页展示申请表单
 - **Telegram 评论通知**：系统配置 Bot Token/用户名，个人配置 User ID，评论时推送
 - **评论通知免打扰**：评论者即动态作者本人时不发送邮件/Telegram 通知，避免打扰自己；作者回复他人评论时仍通知被回复人
-- **SEO**：动态 sitemap.xml、全站 og/twitter meta、动态详情页 og:image 与 canonical
+- **SEO 与 GEO**：动态 sitemap.xml（Google 图片扩展、首页 lastmod、图集与标签聚合页收录）、全站 og/twitter meta 与 canonical、`html lang="zh-CN"`；动态详情页/用户主页注入页面级 meta 与 JSON-LD 结构化数据（`SocialMediaPosting`/`ProfilePage`），私密动态 noindex；`/llms.txt`、`/llms-full.txt` 面向 AI 搜索引擎的纯文本摘要；robots.txt 放行搜索引用类 AI 爬虫（GPTBot 等训练类已屏蔽）、放行图片与社交预览爬虫取图
 - **体验优化**：上传媒体短随机命名（约 14 字符）、自定义 JS 路由切换后重新执行
 - **其它**：添加关于页面、朋友圈式时间线
 
@@ -184,7 +184,9 @@ MOMENTS_BASE_URL=https://your-worker.workers.dev node scripts/release/smoke-test
 | POST | `/api/admin/backup/*` | 备份列表/创建/下载/恢复/本地导出 | 管理员 |
 | POST | `/api/admin/migration/*` | 一键导入（预检/准备/导入/状态） | 管理员 |
 | GET | `/rss` | RSS 订阅 | 公开 |
-| GET | `/sitemap.xml` | 站点地图 | 公开 |
+| GET | `/sitemap.xml` | 站点地图（含图片扩展与聚合页） | 公开 |
+| GET | `/robots.txt` | 爬虫规则（AI 爬虫策略） | 公开 |
+| GET | `/llms.txt`、`/llms-full.txt` | AI 搜索引擎纯文本站点摘要 | 公开 |
 | GET | `/x-media` | X 图片同域代理 | 公开 |
 | GET | `/upload/*` | 媒体代理（R2/S3/WebDAV） | 公开 |
 
@@ -208,6 +210,7 @@ curl -X POST "https://your-worker.workers.dev/api/user/login" \
       ├─ /api/*        Worker API（动态/评论/用户/状态/备份/迁移）
       ├─ /upload/*     媒体代理（R2 / S3 / WebDAV，读旧写新）
       ├─ /rss          RSS
+      ├─ /sitemap.xml、/robots.txt、/llms.txt   SEO/GEO 端点
       └─ /*            Nuxt Workers Assets（SPA）
 
 D1: 用户、配置、动态、评论、友链、媒体索引、状态、迁移记录
