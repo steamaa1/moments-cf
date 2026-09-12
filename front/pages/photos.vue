@@ -80,7 +80,14 @@
             </UButton>
           </div>
           <MyFancyBox class="album-grid" :class="{ 'album-grid--expanded': albumState(album.id).expanded }">
-            <a v-for="photo in visiblePhotos(album)" :key="photo.id" :href="photo.url" class="photo-tile">
+            <a
+              v-for="photo in visiblePhotos(album)"
+              :key="photo.id"
+              :href="photo.url"
+              class="photo-tile"
+              :class="{ 'photo-tile--managing': revealedPhotoId === String(photo.id) }"
+              @click="onTileClick($event, album, photo)"
+            >
               <img :src="photo.thumbUrl || photo.url" :alt="photo.caption || album.name" loading="lazy" decoding="async" />
               <button
                 v-if="isAdmin && !album.isDefault && photo.albumItemId"
@@ -90,7 +97,7 @@
                 :disabled="deleteSaving"
                 @click.stop.prevent="askDelete(album, photo)"
               >
-                <UIcon name="i-carbon-trash-can" class="h-4 w-4" />
+                <UIcon name="i-carbon-trash-can" class="h-4 w-4 absolute inset-0 m-auto" />
               </button>
             </a>
           </MyFancyBox>
@@ -229,6 +236,19 @@ const showDelete = ref(false)
 const deleteTarget = ref<PhotoVO | null>(null)
 const deleteAlbum = ref<PhotoAlbumVO | null>(null)
 const deleteSaving = ref(false)
+const revealedPhotoId = ref<string | null>(null)
+
+// 管理态交互：点击可管理的照片切换显隐删除按钮；其余照片事件照常冒泡给 Fancybox 预览
+const canManagePhoto = (album: PhotoAlbumVO, photo: PhotoVO) => isAdmin.value && !album.isDefault && Boolean(photo.albumItemId)
+const onTileClick = (event: MouseEvent, album: PhotoAlbumVO, photo: PhotoVO) => {
+  if (!canManagePhoto(album, photo)) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  revealedPhotoId.value = revealedPhotoId.value === String(photo.id) ? null : String(photo.id)
+}
+const dismissReveal = () => { revealedPhotoId.value = null }
+onMounted(() => document.addEventListener('click', dismissReveal))
+onBeforeUnmount(() => document.removeEventListener('click', dismissReveal))
 
 const uploadAlbumOptions = computed(() => wall.albums
   .filter(album => !album.isDefault)
@@ -414,6 +434,7 @@ const askDelete = (album: PhotoAlbumVO, photo: PhotoVO) => {
   if (!photo.albumItemId || deleteSaving.value) return
   deleteAlbum.value = album
   deleteTarget.value = photo
+  revealedPhotoId.value = null
   showDelete.value = true
 }
 
@@ -468,12 +489,13 @@ h3 { font-size: 1.08rem; font-weight: 700; }
 .photo-tile img { width: 100%; height: 100%; object-fit: cover; transition: transform .25s ease; }
 .photo-tile:hover img { transform: scale(1.04); }
 .photo-tile span { position: absolute; left: .55rem; bottom: .45rem; color: white; font-size: .7rem; text-shadow: 0 1px 4px #000; }
-.photo-delete { position: absolute; top: .35rem; right: .35rem; display: flex; width: 2.5rem; height: 2.5rem; align-items: center; justify-content: center; border: none; border-radius: 9999px; color: #fff; background: rgba(0, 0, 0, .55); cursor: pointer; opacity: 0; transition: opacity .2s ease, background .2s ease; }
-.photo-tile:hover .photo-delete, .photo-delete:focus-visible { opacity: 1; }
-.photo-delete:hover { background: rgba(220, 38, 38, .9); }
-.photo-delete:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.photo-delete { position: absolute; top: .45rem; right: .45rem; z-index: 2; display: flex; width: 2.25rem; height: 2.25rem; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 9999px; color: #fff; line-height: 1; background: rgba(15, 23, 42, .46); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28), 0 2px 8px rgba(0, 0, 0, .22); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); cursor: pointer; opacity: 0; transform: scale(.7); pointer-events: none; transition: opacity .2s ease, transform .24s cubic-bezier(.34, 1.4, .64, 1), background .2s ease; }
+.photo-tile--managing .photo-delete, .photo-delete:focus-visible { opacity: 1; transform: scale(1); pointer-events: auto; }
+.photo-delete:hover { background: rgba(220, 38, 38, .92); transform: scale(1.08); }
+.photo-delete:active { transform: scale(.94); }
+.photo-delete:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .photo-delete:disabled { cursor: progress; }
-@media (hover: none) { .photo-delete { opacity: 1; } }
+.photo-tile--managing::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at top right, rgba(15, 23, 42, .32), transparent 46%); pointer-events: none; }
 .delete-panel { display: flex; flex-direction: column; gap: .8rem; width: min(92vw, 22rem); padding: 1.25rem; border-radius: .5rem; }
 .delete-preview { width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: .5rem; background: #e5e5e5; }
 .delete-preview img { width: 100%; height: 100%; object-fit: cover; }
@@ -508,5 +530,5 @@ h3 { font-size: 1.08rem; font-weight: 700; }
   .album-grid--expanded { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .today-grid { gap: .4rem; }
 }
-@media (prefers-reduced-motion: reduce) { .photo-tile img { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .photo-tile img { transition: none; } .photo-delete { transition: none; } }
 </style>

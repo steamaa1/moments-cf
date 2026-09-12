@@ -6,7 +6,7 @@
     <div v-else-if="errorMessage" class="rounded-2xl border border-red-200 bg-red-50 p-12 text-center text-sm text-red-700"><p>{{ errorMessage }}</p><UButton class="mt-4" color="red" variant="soft" @click="load">重新加载</UButton></div>
     <div v-else-if="!photos.length" class="rounded-2xl border border-dashed p-12 text-center text-sm text-zinc-500">这个图集还没有照片</div>
     <MyFancyBox v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-      <a v-for="photo in photos" :key="photo.id" :href="photo.url" class="relative aspect-square overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-800"><img :src="photo.thumbUrl || photo.url" :alt="photo.caption || '图集照片'" loading="lazy" decoding="async" class="h-full w-full object-cover transition hover:scale-105" /><button v-if="isAdmin && !album?.isDefault && photo.albumItemId" type="button" class="photo-delete" :aria-label="`删除照片${photo.caption ? `：${photo.caption}` : ''}`" :disabled="deleteSaving" @click.stop.prevent="askDelete(photo)"><UIcon name="i-carbon-trash-can" class="h-4 w-4" /></button></a>
+      <a v-for="photo in photos" :key="photo.id" :href="photo.url" class="relative aspect-square overflow-hidden rounded-2xl bg-zinc-100 dark:bg-zinc-800" :class="{ 'photo-tile--managing': revealedPhotoId === String(photo.id) }" @click="onTileClick($event, photo)"><img :src="photo.thumbUrl || photo.url" :alt="photo.caption || '图集照片'" loading="lazy" decoding="async" class="h-full w-full object-cover transition hover:scale-105" /><button v-if="isAdmin && !album?.isDefault && photo.albumItemId" type="button" class="photo-delete" :aria-label="`删除照片${photo.caption ? `：${photo.caption}` : ''}`" :disabled="deleteSaving" @click.stop.prevent="askDelete(photo)"><UIcon name="i-carbon-trash-can" class="h-4 w-4 absolute inset-0 m-auto" /></button></a>
     </MyFancyBox>
     <UButton v-if="hasNext && !errorMessage" block class="mt-6" :loading="loadingMore" :disabled="loading" @click="loadMore">加载更多</UButton>
 
@@ -56,10 +56,24 @@ const albumId = computed(() => Number(route.params.id))
 const showDelete = ref(false)
 const deleteTarget = ref<PhotoVO | null>(null)
 const deleteSaving = ref(false)
+const revealedPhotoId = ref<string | null>(null)
+
+// 管理态交互：点击可管理的照片切换显隐删除按钮；其余照片事件照常冒泡给 Fancybox 预览
+const canManagePhoto = (photo: PhotoVO) => isAdmin.value && !album.value?.isDefault && Boolean(photo.albumItemId)
+const onTileClick = (event: MouseEvent, photo: PhotoVO) => {
+  if (!canManagePhoto(photo)) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  revealedPhotoId.value = revealedPhotoId.value === String(photo.id) ? null : String(photo.id)
+}
+const dismissReveal = () => { revealedPhotoId.value = null }
+onMounted(() => document.addEventListener('click', dismissReveal))
+onBeforeUnmount(() => document.removeEventListener('click', dismissReveal))
 
 const askDelete = (photo: PhotoVO) => {
   if (!photo.albumItemId || deleteSaving.value) return
   deleteTarget.value = photo
+  revealedPhotoId.value = null
   showDelete.value = true
 }
 
@@ -118,12 +132,14 @@ useHead(() => ({ title: album.value?.name ? album.value.name + ' · 照片墙' :
 
 <style scoped>
 .eyebrow{color:#88a943;font-size:.68rem;font-weight:700;letter-spacing:.16em;margin-bottom:.35rem}
-.photo-delete{position:absolute;top:.35rem;right:.35rem;display:flex;width:2.5rem;height:2.5rem;align-items:center;justify-content:center;border:none;border-radius:9999px;color:#fff;background:rgba(0,0,0,.55);cursor:pointer;opacity:0;transition:opacity .2s ease,background .2s ease}
-a:hover .photo-delete,.photo-delete:focus-visible{opacity:1}
-.photo-delete:hover{background:rgba(220,38,38,.9)}
-.photo-delete:focus-visible{outline:2px solid #fff;outline-offset:1px}
+.photo-delete{position:absolute;top:.45rem;right:.45rem;z-index:2;display:flex;width:2.25rem;height:2.25rem;align-items:center;justify-content:center;padding:0;border:none;border-radius:9999px;color:#fff;line-height:1;background:rgba(15,23,42,.46);box-shadow:inset 0 0 0 1px rgba(255,255,255,.28),0 2px 8px rgba(0,0,0,.22);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);cursor:pointer;opacity:0;transform:scale(.7);pointer-events:none;transition:opacity .2s ease,transform .24s cubic-bezier(.34,1.4,.64,1),background .2s ease}
+.photo-tile--managing .photo-delete,.photo-delete:focus-visible{opacity:1;transform:scale(1);pointer-events:auto}
+.photo-delete:hover{background:rgba(220,38,38,.92);transform:scale(1.08)}
+.photo-delete:active{transform:scale(.94)}
+.photo-delete:focus-visible{outline:2px solid #fff;outline-offset:2px}
 .photo-delete:disabled{cursor:progress}
-@media (hover: none){.photo-delete{opacity:1}}
+.photo-tile--managing::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at top right,rgba(15,23,42,.32),transparent 46%);pointer-events:none}
+@media (prefers-reduced-motion: reduce){.photo-delete{transition:none}}
 .delete-panel{display:flex;flex-direction:column;gap:.8rem;width:min(92vw,22rem);padding:1.25rem;border-radius:.5rem}
 .delete-preview{width:100%;aspect-ratio:1;overflow:hidden;border-radius:.5rem;background:#e5e5e5}
 .delete-preview img{width:100%;height:100%;object-fit:cover}
