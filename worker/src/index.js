@@ -857,7 +857,7 @@ async function photoAlbum(request, env, headers) {
   const count = await env.DB.prepare('SELECT COUNT(*) AS total FROM photo_album_items WHERE album_id=?').bind(albumId).first();
   const rows = await env.DB.prepare('SELECT * FROM photo_album_items WHERE album_id=? ORDER BY sort_order ASC, created_at DESC LIMIT ? OFFSET ?').bind(albumId, size, (page - 1) * size).all();
   const list = (rows.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView(row, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
-  const total = Number(count?.total || 0); return json(ok({ album, list, total, hasNext: page * size < total }), 200, headers);
+  const total = Number(count?.total || 0); return json(ok({ album: { id: Number(album.id), name: album.name, description: album.description, isDefault: Boolean(Number(album.is_default)) }, list, total, hasNext: page * size < total }), 200, headers);
 }
 async function photoAll(request, env, headers) {
   const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
@@ -925,6 +925,41 @@ async function adminPhotoItemRemove(request, env, headers) {
   const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
   const id = intParam(new URL(request.url).searchParams.get('id')); if (!id) return json(fail('图片项无效'), 400, headers);
   await env.DB.prepare('DELETE FROM photo_album_items WHERE id=?').bind(id).run(); return json(ok({}), 200, headers);
+}
+// 判断图集上传文件的引用情况：未被任何动态或其他图集项引用时才允许回收，避免误删仍被使用的内容
+async function albumMediaReferenced(env, url, excludeItemId) {
+  const key = url.startsWith('/upload/') ? url.slice('/upload/'.length) : '';
+  if (key) {
+    const memoRows = await env.DB.prepare('SELECT imgs FROM memos WHERE imgs LIKE ? LIMIT 1000').bind(`%${key}%`).all();
+    const referencedByMemo = (memoRows.results || []).some(row => String(row.imgs || '').split(',').some(raw => normalizeMediaUrls(raw.trim()) === url));
+    if (referencedByMemo) return true;
+  }
+  const other = await env.DB.prepare('SELECT COUNT(*) AS total FROM photo_album_items WHERE image_url=? AND id<>?').bind(url, excludeItemId).first();
+  return Number(other?.total || 0) > 0;
+}
+// 图集照片删除：仅移出图集；无引用的本站上传文件移入媒体回收站，动态与其他用户文件不动
+async function trashOrphanAlbumMedia(env, item, userId) {
+  const url = String(item.image_url || '');
+  if (item.source_type !== 'upload' || !url.startsWith('/upload/') || url.includes('..')) return false;
+  if (await albumMediaReferenced(env, url, Number(item.id))) return false;
+  const media = await env.DB.prepare('SELECT id, owner_id FROM media WHERE r2_key=? AND trashed_at IS NULL LIMIT 1').bind(url.slice('/upload/'.length)).first();
+  if (!media || Number(media.owner_id) !== Number(userId)) return false;
+  await env.DB.prepare('UPDATE media SET trashed_at=CURRENT_TIMESTAMP WHERE id=? AND owner_id=? AND trashed_at IS NULL').bind(media.id, media.owner_id).run();
+  return true;
+}
+async function adminPhotoDelete(request, env, headers) {
+  const access = await requireUser(request, env, headers, true); if (access.response) return access.response;
+  const body = (await readJson(request)) || {};
+  const albumId = intParam(body.albumId); const itemId = intParam(body.id);
+  if (!albumId || !itemId) return json(fail('照片项无效'), 400, headers);
+  const album = await env.DB.prepare('SELECT id,is_default FROM photo_albums WHERE id=?').bind(albumId).first();
+  if (!album) return json(fail('图集不存在'), 404, headers);
+  if (Number(album.is_default) === 1) return json(fail('默认图集的照片来自动态，不能在此删除'), 400, headers);
+  const item = await env.DB.prepare('SELECT id,album_id,source_type,source_ref,image_url FROM photo_album_items WHERE id=? AND album_id=?').bind(itemId, albumId).first();
+  if (!item) return json(fail('照片项不存在'), 404, headers);
+  await env.DB.prepare('DELETE FROM photo_album_items WHERE id=? AND album_id=?').bind(itemId, albumId).run();
+  const mediaTrashed = await trashOrphanAlbumMedia(env, item, access.user.id);
+  return json(ok({ removed: true, mediaTrashed }), 200, headers);
 }
 async function getMemo(request, env, headers) {
   const url = new URL(request.url);
@@ -2431,6 +2466,7 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/admin/photo/album/add') return await adminPhotoAlbumAdd(request, env, headers);
     if (url.pathname === '/api/admin/photo/featured/set') return await adminPhotoFeatured(request, env, headers);
     if (url.pathname === '/api/admin/photo/album/removeItem') return await adminPhotoItemRemove(request, env, headers);
+    if (url.pathname === '/api/admin/photo/delete') return await adminPhotoDelete(request, env, headers);
     if (url.pathname === '/api/admin/migration/preflight') return await migrationPreflight(request, env, headers);
     if (url.pathname === '/api/admin/migration/prepare') return await migrationPrepare(request, env, headers);
     if (url.pathname === '/api/admin/migration/backup/status') return await migrationBackupStatus(request, env, headers);
@@ -2462,7 +2498,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured, adminPhotoDelete, trashOrphanAlbumMedia };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

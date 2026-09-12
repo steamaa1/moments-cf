@@ -82,6 +82,16 @@
           <MyFancyBox class="album-grid" :class="{ 'album-grid--expanded': albumState(album.id).expanded }">
             <a v-for="photo in visiblePhotos(album)" :key="photo.id" :href="photo.url" class="photo-tile">
               <img :src="photo.thumbUrl || photo.url" :alt="photo.caption || album.name" loading="lazy" decoding="async" />
+              <button
+                v-if="isAdmin && !album.isDefault && photo.albumItemId"
+                type="button"
+                class="photo-delete"
+                :aria-label="`删除照片${photo.caption ? `：${photo.caption}` : ''}`"
+                :disabled="deleteSaving"
+                @click.stop.prevent="askDelete(album, photo)"
+              >
+                <UIcon name="i-carbon-trash-can" class="h-4 w-4" />
+              </button>
             </a>
           </MyFancyBox>
         </div>
@@ -150,6 +160,27 @@
         </section>
       </div>
     </UModal>
+
+    <UModal
+      v-model="showDelete"
+      :ui="{ container: 'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur' }"
+    >
+      <div class="delete-panel bg-white dark:bg-neutral-800">
+        <div class="flex items-start justify-between gap-4">
+          <div><h2>删除照片</h2><p class="muted">此操作需要再次确认。</p></div>
+          <UButton color="gray" variant="ghost" icon="i-carbon-close" aria-label="取消删除照片" @click="showDelete = false" />
+        </div>
+        <div v-if="deleteTarget" class="delete-preview">
+          <img :src="deleteTarget.thumbUrl || deleteTarget.url" :alt="deleteTarget.caption || '待删除照片'" />
+        </div>
+        <p v-if="deleteTarget?.caption" class="delete-caption">{{ deleteTarget.caption }}</p>
+        <p class="muted">照片将移出图集「{{ deleteAlbum?.name }}」；未被动态引用的上传文件会移入媒体回收站，可在文件管理中恢复，原动态与其他用户的文件不受影响。</p>
+        <div class="modal-actions">
+          <UButton color="gray" variant="soft" @click="showDelete = false">取消</UButton>
+          <UButton color="red" icon="i-carbon-trash-can" :loading="deleteSaving" @click="confirmDelete">确认删除</UButton>
+        </div>
+      </div>
+    </UModal>
   </main>
 </template>
 
@@ -193,6 +224,11 @@ const featuredLoaded = ref(false)
 const featuredSaving = ref(false)
 const featuredToggling = ref(new Set<string>())
 const originalFeatured = ref(new Map<string, boolean>())
+
+const showDelete = ref(false)
+const deleteTarget = ref<PhotoVO | null>(null)
+const deleteAlbum = ref<PhotoAlbumVO | null>(null)
+const deleteSaving = ref(false)
 
 const uploadAlbumOptions = computed(() => wall.albums
   .filter(album => !album.isDefault)
@@ -374,6 +410,37 @@ const saveFeatured = async () => {
   }
 }
 
+const askDelete = (album: PhotoAlbumVO, photo: PhotoVO) => {
+  if (!photo.albumItemId || deleteSaving.value) return
+  deleteAlbum.value = album
+  deleteTarget.value = photo
+  showDelete.value = true
+}
+
+const confirmDelete = async () => {
+  const album = deleteAlbum.value
+  const photo = deleteTarget.value
+  if (!album || !photo?.albumItemId || deleteSaving.value) return
+  const wasExpanded = albumState(album.id).expanded
+  deleteSaving.value = true
+  try {
+    const result = await useMyFetch<{ removed: boolean, mediaTrashed: boolean }>('/admin/photo/delete', { albumId: album.id, id: photo.albumItemId })
+    toast.success(result?.mediaTrashed ? '照片已移出图集，文件已移入回收站' : '照片已从图集移除')
+    deleteTarget.value = null
+    deleteAlbum.value = null
+    showDelete.value = false
+    await loadWall()
+    if (wasExpanded) {
+      const refreshed = wall.albums.find(item => item.id === album.id)
+      if (refreshed) await loadAll(refreshed)
+    }
+  } catch (error: any) {
+    toast.error(error?.message || '照片删除失败')
+  } finally {
+    deleteSaving.value = false
+  }
+}
+
 useHead({
   title: '照片墙',
   meta: [
@@ -401,6 +468,16 @@ h3 { font-size: 1.08rem; font-weight: 700; }
 .photo-tile img { width: 100%; height: 100%; object-fit: cover; transition: transform .25s ease; }
 .photo-tile:hover img { transform: scale(1.04); }
 .photo-tile span { position: absolute; left: .55rem; bottom: .45rem; color: white; font-size: .7rem; text-shadow: 0 1px 4px #000; }
+.photo-delete { position: absolute; top: .35rem; right: .35rem; display: flex; width: 2.5rem; height: 2.5rem; align-items: center; justify-content: center; border: none; border-radius: 9999px; color: #fff; background: rgba(0, 0, 0, .55); cursor: pointer; opacity: 0; transition: opacity .2s ease, background .2s ease; }
+.photo-tile:hover .photo-delete, .photo-delete:focus-visible { opacity: 1; }
+.photo-delete:hover { background: rgba(220, 38, 38, .9); }
+.photo-delete:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.photo-delete:disabled { cursor: progress; }
+@media (hover: none) { .photo-delete { opacity: 1; } }
+.delete-panel { display: flex; flex-direction: column; gap: .8rem; width: min(92vw, 22rem); padding: 1.25rem; border-radius: .5rem; }
+.delete-preview { width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: .5rem; background: #e5e5e5; }
+.delete-preview img { width: 100%; height: 100%; object-fit: cover; }
+.delete-caption { font-size: .9rem; font-weight: 600; word-break: break-all; }
 .featured-card { position: relative; display: block; overflow: hidden; border-radius: .5rem; background: #222; aspect-ratio: 4 / 3; box-shadow: 0 16px 32px rgba(0, 0, 0, .14); }
 .featured-card img { width: 100%; height: 100%; object-fit: cover; }
 .featured-caption { position: absolute; inset: auto 0 0; padding: 2.5rem 1rem .85rem; color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .72)); font-size: .75rem; }
