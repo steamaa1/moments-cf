@@ -116,6 +116,17 @@ const html = `<!doctype html><html><head>
   assert.deepEqual(JSON.parse(ld), { '@context': 'https://schema.org', '@type': 'WebSite', description: '</script><b>x</b>' });
 }
 
+// 10. canonical/og:url 去尾斜杠（除根路径），与 sitemap 及 Assets 的 drop-trailing-slash 一致
+{
+  const trailing = injectSeoMeta(html, { siteUrl: 'https://wb.me-i.top' }, '/memo/91/');
+  assert.equal(trailing.match(/<link rel="canonical" href="([^"]+)"/)?.[1], 'https://wb.me-i.top/memo/91');
+  assert.equal(trailing.match(/<meta property="og:url" content="([^"]+)"/)?.[1], 'https://wb.me-i.top/memo/91');
+  const root = injectSeoMeta(html, { siteUrl: 'https://wb.me-i.top' }, '/');
+  assert.equal(root.match(/<link rel="canonical" href="([^"]+)"/)?.[1], 'https://wb.me-i.top/');
+  const noLeading = injectSeoMeta(html, { siteUrl: 'https://wb.me-i.top' }, 'memo/91');
+  assert.equal(noLeading.match(/<link rel="canonical" href="([^"]+)"/)?.[1], 'https://wb.me-i.top/memo/91');
+}
+
 // 静态断言：配置保存、公开配置、设置页、运行时回退、GEO 能力
 const source = await readFile(new URL('../../worker/src/index.js', import.meta.url), 'utf8');
 assert.match(source, /config\.seoDescription = String\(body\.seoDescription/);
@@ -148,5 +159,13 @@ assert.match(layoutDefault, /og:image/, 'layouts 输出 og:image');
 assert.match(layoutDefault, /summary_large_image/, 'twitter:card 升级大图卡');
 const nuxtConfig = await readFile(new URL('../../front/nuxt.config.ts', import.meta.url), 'utf8');
 assert.match(nuxtConfig, /lang: 'zh-CN'/, 'html lang 声明中文');
+// 规范 URL 统一无尾斜杠：Worker 注入值与前端运行时值必须一致，
+// 否则 unhead 接管 canonical 标签后会把注入值改回带尾斜杠的版本（Search Console 报规范网页不同）
+const wrangler = await readFile(new URL('../../worker/wrangler.toml', import.meta.url), 'utf8');
+assert.match(wrangler, /html_handling = "drop-trailing-slash"/, 'wrangler.toml 声明无尾斜杠为规范地址');
+const wranglerTemplate = await readFile(new URL('../../worker/wrangler.toml.template', import.meta.url), 'utf8');
+assert.match(wranglerTemplate, /html_handling = "drop-trailing-slash"/, '部署模板同样声明尾斜杠策略');
+assert.match(layoutDefault, /canonicalPath = computed\(\(\) => route\.path\.replace/, 'layouts canonical 去尾斜杠');
+assert.match(layoutDefault, /canonicalBase \+ canonicalPath\.value/, 'layouts 用规范化路径拼 canonical');
 
 console.log('SEO meta injection regression tests: PASS');

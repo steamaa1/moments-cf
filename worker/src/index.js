@@ -1174,7 +1174,11 @@ export function injectSeoMeta(html, config, path = '/', page = null) {
   const description = escapeXml(String(page?.description || config?.seoDescription || (config?.slogan ? `${config.slogan} · ${config.title || DEFAULT_SEO.title}` : DEFAULT_SEO.description)));
   const keywords = escapeXml(String(config?.seoKeywords || DEFAULT_SEO.keywords));
   const siteUrl = String(config?.siteUrl || '').trim().replace(/\/+$/, '');
-  const canonical = siteUrl ? `${siteUrl}${String(path || '/').replace(/^([^/])/, '/$1')}` : '';
+  // 规范 URL 统一无尾斜杠（根路径除外，与 [assets] html_handling = "drop-trailing-slash" 一致）。
+  // SPA 回退会让 /memo/91 与 /memo/91/ 都返回 200，若各自自封规范，Google 会二选一
+  // 并报「重复网页，Google 选择的规范网页与用户指定的不同」。
+  const canonicalPath = String(path || '/').replace(/^([^/])/, '/$1').replace(/\/+$/, '') || '/';
+  const canonical = siteUrl ? `${siteUrl}${canonicalPath}` : '';
   const canonicalTag = canonical ? `<link rel="canonical" href="${escapeXml(canonical)}">` : '';
   const ogUrlTag = canonical ? `<meta property="og:url" content="${escapeXml(canonical)}">` : '';
   let output = String(html || '');
@@ -1220,12 +1224,20 @@ export function buildJsonLd(type, data) {
 }
 // D1 时间戳（YYYY-MM-DD HH:MM:SS UTC）→ ISO 8601（末尾 Z）
 function toIsoTime(value) { return value ? `${String(value).replace(' ', 'T')}Z` : undefined; }
-// 组装 /memo/:id、/user/:id 的页面级 SEO 数据（页面级 meta 与 JSON-LD）。
-// env.DB 缺失或路径不匹配时返回 null，回退站点级 meta；私密/不存在的页面返回 noindex。
+// SPA 路由表：Cloudflare Assets 的 SPA 回退会让任意路径都返回 200 的 index.html，
+// 若不区分路由，未知路径（软 404）就会带着「自引用 canonical + index,follow」被 Google 收录成重复页。
+// 公开路由可索引；私密路由与未知路由统一注入 noindex（与 front/layouts/default.vue、robots.txt 对齐）。
+const PRIVATE_ROUTE_PATTERNS = [/^\/new$/, /^\/edit\/[^/]+$/, /^\/user\/(?:login|reg|settings)$/, /^\/sys(?:\/|$)/];
+const PUBLIC_ROUTE_PATTERNS = [/^\/$/, /^\/about$/, /^\/friend$/, /^\/photos$/, /^\/photos\/album\/[^/]+$/, /^\/memo\/\d+$/, /^\/user\/\d+$/, /^\/user\/calendar$/, /^\/tags\/[^/]+\/[^/]+$/];
+// 组装页面级 SEO 数据（页面级 meta 与 JSON-LD）。
+// 私密路由、未知路由、私密/定时未发布/不存在的动态与用户页返回 noindex；
+// 其余公开路由返回 null 时回退站点级 meta。
 async function pageSeo(env, config, path, origin = '') {
+  const cleanPath = String(path || '/').replace(/\/+$/, '') || '/';
+  if (PRIVATE_ROUTE_PATTERNS.some(pattern => pattern.test(cleanPath))) return { noindex: true };
+  if (!PUBLIC_ROUTE_PATTERNS.some(pattern => pattern.test(cleanPath))) return { noindex: true };
   if (!env.DB) return null;
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || String(origin || '').replace(/\/+$/, '');
-  const cleanPath = String(path || '/').replace(/\/+$/, '') || '/';
   const memoMatch = cleanPath.match(/^\/memo\/(\d+)$/);
   if (memoMatch) {
     const view = memoView(await env.DB.prepare(`${MEMO_SELECT} WHERE m.id = ?`).bind(Number(memoMatch[1])).first());

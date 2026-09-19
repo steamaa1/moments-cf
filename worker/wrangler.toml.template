@@ -10,6 +10,10 @@ binding = "ASSETS"
 # 静态资源由 Worker 转发给 Assets 并保留原响应头。
 run_worker_first = ["/*"]
 not_found_handling = "single-page-application"
+# 规范 URL 统一无尾斜杠：/photos 直出 200，/photos/ 307 回到 /photos。
+# 默认的 auto-trailing-slash 会让 /photos 307 跳到 /photos/，而 sitemap 与 canonical 用的是无斜杠版，
+# Google 因此报「重复网页，Google 选择的规范网页与用户指定的不同」。
+html_handling = "drop-trailing-slash"
 
 [[d1_databases]]
 binding = "DB"

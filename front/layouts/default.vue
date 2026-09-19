@@ -85,7 +85,11 @@ const seoTitle = sysConfigVO.title || site.title;
 const seoDescription = sysConfigVO.seoDescription || (sysConfigVO.slogan ? `${sysConfigVO.slogan} · ${seoTitle}` : site.description);
 const seoKeywords = sysConfigVO.seoKeywords || site.keywords;
 const canonicalBase = (sysConfigVO.siteUrl || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
-const canonicalUrl = computed(() => canonicalBase ? canonicalBase + route.path : '');
+// 规范 URL 统一无尾斜杠（根路径除外），与 Worker 注入值和 sitemap 对齐。
+// unhead 对 link[rel=canonical] 使用固定去重键，运行时会接管并更新服务端已渲染的同名标签，
+// 因此这里若保留 route.path 的尾斜杠，最终生效的 canonical 就会与 sitemap 不一致。
+const canonicalPath = computed(() => route.path.replace(/\/+$/, '') || '/');
+const canonicalUrl = computed(() => canonicalBase ? canonicalBase + canonicalPath.value : '');
 // og:image 需绝对地址才能被社交与部分搜索引擎爬虫识别；默认站点封面
 const seoOgImage = canonicalBase + (site.ogImage || '/cover.webp');
 const noindex = ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix));

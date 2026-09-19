@@ -18,7 +18,8 @@ const required = [
   '[assets]',
   'directory = "../front/.output/public"',
   'not_found_handling = "single-page-application"',
-
+  // SEO：无尾斜杠为规范 URL，避免 sitemap/canonical 与 Assets 的 307 跳转冲突（Search Console 报重复网页）
+  'html_handling = "drop-trailing-slash"',
 ];
 const missing = required.filter(value => !config.includes(value));
 if (missing.length) throw new Error(`wrangler.toml is missing: ${missing.join(', ')}`);
@@ -57,7 +58,7 @@ for (const statement of ['ALTER TABLE users ADD COLUMN telegram_chat_id']) {
 for (const table of ['CREATE TABLE IF NOT EXISTS user_status']) {
   if (!phase9Schema.includes(table)) throw new Error(`Phase 9 schema is missing: ${table}`);
 }
-for (const value of ['binding = "ASSETS"', 'crons = ["0 3 * * SUN"]', 'CLOUDFLARE_ACCOUNT_ID = "__CLOUDFLARE_ACCOUNT_ID__"', 'R2_BUCKET_NAME = "__R2_BUCKET_NAME__"']) {
+for (const value of ['binding = "ASSETS"', 'crons = ["0 3 * * SUN"]', 'CLOUDFLARE_ACCOUNT_ID = "__CLOUDFLARE_ACCOUNT_ID__"', 'R2_BUCKET_NAME = "__R2_BUCKET_NAME__"', 'html_handling = "drop-trailing-slash"']) {
   if (!template.includes(value)) throw new Error(`Phase 7 Wrangler template is missing: ${value}`);
 }
 console.log('Phase 7 Worker configuration guard: PASS');
