@@ -168,4 +168,16 @@ assert.match(wranglerTemplate, /html_handling = "drop-trailing-slash"/, '部署�
 assert.match(layoutDefault, /canonicalPath = computed\(\(\) => route\.path\.replace/, 'layouts canonical 去尾斜杠');
 assert.match(layoutDefault, /canonicalBase \+ canonicalPath\.value/, 'layouts 用规范化路径拼 canonical');
 
+// 11. SEO 总开关：默认开启、保存写入、四处闸门、公开配置暴露、前端运行时同步
+assert.match(source, /enableSeo: true/, '配置默认必须为开启');
+assert.match(source, /config\.enableSeo = body\.enableSeo !== false/, '保存时必须写入开关（缺省视为开启）');
+assert.match(source, /if \(config\?\.enableSeo === false\) return \{ noindex: true \}/, 'pageSeo 必须按开关让全站 noindex');
+assert.match(source, /if \(config\?\.enableSeo === false\) return new Response\('Not Found', \{ status: 404 \}\)/, 'sitemap 与 llms 关闭时必须 404');
+assert.match(source, /Disallow: \/\\n'/, 'robots 关闭时必须全站禁止抓取');
+assert.match(source, /'siteUrl', 'enableSeo',/, '公开配置必须暴露 enableSeo，前端才能同步');
+assert.match(source, /const canonical = siteUrl && seoEnabled \?/, '关闭时必须不输出 canonical');
+assert.match(layoutDefault, /sysConfigVO\.enableSeo === false/, 'layout 必须按开关同步 noindex（Googlebot 会执行 JS，否则运行时覆盖注入值）');
+assert.match(settings, /v-model="state\.enableSeo"/, '系统设置必须有 SEO 总开关');
+assert.match(settings, /启用 SEO/, '开关必须有明确标签');
+
 console.log('SEO meta injection regression tests: PASS');

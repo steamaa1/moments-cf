@@ -46,6 +46,8 @@ const DEFAULT_CONFIG = {
   enableRegisterApproval: false,
   seoDescription: '',
   seoKeywords: '',
+  // SEO 总开关：关闭后全站 noindex、robots 禁止抓取、sitemap 与 llms 摘要不再提供
+  enableSeo: true,
   siteUrl: 'https://wb.me-i.top',
   backupIntervalDays: 7,
   backupRetentionDays: 90,
@@ -154,7 +156,7 @@ const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
   'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength', 'telegramBotUsername', 'friendNotice', 'friendEmail',
-  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister', 'enableRegisterApproval', 'seoDescription', 'seoKeywords', 'siteUrl',
+  'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister', 'enableRegisterApproval', 'seoDescription', 'seoKeywords', 'siteUrl', 'enableSeo',
   'attachmentMaxSize', 'attachmentMaxCount',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
@@ -453,6 +455,7 @@ async function saveConfig(request, env, headers) {
   config.turnstileSiteKey = String(body.turnstileSiteKey || '').trim().slice(0, 200);
   config.turnstileSecretKey = String(body.turnstileSecretKey || previousConfig.turnstileSecretKey || '').trim().slice(0, 300);
   config.enableRegisterApproval = Boolean(body.enableRegisterApproval);
+  config.enableSeo = body.enableSeo !== false;
   config.seoDescription = String(body.seoDescription || '').trim().slice(0, 300);
   config.seoKeywords = String(body.seoKeywords || '').trim().slice(0, 500);
   config.siteUrl = String(body.siteUrl || '').trim().replace(/\/+$/, '').slice(0, 200);
@@ -1318,7 +1321,10 @@ export function injectSeoMeta(html, config, path = '/', page = null) {
   // SPA 回退会让 /memo/91 与 /memo/91/ 都返回 200，若各自自封规范，Google 会二选一
   // 并报「重复网页，Google 选择的规范网页与用户指定的不同」。
   const canonicalPath = String(path || '/').replace(/^([^/])/, '/$1').replace(/\/+$/, '') || '/';
-  const canonical = siteUrl ? `${siteUrl}${canonicalPath}` : '';
+  // SEO 总开关关闭时不输出 canonical / og:url（不参与规范化与收录）；
+  // og:image 的绝对化仍用 siteUrl，保证关闭开关后社交分享预览不受影响
+  const seoEnabled = config?.enableSeo !== false;
+  const canonical = siteUrl && seoEnabled ? `${siteUrl}${canonicalPath}` : '';
   const canonicalTag = canonical ? `<link rel="canonical" href="${escapeXml(canonical)}">` : '';
   const ogUrlTag = canonical ? `<meta property="og:url" content="${escapeXml(canonical)}">` : '';
   let output = String(html || '');
@@ -1342,7 +1348,7 @@ export function injectSeoMeta(html, config, path = '/', page = null) {
   // og:image：页面级首图优先；否则把生成 HTML 里的相对 og:image 绝对化（有规范域名时）
   let ogImage = String(page?.ogImage || '').trim();
   const existingOgImage = output.match(/<meta property="og:image"[^>]*content="([^"]*)"/)?.[1] || '';
-  if (!ogImage && canonical && existingOgImage && !/^https?:\/\//i.test(existingOgImage)) ogImage = `${canonical.replace(/\/+$/, '')}${existingOgImage.startsWith('/') ? existingOgImage : `/${existingOgImage}`}`;
+  if (!ogImage && siteUrl && existingOgImage && !/^https?:\/\//i.test(existingOgImage)) ogImage = `${siteUrl}${existingOgImage.startsWith('/') ? existingOgImage : `/${existingOgImage}`}`;
   if (ogImage) {
     if (/<meta property="og:image"[^>]*>/.test(output)) output = output.replace(/<meta property="og:image"[^>]*>/, `<meta property="og:image" content="${escapeXml(ogImage)}">`);
     else output = output.replace('</head>', `<meta property="og:image" content="${escapeXml(ogImage)}"></head>`);
@@ -1373,6 +1379,8 @@ const PUBLIC_ROUTE_PATTERNS = [/^\/$/, /^\/about$/, /^\/friend$/, /^\/photos$/, 
 // 私密路由、未知路由、私密/定时未发布/不存在的动态与用户页返回 noindex；
 // 其余公开路由返回 null 时回退站点级 meta。
 async function pageSeo(env, config, path, origin = '') {
+  // SEO 总开关关闭：所有页面一律 noindex，不组装 canonical/JSON-LD，与 robots/sitemap 的关闭语义保持一致
+  if (config?.enableSeo === false) return { noindex: true };
   const cleanPath = String(path || '/').replace(/\/+$/, '') || '/';
   if (PRIVATE_ROUTE_PATTERNS.some(pattern => pattern.test(cleanPath))) return { noindex: true };
   if (!PUBLIC_ROUTE_PATTERNS.some(pattern => pattern.test(cleanPath))) return { noindex: true };
@@ -1445,6 +1453,7 @@ async function sitemap(request, env) {
     env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(),
   ]);
   const config = parseConfig(configRow?.content);
+  if (config?.enableSeo === false) return new Response('Not Found', { status: 404 });
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || new URL(request.url).origin;
   const urls = [];
   const push = (loc, lastmod, freq, priority, images) => {
@@ -1475,6 +1484,7 @@ async function sitemap(request, env) {
 async function robots(request, env) {
   const row = env.DB ? await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : null;
   const config = parseConfig(row?.content);
+  if (config?.enableSeo === false) return new Response('User-agent: *\nDisallow: /\n', { headers: { 'content-type': 'text/plain; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || new URL(request.url).origin;
   // 私密路径：与 front/layouts/default.vue 的 noindex 前缀保持一致
   const privatePaths = ['/api/', '/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'];
@@ -1500,6 +1510,7 @@ async function llmsIndex(request, env, full = false) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
   const url = new URL(request.url);
   const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
+  if (config?.enableSeo === false) return new Response('Not Found', { status: 404 });
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || url.origin;
   const limit = full ? 100 : 50;
   const rows = await env.DB.prepare(`${MEMO_SELECT} WHERE m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP ORDER BY m.created_at DESC LIMIT ?`).bind(limit).all();

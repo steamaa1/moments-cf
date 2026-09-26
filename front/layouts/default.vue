@@ -92,7 +92,9 @@ const canonicalPath = computed(() => route.path.replace(/\/+$/, '') || '/');
 const canonicalUrl = computed(() => canonicalBase ? canonicalBase + canonicalPath.value : '');
 // og:image 需绝对地址才能被社交与部分搜索引擎爬虫识别；默认站点封面
 const seoOgImage = canonicalBase + (site.ogImage || '/cover.webp');
-const noindex = ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix));
+// 后台关闭 SEO 总开关时全站 noindex；Googlebot 会执行 JS，若不在这里同步，
+// 运行时的 "index, follow" 会覆盖 Worker 注入的 noindex
+const noindex = sysConfigVO.enableSeo === false || ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix));
 useHead(() => ({
   title: seoTitle,
   link: [

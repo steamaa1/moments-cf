@@ -128,6 +128,7 @@ export type SysConfigVO = {
     commentOrder: 'desc' | 'asc',
     timeFormat: 'timeAgo' | 'time',
     siteUrl: string,
+    enableSeo: boolean,
     backupIntervalDays: number,
     backupRetentionDays: number,
     enableD1Backup: boolean,
