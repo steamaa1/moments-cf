@@ -43,7 +43,27 @@ assert.match(preview, /\?download=1/, '下载必须走 download=1 约定');
 assert.match(preview, /i-carbon-download/, '必须提供下载按钮图标');
 assert.match(preview, /aria-label="下载附件"/, '下载按钮必须有可访问名称');
 assert.match(preview, /content-type|type \|\| ''/, '必须按类型映射图标');
-assert.match(preview, /prefers-reduced-motion|motion-reduce:/, '必须尊重减少动态效果偏好');
+assert.match(preview, /motion-reduce:/, '必须尊重减少动态效果偏好');
+
+// 格式图案：不得再用「字母字形」图标（carbon 的 zip/ppt/txt 等本身就是字母，视觉上等同文字），
+// 必须使用纯几何实心图案 + 同色浮块，且按文件族着色
+// 兼容 i-carbon-zip 与 i-carbon:zip 两种写法，否则这条守卫形同虚设
+assert.doesNotMatch(preview, /i-carbon[-:](zip|ppt|txt|document-pdf|document-word-processor|table)\b/, '不得再用字母字形的图标表示格式');
+assert.match(preview, /format\.tone/, '格式浮块必须绑定色相类');
+assert.match(preview, /:name="format\.icon"/, '格式浮块必须渲染几何图案');
+assert.match(preview, /rounded-lg ring-1 ring-inset/, '格式浮块必须有圆角与内描边');
+for (const name of ['document-text-solid', 'table-cells-solid', 'presentation-chart-bar-solid', 'archive-box-solid', 'code-bracket-solid', 'photo-solid', 'musical-note-solid', 'video-camera-solid', 'book-open-solid', 'document-solid']) {
+  assert.ok(preview.includes(`i-heroicons:${name}`), `缺少实心几何图案：${name}`);
+}
+assert.match(preview, /MARKS\.(pdf|word|sheet|slide|archive|text|code|book|image|audio|video|file)/, '必须有按文件族划分的图案表');
+assert.match(preview, /EXTENSION_MARKS\[/, '必须先按扩展名匹配图案');
+assert.match(preview, /MIME_MARKS\.find/, '扩展名缺失时必须回退 MIME 匹配');
+// 色相：pdf 红 / 表格绿 / 压缩包琥珀，且用 10% 透明底承载
+assert.match(preview, /#d94a4a/, 'pdf 必须有独立色相');
+assert.match(preview, /#2e9e63/, '表格类必须有独立色相');
+assert.match(preview, /#c08a2e/, '压缩包类必须有独立色相');
+assert.match(preview, /bg-\[#d94a4a\]\/10/, '浮块必须用同色低透明度底');
+assert.match(preview, /dark:bg-\[#d94a4a\]\/20/, '深色模式必须有对应底色');
 assert.doesNotMatch(preview, /useMyFetch|\$fetch|fetch\(/, '展示卡片不得发请求');
 
 // 只读展示页
