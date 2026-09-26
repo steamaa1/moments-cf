@@ -24,6 +24,15 @@ for (const [pageName, source] of [['照片墙', photos], ['图集详情', albumP
   assert.match(source, /未被动态引用的上传文件会移入媒体回收站/, `${pageName}确认弹窗须准确说明删除语义`);
   assert.match(source, /\.photo-delete:focus-visible/, `${pageName}删除按钮须提供键盘焦点反馈`);
   assert.match(source, /prefers-reduced-motion:\s*reduce/, `${pageName}必须尊重减少动态效果偏好`);
+  const deleteModal = [...source.matchAll(/<UModal\b[\s\S]*?<\/UModal>/g)]
+    .find(([modal]) => /class="delete-panel\b/.test(modal));
+  assert.ok(deleteModal, `${pageName}必须保留独立的删除确认弹窗`);
+  assert.match(deleteModal[0], /:ui="\{[^"]*\bwidth:\s*'w-\[92vw\] max-w-\[22rem\]'[^"]*\}"/, `${pageName}删除弹窗外层须限制为视口的 92% 且最大宽度为 22rem`);
+  const deletePanelStyle = source.match(/\.delete-panel\s*\{[^}]*\}/);
+  assert.ok(deletePanelStyle, `${pageName}删除弹窗须有内层面板样式`);
+  assert.match(deletePanelStyle[0], /(?:^|[;{])\s*width:\s*100%\s*;/, `${pageName}删除面板必须填满外层宽度，避免右侧空白`);
+  assert.match(deletePanelStyle[0], /(?:^|[;{])\s*min-width:\s*0\s*;/, `${pageName}删除面板须允许在窄视口收缩`);
+  assert.match(deletePanelStyle[0], /(?:^|[;{])\s*box-sizing:\s*border-box\s*;/, `${pageName}删除面板的内边距必须计入宽度`);
 }
 
 assert.match(photos, /askDelete\(album, photo\)/, '照片墙删除必须保留目标图集上下文');

@@ -40,7 +40,7 @@
 
     <UModal
       v-model="showDelete"
-      :ui="{ container: 'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur' }"
+      :ui="{ container: 'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur', width: 'w-[92vw] max-w-[22rem]', padding: 'p-0' }"
     >
       <div class="delete-panel bg-white dark:bg-zinc-800">
         <div class="flex items-start justify-between gap-4">
@@ -164,7 +164,7 @@ useHead(() => ({ title: album.value?.name ? album.value.name + ' · 照片墙' :
 .photo-tile:focus-visible, .photo-delete:focus-visible, .manage-toggle:focus-visible, .back-link:focus-visible { outline: 3px solid #78943f; outline-offset: 3px; }
 .photo-tile:focus-visible { outline-offset: -4px; }
 .photo-delete:focus-visible { outline-color: #fff; outline-offset: -4px; }
-.delete-panel { display: flex; flex-direction: column; gap: .8rem; width: min(92vw,22rem); max-height: 88vh; overflow-y: auto; padding: 1.25rem; border-radius: .5rem; }
+.delete-panel { display: flex; flex-direction: column; gap: .8rem; width: 100%; min-width: 0; box-sizing: border-box; max-height: 88vh; overflow-y: auto; padding: 1.25rem; border-radius: .5rem; }
 .delete-preview { width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: .5rem; background: #e5e5e5; }
 .delete-preview img { width: 100%; height: 100%; object-fit: cover; }
 .delete-caption { font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }

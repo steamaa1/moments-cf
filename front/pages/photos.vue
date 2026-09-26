@@ -10,7 +10,7 @@
             <h1 id="photos-title">照片墙</h1>
             <p class="subtitle">沿着光影，翻看每一段日常。</p>
           </div>
-          <UButton v-if="isAdmin" icon="i-carbon-settings-adjust" color="gray" variant="soft" class="min-h-11 shrink-0" @click="showAdmin = true">照片管理</UButton>
+          <UButton v-if="isAdmin" icon="i-carbon-settings-adjust" color="gray" variant="soft" class="min-h-11 shrink-0" @click="openManagementHome">照片管理</UButton>
         </div>
         <div v-if="isAdmin && wall.albums.some(album => !album.isDefault)" class="browse-toolbar">
           <span>{{ managing ? '管理模式：可从自建图集中移除照片' : '点击照片查看大图' }}</span>
@@ -57,7 +57,7 @@
         <div class="section-heading"><div><p class="eyebrow">COLLECTIONS</p><h2 id="albums-title">所有图集</h2></div></div>
         <div v-if="loading" class="status" role="status">正在整理照片…</div>
         <div v-else-if="wallError" class="empty"><p>{{ wallError }}</p><UButton class="mt-4" color="gray" variant="soft" @click="loadWall">重新加载</UButton></div>
-        <div v-else-if="!wall.albums.length" class="empty"><UIcon name="i-carbon-image" class="empty-icon" aria-hidden="true" /><p>还没有图集</p><p class="empty-hint">照片会在这里慢慢聚起来。</p><UButton v-if="isAdmin" class="mt-4" @click="showAdmin = true">创建图集</UButton></div>
+        <div v-else-if="!wall.albums.length" class="empty"><UIcon name="i-carbon-image" class="empty-icon" aria-hidden="true" /><p>还没有图集</p><p class="empty-hint">照片会在这里慢慢聚起来。</p><UButton v-if="isAdmin" class="mt-4" @click="openCreateAlbum">创建图集</UButton></div>
         <div v-for="album in (wallError ? [] : wall.albums)" :key="album.id" class="album-section">
           <div class="album-title">
             <div class="album-heading"><h3>{{ album.name }}</h3><span class="count">{{ album.count || 0 }} 张</span><p v-if="album.description">{{ album.description }}</p></div>
@@ -91,38 +91,59 @@
 
     <UModal
       v-model="showAdmin"
-      :ui="{ container: 'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur' }"
+      :prevent-close="photoSaving || albumSaving || featuredSaving"
+      :ui="{ width: 'w-[92vw] max-w-[38rem]', padding: 'p-0', container: 'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur' }"
     >
       <div class="admin-panel max-h-[88vh] overflow-y-auto bg-white dark:bg-neutral-800">
-        <div class="flex items-start justify-between gap-4">
-          <div><h2>照片管理</h2><p class="muted">每个管理区可单独保存。</p></div>
-          <UButton color="gray" variant="ghost" icon="i-carbon-close" aria-label="关闭照片管理" @click="showAdmin = false" />
+        <div class="management-header">
+          <div>
+            <UButton v-if="managementView !== 'home'" color="gray" variant="ghost" icon="i-carbon-arrow-left" class="min-h-11" @click="goManagementBack">返回{{ managementView === 'album' || managementView === 'featured' || managementView === 'create' ? '照片管理' : '图集' }}</UButton>
+            <h2>{{ managementTitle }}</h2>
+            <p class="muted">{{ managementHint }}</p>
+          </div>
+          <UButton color="gray" variant="ghost" icon="i-carbon-close" aria-label="关闭照片管理" class="min-h-11" :disabled="photoSaving || albumSaving || featuredSaving" @click="showAdmin = false" />
         </div>
 
-        <form class="admin-section" @submit.prevent="savePhoto">
-          <div><h3>添加照片</h3><p class="muted">选择图集后，上传本地图片或填写图片直链保存，两者可混用。</p></div>
-          <UFormGroup label="图集" required>
-            <USelectMenu v-model="uploadAlbumId" :options="uploadAlbumOptions" value-attribute="value" option-attribute="label" placeholder="选择图集" />
-          </UFormGroup>
+        <div v-if="managementView === 'home'" class="management-home">
+          <button type="button" class="management-action" @click="openAlbumEditor()"><UIcon name="i-carbon-add" aria-hidden="true" /><span><strong>新建图集</strong><small>为一组照片取个名字</small></span><UIcon name="i-carbon-chevron-right" aria-hidden="true" /></button>
+          <button v-if="uploadHasDraft && uploadAlbumId" type="button" class="draft-action" @click="resumeUploadDraft">继续添加到「{{ wall.albums.find(album => album.id === uploadAlbumId)?.name || '原图集' }}」 · {{ uploadFiles.length + directUrlList.length + uploadPendingUrls.length }} 项待处理</button>
+          <div class="management-list-heading">选择图集 <span>{{ wall.albums.length }} 个</span></div>
+          <button v-for="album in wall.albums" :key="album.id" type="button" class="management-album" @click="openManagementAlbum(album)">
+            <img v-if="album.photos?.[0]" :src="album.photos[0].thumbUrl || album.photos[0].url" alt="" loading="lazy" />
+            <span v-else class="management-cover"><UIcon name="i-carbon-image" aria-hidden="true" /></span>
+            <span class="management-album-copy"><strong>{{ album.name }}</strong><small>{{ album.isDefault ? '动态自动汇集 · 只读' : `${album.count || 0} 张照片${album.description ? ` · ${album.description}` : ''}` }}</small></span>
+            <UIcon name="i-carbon-chevron-right" aria-hidden="true" />
+          </button>
+          <button type="button" class="management-action" @click="managementView = 'featured'"><UIcon name="i-carbon-star" aria-hidden="true" /><span><strong>精选图片</strong><small>已精选 {{ wall.featured.length }} 张<span v-if="featuredChanges"> · {{ featuredChanges }} 项待保存</span></small></span><UIcon name="i-carbon-chevron-right" aria-hidden="true" /></button>
+        </div>
+
+        <div v-if="managementView === 'album' && selectedAlbum" class="management-album-detail">
+          <div class="management-summary"><span>{{ selectedAlbum.isDefault ? '此图集自动汇集公开动态中的照片，不支持手动编辑。' : selectedAlbum.description || '还没有描述，可以编辑图集信息。' }}</span><span>{{ selectedAlbum.count || 0 }} 张</span></div>
+          <template v-if="!selectedAlbum.isDefault">
+            <UButton icon="i-carbon-add" block class="min-h-11" @click="openAddPhotos(selectedAlbum)">添加照片到「{{ selectedAlbum.name }}」</UButton>
+            <UButton icon="i-carbon-edit" color="gray" variant="soft" block class="min-h-11" @click="openAlbumEditor(selectedAlbum)">编辑图集信息</UButton>
+          </template>
+          <p v-else class="muted">动态照片请在对应动态中管理；此处仅可查看图集。</p>
+        </div>
+
+        <form v-if="managementView === 'add' && selectedAlbum && !selectedAlbum.isDefault" class="admin-section" @submit.prevent="savePhoto">
+          <div><h3>添加到「{{ selectedAlbum.name }}」</h3><p class="muted">选择本地图片、填写直链，或两者一起添加。</p></div>
           <UFormGroup label="本地图片"><UInput :key="uploadInputKey" type="file" accept="image/*" multiple @change="selectPhoto" /></UFormGroup>
           <UFormGroup label="图片直链"><UTextarea v-model="uploadDirectUrls" :rows="2" placeholder="每行一个图片直链，如 https://example.com/a.jpg，可与本地图片混用" /></UFormGroup>
           <p class="muted" role="status">待上传 {{ uploadFiles.length }} 个文件、{{ directUrlList.length }} 条图片直链<span v-if="uploadPendingUrls.length">；待加入图集 {{ uploadPendingUrls.length }} 张</span></p>
-          <p v-if="uploadPendingUrls.length && uploadPendingAlbumId !== uploadAlbumId" class="inline-error">请切回原图集，完成待加入的照片后再更换图集。</p>
+          <p v-if="uploadHasDraft && uploadAlbumId !== selectedAlbumId" class="inline-error" role="alert">未完成的照片属于原图集，请返回选择原图集继续。</p>
           <UFormGroup label="说明"><UInput v-model="uploadCaption" maxlength="200" placeholder="可选" /></UFormGroup>
-          <div class="modal-actions"><UButton type="submit" icon="i-carbon-save" :loading="photoSaving" :disabled="!uploadAlbumId || (uploadPendingUrls.length ? uploadPendingAlbumId !== uploadAlbumId : !uploadFiles?.length && !directUrlList.length)">保存照片</UButton></div>
+          <div class="modal-actions"><UButton type="submit" icon="i-carbon-save" :loading="photoSaving" :disabled="!selectedAlbumId || selectedAlbumId !== uploadAlbumId || photoSaving || (!uploadFiles.length && !directUrlList.length && !uploadPendingUrls.length)">保存照片</UButton></div>
         </form>
 
-        <form class="admin-section" @submit.prevent="saveAlbum">
-          <div><h3>图集设置</h3><p class="muted">新建图集，或选择现有图集修改名称和描述。</p></div>
-          <UFormGroup label="操作">
-            <USelectMenu v-model="albumEditorId" :options="albumEditorOptions" value-attribute="value" option-attribute="label" @update:model-value="selectAlbumEditor" />
-          </UFormGroup>
-          <UFormGroup label="图集名称" required><UInput v-model="albumEditor.name" maxlength="80" placeholder="图集名称" /></UFormGroup>
-          <UFormGroup label="描述"><UTextarea v-model="albumEditor.description" maxlength="500" placeholder="可选" /></UFormGroup>
+        <form v-if="managementView === 'create' || managementView === 'edit'" class="admin-section" @submit.prevent="saveAlbum">
+          <div><h3>{{ managementView === 'create' ? '新建图集' : `编辑「${selectedAlbum?.name || '图集'}」` }}</h3><p class="muted">名称和描述会显示在照片墙中。</p></div>
+          <UFormGroup label="图集名称" required><UInput v-model="albumEditor.name" maxlength="80" placeholder="例如：城市漫步" /></UFormGroup>
+          <UFormGroup label="描述"><UTextarea v-model="albumEditor.description" maxlength="500" placeholder="这一组照片记录了什么？（可选）" /></UFormGroup>
           <div class="modal-actions"><UButton type="submit" icon="i-carbon-save" :loading="albumSaving" :disabled="!albumEditor.name.trim()">保存图集</UButton></div>
         </form>
 
-        <section class="admin-section">
+        <section v-if="managementView === 'featured'" class="admin-section">
           <div><h3>设置精选图片</h3><p class="muted">按需加载候选照片，点击图片选择或取消精选，最后保存。</p></div>
           <div class="flex flex-wrap items-center gap-2">
             <UButton v-if="!featuredLoaded" icon="i-carbon-download" color="gray" variant="soft" class="min-h-11" :loading="featuredLoading" @click="loadFeaturedCandidates">加载图片</UButton>
@@ -157,7 +178,7 @@
 
     <UModal
       v-model="showDelete"
-      :ui="{ container: 'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur' }"
+      :ui="{ width: 'w-[92vw] max-w-[22rem]', padding: 'p-0', container: 'fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center backdrop-blur' }"
     >
       <div class="delete-panel bg-white dark:bg-neutral-800">
         <div class="flex items-start justify-between gap-4">
@@ -204,15 +225,18 @@ const managing = ref(false)
 const featuredIndex = ref(0)
 const albumStates = reactive<Record<number, AlbumViewState>>({})
 
+type ManagementView = 'home' | 'create' | 'album' | 'add' | 'edit' | 'featured'
 const showAdmin = ref(false)
-const uploadAlbumId = ref<number>()
+const managementView = ref<ManagementView>('home')
+const selectedAlbumId = ref<number | null>(null)
+const selectedAlbum = computed(() => wall.albums.find(album => album.id === selectedAlbumId.value) || null)
+const uploadAlbumId = ref<number | null>(null)
 const uploadFiles = ref<File[]>([])
 const uploadDirectUrls = ref('')
 const directUrlList = computed(() => uploadDirectUrls.value.split(/[\n,，;；\s]+/).map(item => item.trim()).filter(Boolean))
 const uploadCaption = ref('')
 const photoSaving = ref(false)
 const albumSaving = ref(false)
-const albumEditorId = ref(0)
 const albumEditor = reactive({ name: '', description: '' })
 const featuredCandidates = ref<PhotoVO[]>([])
 const featuredKeyword = ref('')
@@ -232,13 +256,61 @@ const uploadInputKey = ref(0)
 const uploadPendingUrls = ref<string[]>([])
 const uploadPendingAlbumId = ref<number | null>(null)
 
-const uploadAlbumOptions = computed(() => wall.albums
-  .filter(album => !album.isDefault)
-  .map(album => ({ label: album.name, value: album.id })))
-const albumEditorOptions = computed(() => [
-  { label: '新建图集', value: 0 },
-  ...wall.albums.map(album => ({ label: `修改：${album.name}`, value: album.id })),
-])
+const uploadHasDraft = computed(() => Boolean(uploadFiles.value.length || directUrlList.value.length || uploadPendingUrls.value.length))
+const managementTitle = computed(() => {
+  if (managementView.value === 'home') return '照片管理'
+  if (managementView.value === 'create') return '新建图集'
+  if (managementView.value === 'featured') return '精选图片'
+  if (managementView.value === 'album') return selectedAlbum.value?.name || '图集'
+  if (managementView.value === 'add') return `添加照片 · ${selectedAlbum.value?.name || '图集'}`
+  return `编辑图集 · ${selectedAlbum.value?.name || '图集'}`
+})
+const managementHint = computed(() => {
+  if (managementView.value === 'home') return '先选择图集，再添加照片或修改信息。'
+  if (managementView.value === 'featured') return '选择要展示在照片墙上的图片，完成后记得保存。'
+  if (managementView.value === 'album') return selectedAlbum.value?.isDefault ? '动态照片自动汇集，只能浏览。' : '选择对这个图集要做的事。'
+  if (managementView.value === 'add') return '照片会加入当前图集，不会自动发布动态。'
+  return managementView.value === 'create' ? '先创建图集，再添加照片。' : '修改当前图集的名称和描述。'
+})
+const openManagementAlbum = (album: PhotoAlbumVO) => {
+  if (photoSaving.value || albumSaving.value || featuredSaving.value) return
+  selectedAlbumId.value = album.id
+  managementView.value = 'album'
+}
+const openManagementHome = () => {
+  managementView.value = 'home'
+  showAdmin.value = true
+}
+const openCreateAlbum = () => {
+  openAlbumEditor()
+  showAdmin.value = true
+}
+const openAddPhotos = (album: PhotoAlbumVO) => {
+  if (album.isDefault || photoSaving.value) return
+  if (uploadHasDraft.value && uploadAlbumId.value !== album.id) {
+    toast.warning(`请先完成「${wall.albums.find(item => item.id === uploadAlbumId.value)?.name || '原图集'}」的待加入照片`)
+    return
+  }
+  selectedAlbumId.value = album.id
+  uploadAlbumId.value = album.id
+  managementView.value = 'add'
+}
+const resumeUploadDraft = () => {
+  const album = wall.albums.find(item => item.id === uploadAlbumId.value)
+  if (album) openAddPhotos(album)
+  else toast.error('原图集已不存在，请重新选择图集')
+}
+const openAlbumEditor = (album?: PhotoAlbumVO) => {
+  if (album?.isDefault || albumSaving.value || photoSaving.value) return
+  selectedAlbumId.value = album?.id ?? null
+  albumEditor.name = album?.name || ''
+  albumEditor.description = album?.description || ''
+  managementView.value = album ? 'edit' : 'create'
+}
+const goManagementBack = () => {
+  if (photoSaving.value || albumSaving.value || featuredSaving.value) return
+  managementView.value = ['add', 'edit'].includes(managementView.value) ? 'album' : 'home'
+}
 const filteredFeaturedCandidates = computed(() => {
   const keyword = featuredKeyword.value.trim().toLowerCase()
   if (!keyword) return featuredCandidates.value
@@ -261,6 +333,15 @@ const loadWall = async () => {
       }
     }
     featuredIndex.value = Math.min(featuredIndex.value, Math.max(0, wall.featured.length - 1))
+    if (selectedAlbumId.value && !selectedAlbum.value) {
+      selectedAlbumId.value = null
+      if (managementView.value !== 'create' && managementView.value !== 'featured') managementView.value = 'home'
+      toast.warning('当前图集已不存在，请重新选择')
+    }
+    if (uploadAlbumId.value && !wall.albums.some(album => album.id === uploadAlbumId.value)) {
+      uploadAlbumId.value = null
+      toast.warning('待加入照片所属的图集已不存在，请暂勿重试；草稿保留在本页')
+    }
   } catch (error: any) {
     wallError.value = error?.message || '照片墙加载失败，请重试'
     toast.error(wallError.value)
@@ -318,9 +399,9 @@ const selectPhoto = (value: FileList | Event) => {
 }
 
 const savePhoto = async () => {
-  const albumId = uploadAlbumId.value
-  if (!albumId) return toast.warning('请选择图集')
-  if (uploadPendingUrls.value.length && uploadPendingAlbumId.value !== albumId) return toast.warning('请切回原图集完成待加入的照片')
+  const albumId = selectedAlbumId.value
+  if (!isAdmin.value || managementView.value !== 'add' || !albumId || selectedAlbum.value?.isDefault || photoSaving.value) return
+  if (uploadAlbumId.value !== albumId || (uploadPendingUrls.value.length && uploadPendingAlbumId.value !== albumId)) return toast.warning('请回到原图集完成待加入的照片')
   if (!uploadPendingUrls.value.length && !uploadFiles.value.length && !directUrlList.value.length) return toast.warning('请选择本地图片或填写图片直链')
   const invalid = directUrlList.value.find(item => !/^https?:\/\//i.test(item))
   if (invalid) return toast.warning(`图片直链格式无效：${invalid}`)
@@ -353,8 +434,8 @@ const savePhoto = async () => {
     }
     uploadPendingAlbumId.value = null
     if (!uploadFiles.value.length) uploadCaption.value = ''
-    if (uploadFiles.value.length) toast.warning(`已加入 ${saved} 张，另有 ${uploadFiles.value.length} 个文件上传失败，可重试`)
-    else toast.success(`${saved} 张照片已加入图集`)
+    if (uploadFiles.value.length) toast.warning(`已加入「${selectedAlbum.value?.name || '图集'}」${saved} 张，另有 ${uploadFiles.value.length} 个文件上传失败，可重试`)
+    else toast.success(`${saved} 张照片已加入「${selectedAlbum.value?.name || '图集'}」`)
   } catch (error: any) {
     toast.error(`${saved ? `已加入 ${saved} 张；` : ''}剩余 ${uploadPendingUrls.value.length} 张待重试：${error?.message || '照片保存失败'}`)
   } finally {
@@ -363,24 +444,20 @@ const savePhoto = async () => {
   }
 }
 
-const selectAlbumEditor = (value: number) => {
-  const id = Number(value || 0)
-  albumEditorId.value = id
-  const album = wall.albums.find(item => item.id === id)
-  albumEditor.name = album?.name || ''
-  albumEditor.description = album?.description || ''
-}
-
 const saveAlbum = async () => {
-  if (!albumEditor.name.trim()) return toast.warning('请填写图集名称')
+  const editing = managementView.value === 'edit'
+  if (!isAdmin.value || albumSaving.value || (!editing && managementView.value !== 'create')) return
+  if (editing && (!selectedAlbum.value || selectedAlbum.value.isDefault)) return
+  const name = albumEditor.name.trim()
+  if (!name) return toast.warning('请填写图集名称')
   albumSaving.value = true
   try {
-    await useMyFetch('/admin/photo/album/save', { id: albumEditorId.value || undefined, ...albumEditor })
-    toast.success(albumEditorId.value ? '图集名称已保存' : '图集已创建')
-    albumEditorId.value = 0
-    albumEditor.name = ''
-    albumEditor.description = ''
+    await useMyFetch('/admin/photo/album/save', { id: editing ? selectedAlbumId.value : undefined, name, description: albumEditor.description })
+    toast.success(editing ? `「${name}」图集信息已保存` : `图集「${name}」已创建`)
     await loadWall()
+    // 创建接口不返回图集 ID；不能凭同名图集猜测身份，返回列表由管理员选择。
+    if (!editing) selectedAlbumId.value = null
+    managementView.value = editing && selectedAlbum.value ? 'album' : 'home'
   } catch (error: any) {
     toast.error(error?.message || '图集保存失败')
   } finally {
@@ -518,7 +595,7 @@ h3 { font-size: 1.08rem; font-weight: 700; }
 .inline-error { margin-top: .5rem; color: #b91c1c; font-size: .82rem; }
 .empty-icon { display: block; width: 2rem; height: 2rem; margin: 0 auto .5rem; color: #c3cabc; }
 .empty-hint { margin-top: .25rem; color: #b0b6ac; font-size: .82rem; }
-.delete-panel { display: flex; flex-direction: column; gap: .8rem; width: min(92vw, 22rem); padding: 1.25rem; border-radius: .5rem; }
+.delete-panel { display: flex; flex-direction: column; gap: .8rem; width: 100%; min-width: 0; box-sizing: border-box; padding: 1.25rem; border-radius: .5rem; }
 .delete-preview { width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: .5rem; background: #e5e5e5; }
 .delete-preview img { width: 100%; height: 100%; object-fit: cover; }
 .delete-caption { font-size: .9rem; font-weight: 600; word-break: break-all; }
@@ -528,7 +605,27 @@ h3 { font-size: 1.08rem; font-weight: 700; }
 .featured-caption p { margin-top: .3rem; font-size: .9rem; }
 .album-section { margin-bottom: 2rem; }
 .status, .empty { padding: 2.5rem 0; text-align: center; color: #9ca3af; }
-.admin-panel { display: flex; flex-direction: column; gap: 1rem; width: min(92vw, 38rem); padding: 1.25rem; border-radius: .5rem; }
+.admin-panel { display: flex; flex-direction: column; gap: 1rem; width: 100%; min-width: 0; box-sizing: border-box; padding: 1.25rem; border-radius: .5rem; }
+.management-header { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.management-header > div { min-width: 0; }
+.management-home, .management-album-detail { display: flex; flex-direction: column; gap: .65rem; }
+.management-list-heading { display: flex; justify-content: space-between; color: #59644c; font-size: .85rem; font-weight: 700; margin: .7rem 0 .15rem; }
+.management-list-heading span { color: #737b6c; font-weight: 400; }
+.management-action, .management-album, .draft-action { display: flex; align-items: center; width: 100%; min-height: 4rem; text-align: left; border: 1px solid #e2e9d9; border-radius: .7rem; background: #f8faf4; color: #303a29; padding: .7rem .85rem; gap: .8rem; cursor: pointer; }
+.management-action:hover, .management-album:hover { border-color: #8fa963; background: #f0f7e7; }
+.management-action > span, .management-album-copy { display: flex; flex: 1; flex-direction: column; gap: .15rem; min-width: 0; }
+.management-action strong, .management-album strong { font-size: .95rem; }
+.management-action small, .management-album small { overflow: hidden; color: #65705e; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.management-album img, .management-cover { display: flex; flex: 0 0 3rem; width: 3rem; height: 3rem; object-fit: cover; align-items: center; justify-content: center; border-radius: .45rem; background: #e7ecdf; }
+.draft-action { background: #fff6e8; border-color: #dfbd8b; color: #704c1e; font-size: .85rem; }
+.management-summary { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; color: #56644b; font-size: .85rem; margin-bottom: .4rem; }
+.management-summary span:first-child { min-width: 0; }
+.management-summary span:last-child { white-space: nowrap; }
+.management-action:focus-visible, .management-album:focus-visible, .draft-action:focus-visible { outline: 3px solid #78943f; outline-offset: 2px; }
+:global(.dark) .management-action, :global(.dark) .management-album { background: #262f24; border-color: #485747; color: #f3f7ed; }
+:global(.dark) .management-action:hover, :global(.dark) .management-album:hover { background: #344431; }
+:global(.dark) .management-action small, :global(.dark) .management-album small, :global(.dark) .management-list-heading, :global(.dark) .management-summary { color: #b6c6aa; }
+:global(.dark) .draft-action { color: #f5d9a9; background: #413524; border-color: #967245; }
 .admin-section { display: flex; flex-direction: column; gap: .8rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
 .dark .admin-section { border-color: #374151; }
 .modal-actions { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .25rem; }
