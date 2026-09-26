@@ -32,8 +32,26 @@ assert.match(memoEdit, /v-for="block in sortableBlocks"/, '模板必须渲染交
 // 新建动态一开始没有任何内容块：若那时不初始化，等添加内容后就再也拖不动了
 assert.match(memoEdit, /await nextTick\(\)\s*\n\s*if \(blocksEl\.value\) \{/, '拖拽实例必须在挂载时就初始化，不得以「当前块数」为前提');
 assert.doesNotMatch(memoEdit, /sortableBlocks\.value\.length > 1/, '不得用块数作为初始化条件（空动态会失效）');
-assert.match(memoEdit, /@click="moveBlock\(block\.key, -1\)"[^>]*aria-label="上移"|aria-label="上移"[^>]*@click="moveBlock\(block\.key, -1\)"/, '必须有上移按钮');
-assert.match(memoEdit, /aria-label="下移"[\s\S]{0,120}moveBlock\(block\.key, 1\)|moveBlock\(block\.key, 1\)[\s\S]{0,120}aria-label="下移"/, '必须有下移按钮');
+// 排序入口：左侧圆点（与仓库既有圆形元素同款底色），拖拽为主、方向键为辅
+// 先取出圆点按钮整块再断言，避免用字符窗口猜属性间距
+const handleButton = (memoEdit.match(/<button[\s\S]*?class="block-handle[\s\S]*?<\/button>/) || [''])[0];
+assert.ok(handleButton, '必须存在排序圆点按钮');
+assert.match(handleButton, /rounded-full/, '排序控件必须是圆形（圆点）而非按钮列');
+assert.match(handleButton, /bg-gray-200\/75/, '圆点底色必须与仓库既有圆形元素一致');
+assert.match(handleButton, /dark:bg-gray-800\/75/, '圆点必须同时适配深色模式底色');
+assert.match(handleButton, /<span class="h-1\.5 w-1\.5 rounded-full bg-gray-500/, '圆点内部必须是一枚小圆点');
+assert.match(memoEdit, /@keydown\.up\.prevent="moveBlock\(block\.key, -1\)"/, '圆点聚焦后必须支持上移方向键');
+assert.match(memoEdit, /@keydown\.down\.prevent="moveBlock\(block\.key, 1\)"/, '圆点聚焦后必须支持下移方向键');
+assert.match(memoEdit, /v-if="sortableBlocks\.length > 1"/, '只有单个块时不得显示排序圆点（无可排序）');
+assert.doesNotMatch(memoEdit, /aria-label="上移"|aria-label="下移"/, '不再使用上下移按钮列');
+assert.match(memoEdit, /touch-none/, '圆点必须阻止触摸默认行为，避免拖拽时页面跟着滚');
+assert.match(memoEdit, /motion-reduce:transition-none/, '圆点动效必须尊重减少动态效果偏好');
+// 触屏拖拽：原生 HTML5 拖放在触摸屏无效，必须启用 fallback；容差避免「轻扫页面」被误判为拖拽
+assert.match(memoEdit, /forceFallback: true/, '必须启用 fallback 才能支持触屏拖拽');
+assert.match(memoEdit, /fallbackOnBody: true/, 'fallback 必须挂到 body，避免被容器裁剪');
+assert.match(memoEdit, /fallbackTolerance: \d+/, '必须有拖拽容差');
+assert.match(memoEdit, /ghostClass: 'block-ghost'/, '必须有拖拽占位反馈类');
+assert.match(memoEdit, /:deep\(\.block-ghost\)/, '占位块必须有可见样式');
 assert.match(memoEdit, /order: Array<string>\(\)/, 'state 必须有 order 字段');
 assert.match(memoEdit, /state\.order = Array\.isArray\(ext\.order\) \? ext\.order : \[\]/, '编辑已有动态必须回填 order');
 assert.match(memoEdit, /order: state\.order\.filter\(key => availableBlocks\.value\.some\(block => block\.key === key\)\)/, '保存时必须写入 order 并剔除已不存在的块（避免陈旧条目堆积）');

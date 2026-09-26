@@ -92,14 +92,21 @@
         v-for="block in sortableBlocks"
         :key="block.key"
         :data-block-key="block.key"
-        class="relative pl-6"
+        class="relative pl-7"
       >
-        <!-- 排序控件：手柄拖拽 + 上移/下移按钮（触屏拖拽易误触，按钮是稳妥兜底） -->
-        <div class="absolute left-0 top-1 flex flex-col items-center gap-0.5 text-gray-400">
-          <button type="button" class="block-handle cursor-grab touch-none rounded p-0.5 hover:text-gray-600 dark:hover:text-gray-200" aria-label="拖动排序" title="拖动排序"><UIcon name="i-carbon-drag-vertical" class="h-4 w-4"/></button>
-          <button type="button" class="rounded p-0.5 hover:text-gray-600 dark:hover:text-gray-200" aria-label="上移" title="上移" @click="moveBlock(block.key, -1)"><UIcon name="i-carbon-arrow-up" class="h-4 w-4"/></button>
-          <button type="button" class="rounded p-0.5 hover:text-gray-600 dark:hover:text-gray-200" aria-label="下移" title="下移" @click="moveBlock(block.key, 1)"><UIcon name="i-carbon-arrow-down" class="h-4 w-4"/></button>
-        </div>
+        <!-- 排序圆点：只在存在多个块时出现（单块无可排序）；圆点与仓库既有圆形元素同款底色。
+             拖拽为主入口，圆点聚焦后还可用上下方向键微调，兼顾键盘与无障碍。 -->
+        <button
+          v-if="sortableBlocks.length > 1"
+          type="button"
+          class="block-handle absolute left-0 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-grab touch-none items-center justify-center rounded-full bg-gray-200/75 opacity-70 transition hover:opacity-100 active:cursor-grabbing focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:bg-gray-800/75 motion-reduce:transition-none"
+          aria-label="拖动排序"
+          title="按住拖动排序；也可用上下方向键"
+          @keydown.up.prevent="moveBlock(block.key, -1)"
+          @keydown.down.prevent="moveBlock(block.key, 1)"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-gray-500 dark:bg-gray-400"/>
+        </button>
 
         <external-url-preview v-if="block.kind === 'external'" :favicon="state.externalFavicon" :title="state.externalTitle" :url="state.externalUrl"/>
         <upload-image-preview v-else-if="block.kind === 'images'" :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
@@ -352,6 +359,13 @@ onMounted(async () => {
     useSortable(blocksEl.value, sortableBlocks, {
       handle: '.block-handle',
       animation: 150,
+      // 触摸屏上原生 HTML5 拖放无效，必须走 fallback（指针事件 + 克隆）；
+      // fallbackTolerance 让「轻扫页面」不被误判为拖拽
+      forceFallback: true,
+      fallbackOnBody: true,
+      fallbackTolerance: 4,
+      ghostClass: 'block-ghost',
+      chosenClass: 'block-chosen',
       onEnd: () => {
         // 以 DOM 顺序为准写回 order：不依赖 useSortable 对数组的同步行为
         const keys = [...(blocksEl.value?.querySelectorAll('[data-block-key]') || [])]
@@ -457,5 +471,19 @@ const saveMemo = async () => {
 </script>
 
 <style scoped>
-
+/* 拖拽反馈：占位块虚线、被拖块轻微透明（类由 SortableJS 运行时添加，故用 :deep） */
+:deep(.block-ghost) {
+  opacity: 0.4;
+  border: 1px dashed #9ca3af;
+  border-radius: 0.5rem;
+}
+:deep(.block-chosen) {
+  opacity: 0.9;
+}
+@media (prefers-reduced-motion: reduce) {
+  :deep(.block-ghost),
+  :deep(.block-chosen) {
+    transition: none;
+  }
+}
 </style>
