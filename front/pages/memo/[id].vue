@@ -3,6 +3,11 @@
 
   <Memo v-if="memo" v-bind:memo="memo"/>
 
+  <div v-if="loadError" class="flex flex-col items-center justify-center gap-3 py-24">
+    <p class="text-7xl font-bold text-gray-300 dark:text-gray-600">404</p>
+    <p class="text-gray-500">你无权访问该动态，该动态可能删除或设为隐私</p>
+    <UButton to="/" color="white">返回首页</UButton>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -12,9 +17,17 @@ import {memoChangedEvent} from "~/event";
 const route = useRoute()
 const id = computed(() => Number(route.params.id))
 const memo = ref<MemoVO>()
+const loadError = ref(false)
 const sysConfig = useState<SysConfigVO>('sysConfig')
 const reload = async () => {
-  memo.value = await useMyFetch<MemoVO>('/memo/get?id=' + id.value)
+  try {
+    memo.value = await useMyFetch<MemoVO>('/memo/get?id=' + id.value)
+    loadError.value = false
+  } catch {
+    // 不存在（404）与无权限（403，私密/定时未发布且非作者）统一呈现，避免向访客泄露动态是否存在
+    memo.value = undefined
+    loadError.value = true
+  }
 }
 
 const stopMemoChanged = memoChangedEvent.on(async () => {
@@ -47,7 +60,12 @@ watch(memo, (value) => {
   })
 }, { immediate: false })
 
-
+// 加载失败时同步 noindex 与标题，与 worker 侧 pageSeo 的私密动态 noindex 策略一致
+watch(loadError, (value) => {
+  if (!value) return
+  useHead({ title: '动态不可访问' })
+  useHead({ meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
+})
 </script>
 
 <style scoped>
