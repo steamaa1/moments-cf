@@ -13,6 +13,7 @@
                    v-model:url="state.externalUrl"/>
 
       <upload-image v-model:imgs="state.imgs"/>
+      <upload-attachment v-model:attachments="state.attachments"/>
       <music v-bind="state.music" @confirm="updateMusic"/>
       <x-embed v-bind="state.x" @confirm="updateX"/>
       <git-embed v-bind="state.git" @confirm="updateGit"/>
@@ -89,6 +90,10 @@
     <div class="flex flex-col gap-2">
       <external-url-preview :favicon="state.externalFavicon" :title="state.externalTitle" :url="state.externalUrl"/>
       <upload-image-preview :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
+      <div v-for="(attachment, index) in state.attachments" :key="attachment.path" class="flex items-center gap-2">
+        <attachment-preview :attachment="attachment" class="flex-1 min-w-0"/>
+        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" aria-label="移除附件" title="移除附件" @click="removeAttachment(index)"/>
+      </div>
       <music-preview v-if="state.music && (state.music.id || state.music.url)" v-bind="state.music"/>
       <div v-if="state.git.url" class="relative">
         <git-preview v-if="state.git.title" v-bind="state.git"/>
@@ -123,6 +128,7 @@
 <script setup lang="ts">
 import {useMouse, useWindowScroll} from '@vueuse/core'
 import type {
+  AttachmentVO,
   DoubanBook,
   DoubanMovie,
   ExtDTO,
@@ -180,6 +186,7 @@ const defaultState = {
   },
   doubanBook: {} as DoubanBook,
   doubanMovie: {} as DoubanMovie,
+  attachments: Array<AttachmentVO>(),
   tags: Array<string>(),
 }
 const selectedTags = ref<Array<string>>([])
@@ -310,6 +317,7 @@ onMounted(async () => {
     updateGit(ext.git || {})
     updateMemoRef(ext.memoRef || {})
     Object.assign(state.video, ext.video)
+    state.attachments = Array.isArray(ext.attachments) ? ext.attachments : []
     doubanBooks.value = Array.isArray(ext.doubanBooks) ? ext.doubanBooks : (ext.doubanBook && ext.doubanBook.title ? [ext.doubanBook] : [])
     doubanMovies.value = Array.isArray(ext.doubanMovies) ? ext.doubanMovies : (ext.doubanMovie && ext.doubanMovie.title ? [ext.doubanMovie] : [])
     selectedLabel.value = res.tags ? res.tags.substring(0,res.tags.length-1).split(',') : []
@@ -324,6 +332,11 @@ onMounted(async () => {
 //   }
 // }
 
+// 附件移除只改本地数组：已上传文件由服务端回收策略处理，与图片移除语义一致
+const removeAttachment = (index: number) => {
+  state.attachments = state.attachments.filter((_, i) => i !== index)
+}
+
 const removeDouban = (kind: 'book' | 'movie', index: number) => {
   if (kind === 'book') doubanBooks.value = doubanBooks.value.filter((_, i) => i !== index)
   else doubanMovies.value = doubanMovies.value.filter((_, i) => i !== index)
@@ -333,6 +346,7 @@ const saveMemo = async () => {
   const hasImage = Boolean(state.imgs.split(",").filter(Boolean).length)
   const hasExt = Boolean(
     state.music?.id || state.music?.url || state.x?.url || state.git?.url || state.video?.value || state.memoRef?.id || state.externalUrl
+    || state.attachments.length
     || doubanBooks.value.some(book => book?.title) || doubanMovies.value.some(movie => movie?.title)
   )
   if (!state.content.trim() && !hasImage && !hasExt) {
@@ -351,6 +365,7 @@ const saveMemo = async () => {
         memoRef: state.memoRef.id ? state.memoRef : {},
         doubanBooks: doubanBooks.value.filter(book => book && book.title),
         doubanMovies: doubanMovies.value.filter(movie => movie && movie.title),
+        attachments: state.attachments.filter(attachment => attachment && attachment.path),
         video: state.video.value ? state.video : {},
       },
       showType: state.showType ? 1 : 0,

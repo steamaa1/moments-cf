@@ -150,7 +150,9 @@ export type SysConfigVO = {
     enableAbout: boolean,
     aboutContent: string,
     friendNotice?: string,
-    friendEmail?: string
+    friendEmail?: string,
+    attachmentMaxSize: number,
+    attachmentMaxCount: number
 }
 
 
@@ -208,6 +210,15 @@ export type ExtDTO = {
     doubanMovies: DoubanMovie[],
     x: XEmbed,
     video: Video,
+    attachments: AttachmentVO[],
+}
+
+// 动态附件：存于 ext.attachments，path 为 /upload/<key>，下载走 <path>?download=1
+export type AttachmentVO = {
+    path: string,
+    name: string,
+    size: number,
+    type: string
 }
 
 export type MusicDTO = {

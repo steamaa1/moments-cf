@@ -37,6 +37,9 @@ const DEFAULT_CONFIG = {
   enableComment: true,
   maxCommentLength: 300,
   memoMaxHeight: 0,
+  // 附件：单文件大小上限（MB）与单次上传文件数上限
+  attachmentMaxSize: 10,
+  attachmentMaxCount: 5,
   commentOrder: 'desc',
   timeFormat: 'timeAgo',
   enableRegister: false,
@@ -76,11 +79,63 @@ const ALLOWED_MEDIA_TYPES = new Set([
 ]);
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const DIRECT_UPLOAD_THRESHOLD = 20 * 1024 * 1024;
+// 附件白名单：文档与压缩包。刻意不含 html/svg/js 等可在同源内执行的类型，
+// 且附件一律以 content-disposition: attachment 下发（见 serveMedia）。
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+  'application/epub+zip',
+  'application/json',
+  'application/zip',
+  'application/x-7z-compressed',
+  'application/x-rar-compressed',
+  'application/vnd.rar',
+  'application/x-tar',
+  'application/gzip',
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+]);
+// 浏览器对 md/csv/7z 等常报空 type 或平台相关类型，按扩展名兜底归一
+const ATTACHMENT_EXTENSION_TYPES = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odt: 'application/vnd.oasis.opendocument.text',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  epub: 'application/epub+zip',
+  json: 'application/json',
+  zip: 'application/zip',
+  '7z': 'application/x-7z-compressed',
+  rar: 'application/x-rar-compressed',
+  tar: 'application/x-tar',
+  gz: 'application/gzip',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  csv: 'text/csv',
+};
+const ATTACHMENT_HARD_MAX_BYTES = 25 * 1024 * 1024;
+const ATTACHMENT_HARD_MAX_COUNT = 20;
+const ATTACHMENT_MAX_PER_MEMO = 10;
 const TRASH_RETENTION_DAYS = 7;
 const PUBLIC_CONFIG_KEYS = [
   'enableAutoLoadNextPage', 'favicon', 'title', 'beiAnNo', 'css', 'js', 'rss',
   'enableGoogleRecaptcha', 'googleSiteKey', 'enableTurnstile', 'turnstileSiteKey', 'enableAbout', 'aboutContent', 'enableComment', 'maxCommentLength', 'telegramBotUsername', 'friendNotice', 'friendEmail',
   'memoMaxHeight', 'commentOrder', 'timeFormat', 'enableRegister', 'enableRegisterApproval', 'seoDescription', 'seoKeywords', 'siteUrl',
+  'attachmentMaxSize', 'attachmentMaxCount',
 ];
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
 const MAX_PBKDF2_ITERATIONS = 100000;
@@ -390,6 +445,9 @@ async function saveConfig(request, env, headers) {
   else config.telegramBotTokenEncrypted = previousConfig.telegramBotTokenEncrypted || '';
   config.backupIntervalDays = clampInt(body.backupIntervalDays, 1, 365, 7);
   config.backupRetentionDays = clampInt(body.backupRetentionDays, 1, 3650, 90);
+  // 附件上限：大小限制在 multipart 单请求硬限内（1–25MB），数量 1–20
+  config.attachmentMaxSize = clampInt(body.attachmentMaxSize, 1, 25, 10);
+  config.attachmentMaxCount = clampInt(body.attachmentMaxCount, 1, ATTACHMENT_HARD_MAX_COUNT, 5);
   config.storageType = ['r2', 's3', 'webdav'].includes(body.storageType) ? body.storageType : 'r2';
   const s3Prev = previousConfig.s3Storage || {};
   const s3Input = body.s3Storage || {};
@@ -521,11 +579,72 @@ function mediaContentType(key) {
   const map = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac', m4a: 'audio/mp4' };
   return map[mediaExtension(key)] || '';
 }
+// Content-Disposition 头：ASCII 回退名 + RFC 5987 的 filename*（中文文件名不丢字，且不注入换行/引号）
+function contentDisposition(disposition, filename) {
+  const name = String(filename || '').replace(/[\r\n"\\]/g, '_').trim().slice(0, 200) || 'download';
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_');
+  return `${disposition}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
 // 随机短 id 命名（约 14 字符），替代长 SHA-256 文件名；旧 SHA 命名的对象仍按 DB 索引访问
 function mediaObjectKey(extension = '') {
   return `media/${new Date().toISOString().slice(0, 10).replaceAll('-', '/')}/${randomToken(10)}${extension ? `.${extension}` : ''}`;
 }
 function mediaThumbKey() { return `thumbs/${randomToken(10)}.webp`; }
+// 附件类型归一：优先采信白名单内的声明类型，否则按扩展名兜底；都不认则返回空串（调用方拒绝）
+function attachmentContentType(filename, declaredType = '') {
+  const declared = String(declaredType || '').toLowerCase().split(';')[0].trim();
+  if (ALLOWED_ATTACHMENT_TYPES.has(declared)) return declared;
+  const byExtension = ATTACHMENT_EXTENSION_TYPES[mediaExtension(filename)] || '';
+  return ALLOWED_ATTACHMENT_TYPES.has(byExtension) ? byExtension : '';
+}
+// 附件上传：与媒体上传同库（media 表）、同存储后端，但不做缩略图与直传（大小受 multipart 硬限约束）。
+// 校验顺序：数量 → 单文件大小 → 类型白名单；任一项不过即整体拒绝，不做部分成功，避免前端状态半途而废。
+async function attachmentUpload(request, env, headers) {
+  const access = await requireUser(request, env, headers);
+  if (access.response) return access.response;
+  const config = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
+  const maxSizeMb = clampInt(config.attachmentMaxSize, 1, 25, 10);
+  const maxSize = Math.min(maxSizeMb, ATTACHMENT_HARD_MAX_BYTES / 1024 / 1024) * 1024 * 1024;
+  const maxCount = clampInt(config.attachmentMaxCount, 1, ATTACHMENT_HARD_MAX_COUNT, 5);
+  const storageConfig = await loadStorageConfig(env);
+  if (storageConfig.storageType === 'r2' && !env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
+  const length = Number(request.headers.get('content-length') || 0);
+  if (length > maxSize * maxCount + 1024 * 1024) return json(fail('附件总大小超出限制'), 413, headers);
+  let form;
+  try { form = await request.formData(); } catch { return json(fail('文件表单错误'), 400, headers); }
+  const files = form.getAll('files').filter(value => value instanceof File);
+  if (!files.length) return json(fail('没有选择文件'), 400, headers);
+  if (files.length > maxCount) return json(fail(`一次最多上传 ${maxCount} 个附件`), 400, headers);
+  for (const file of files) {
+    if (file.size > maxSize) return json(fail(`单个附件不能超过 ${maxSizeMb}MB`), 413, headers);
+    if (!attachmentContentType(file.name, file.type)) return json(fail(`不支持的附件类型：${file.name}`), 415, headers);
+  }
+  const uploaded = [];
+  for (const file of files) {
+    const contentType = attachmentContentType(file.name, file.type);
+    const buffer = await file.arrayBuffer();
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
+    const sha256 = [...digest].map(value => value.toString(16).padStart(2, '0')).join('');
+    const duplicate = await env.DB.prepare("SELECT r2_key, original_filename FROM media WHERE owner_id=? AND sha256=? AND trashed_at IS NULL AND upload_state='ready' LIMIT 1").bind(access.user.id, sha256).first();
+    if (duplicate) {
+      // 命中已存在的同内容对象：回读库中原始文件名，保证卡片显示名与下载头文件名一致
+      uploaded.push({ path: `/upload/${duplicate.r2_key}`, name: String(duplicate.original_filename || file.name).slice(0, 255), size: file.size, type: contentType });
+      continue;
+    }
+    const key = mediaObjectKey(mediaExtension(file.name));
+    const backend = storageBackend(env, storageConfig, storageConfig.storageType);
+    try {
+      await backend.put(key, buffer, { httpMetadata: { contentType } });
+      await env.DB.prepare("INSERT INTO media (owner_id, r2_key, original_filename, content_type, size_bytes, sha256, thumbnail_key, upload_state, storage_backend) VALUES (?, ?, ?, ?, ?, ?, NULL, 'ready', ?)")
+        .bind(access.user.id, key, file.name.slice(0, 255), contentType, file.size, sha256, storageConfig.storageType).run();
+    } catch (error) {
+      await backend.delete(key).catch(() => {});
+      throw error;
+    }
+    uploaded.push({ path: `/upload/${key}`, name: file.name.slice(0, 255), size: file.size, type: contentType });
+  }
+  return json(ok({ files: uploaded }), 200, headers);
+}
 async function directUploadInit(request, env, headers) {
   const access = await requireUser(request, env, headers); if (access.response) return access.response;
   const body = await readJson(request); let file;
@@ -1098,6 +1217,7 @@ async function saveMemo(request, env, headers) {
   const hasExt = safeExt.music?.url || safeExt.music?.id || safeExt.x?.id || safeExt.git?.url || safeExt.video?.value || safeExt.memoRef?.id
     || (Array.isArray(safeExt.doubanBooks) && safeExt.doubanBooks.length > 0)
     || (Array.isArray(safeExt.doubanMovies) && safeExt.doubanMovies.length > 0)
+    || (Array.isArray(safeExt.attachments) && safeExt.attachments.length > 0)
     || Boolean(safeExt.doubanBook?.title) || Boolean(safeExt.doubanMovie?.title);
   if (!content && !imgs.length && !externalUrl && !hasExt) return json(fail('动态内容不能为空'), 400, headers);
   const ext = JSON.stringify(safeExt);
@@ -1630,7 +1750,7 @@ async function fetchXSnapshot(x) {
 }
 function sanitizeMemoExt(input) {
   const ext = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
-  const output = { music: {}, video: {}, git: {}, memoRef: {}, doubanBook: {}, doubanMovie: {} };
+  const output = { music: {}, video: {}, git: {}, memoRef: {}, doubanBook: {}, doubanMovie: {}, attachments: [] };
   if (ext.music?.url || ext.music?.mode === 'direct') {
     const url = safeHttpHref(ext.music.url, '音乐直链');
     const name = String(ext.music.name || '').trim().slice(0, 200);
@@ -1749,6 +1869,21 @@ function sanitizeMemoExt(input) {
     if (!item || typeof item !== 'object' || !item.title) continue;
     output[key] = cleanDouban(item, key === 'doubanBook');
   }
+  // 附件：只接受本站 /upload/ 路径，类型必须在白名单内（按声明类型或扩展名归一），条数封顶；
+  // 名称剥掉路径分隔符与控制字符，避免下载头里出现路径穿越或换行注入
+  const attachmentList = Array.isArray(ext.attachments) ? ext.attachments.slice(0, 100) : [];
+  const attachments = [];
+  for (const item of attachmentList) {
+    if (attachments.length >= ATTACHMENT_MAX_PER_MEMO) break;
+    if (!item || typeof item !== 'object') continue;
+    const path = String(item.path || '').trim();
+    if (!/^\/upload\/[A-Za-z0-9._\/-]+$/.test(path) || path.includes('..')) continue;
+    const name = String(item.name || '').replace(/[\u0000-\u001f\u007f\\/]/g, '_').trim().slice(0, 255);
+    const type = attachmentContentType(name, item.type);
+    if (!name || !type) continue;
+    attachments.push({ path: path.slice(0, 2048), name, size: clampInt(item.size, 0, 1024 * 1024 * 1024, 0), type });
+  }
+  output.attachments = attachments;
   return output;
 }
 function commentView(row) {
@@ -2592,6 +2727,7 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/sysConfig/getFull') return await getConfig(request, env, headers, true);
     if (url.pathname === '/api/sysConfig/save') return await saveConfig(request, env, headers);
     if (url.pathname === '/api/file/upload') return await upload(request, env, headers);
+    if (url.pathname === '/api/file/attachment') return await attachmentUpload(request, env, headers);
     if (url.pathname === '/api/file/exist') return await fileExists(request, env, headers);
     if (url.pathname === '/api/file/direct/init') return await directUploadInit(request, env, headers);
     if (url.pathname === '/api/file/direct/complete') return await directUploadComplete(request, env, headers);
@@ -2656,7 +2792,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured, adminPhotoDelete, trashOrphanAlbumMedia };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured, adminPhotoDelete, trashOrphanAlbumMedia, attachmentUpload, attachmentContentType, ALLOWED_ATTACHMENT_TYPES };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;
@@ -2680,7 +2816,7 @@ async function serveMedia(request, env, key) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
   // 回收站中的原图禁止访问，但其缩略图放行，供回收站列表预览。
   // 条件1：正常媒体（原图或缩略图，未回收）；条件2：已回收媒体的缩略图。
-  const media = await env.DB.prepare("SELECT id, storage_backend, r2_key, thumbnail_key, trashed_at FROM media WHERE (r2_key=? OR thumbnail_key=?) AND upload_state='ready'").bind(key, key).first();
+  const media = await env.DB.prepare("SELECT id, storage_backend, r2_key, thumbnail_key, trashed_at, original_filename, content_type FROM media WHERE (r2_key=? OR thumbnail_key=?) AND upload_state='ready'").bind(key, key).first();
   if (media && media.trashed_at && media.r2_key === key) return new Response('Not Found', { status: 404 });
   if (!media) return new Response('Not Found', { status: 404 });
   const storageConfig = await loadStorageConfig(env);
@@ -2703,6 +2839,11 @@ async function serveMedia(request, env, key) {
   headers.set('etag', etag);
   headers.set('cache-control', 'public, max-age=31536000, immutable');
   headers.set('accept-ranges', 'bytes');
+  // 附件一律以「另存为」下发（白名单已排除 html/svg 等同源可执行类型，这里是纵深防御）；
+  // 显式 ?download=1 同样强制下载，并带上原始文件名（RFC 5987 兼容非 ASCII）
+  const asAttachment = new URL(request.url).searchParams.get('download') === '1'
+    || ALLOWED_ATTACHMENT_TYPES.has(String(media.content_type || '').toLowerCase());
+  if (asAttachment) headers.set('content-disposition', contentDisposition('attachment', media.original_filename || key.split('/').pop()));
   if (request.method === 'HEAD') {
     headers.set('content-length', String(head.size));
     return new Response(null, { status: 200, headers });

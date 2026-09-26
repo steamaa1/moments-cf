@@ -1,7 +1,7 @@
 import CryptoJS from 'crypto-js'
 import { toast } from 'vue-sonner'
 import { useGlobalState } from '~/store'
-import type { ResultVO } from '~/types'
+import type { AttachmentVO, ResultVO } from '~/types'
 
 const MAX_BYTES = 500 * 1024 * 1024
 const DIRECT_THRESHOLD = 20 * 1024 * 1024
@@ -86,4 +86,16 @@ export async function uploadFiles(files: FileList, onProgress?: TotalProgress) {
     catch (error) { toast.error(`${file.name} 上传失败：${error instanceof Error ? error.message : error}`) }
   }
   return urls
+}
+
+// 附件上传：单次请求一次提交多个文件，大小与数量上限由服务端按系统配置校验。
+// 与媒体上传不同，附件不做直传与缩略图，也不走 sha256 预检，保持单个 multipart 请求。
+export async function uploadAttachments(files: File[], onProgress?: Progress) {
+  if (!files.length) throw new Error('没有选择文件')
+  const form = new FormData()
+  for (const file of files) form.append('files', file)
+  const text = await xhrUpload('/api/file/attachment', 'POST', form, tokenHeaders(), onProgress)
+  const result = JSON.parse(text) as ResultVO<{ files: AttachmentVO[] }>
+  if (result.code !== 0 || !result.data) throw new Error(result.message || '附件上传失败')
+  return result.data.files || []
 }

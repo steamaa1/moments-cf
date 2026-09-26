@@ -77,6 +77,12 @@
     <UFormGroup label="发言最大高度(单位px,填0时则不限制高度)" name="memoMaxHeight" :ui="{label:{base:'font-bold'}}">
       <UInput v-model.number="state.memoMaxHeight"/>
     </UFormGroup>
+    <UFormGroup label="附件大小上限(单位MB,范围1-25)" name="attachmentMaxSize" :ui="{label:{base:'font-bold'}}" help="单个附件的最大体积，超出会被服务端拒绝">
+      <UInput v-model.number="state.attachmentMaxSize"/>
+    </UFormGroup>
+    <UFormGroup label="单次上传附件数量上限(范围1-20)" name="attachmentMaxCount" :ui="{label:{base:'font-bold'}}" help="一次上传请求最多可提交的附件个数">
+      <UInput v-model.number="state.attachmentMaxCount"/>
+    </UFormGroup>
     <UFormGroup label="评论排序方式(按日期)" name="commentOrder" :ui="{label:{base:'font-bold'}}">
       <USelectMenu v-model="state.commentOrder"
                    :options="[{label:'倒序,越晚发布越靠前',value:'desc'},{label:'正序,越早发布越靠前',value:'asc'}]"
@@ -296,6 +302,8 @@ const state = reactive({
   friendEmail: "",
   maxCommentLength: 120,
   memoMaxHeight: 300,
+  attachmentMaxSize: 10,
+  attachmentMaxCount: 5,
   commentOrder: 'desc',
   timeFormat: 'timeAgo',
   adminUserName: "admin",

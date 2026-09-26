@@ -95,6 +95,11 @@
           <x-preview v-if="extJSON.x?.url && extJSON.x?.id" v-bind="extJSON.x"/>
           <git-preview v-if="extJSON.git?.url" v-bind="extJSON.git"/>
           <memo-ref-preview v-if="extJSON.memoRef?.id" v-bind="extJSON.memoRef"/>
+          <attachment-preview
+            v-for="attachment in extJSON.attachments || []"
+            :key="attachment.path"
+            :attachment="attachment"
+          />
           <div v-for="(book, index) in extJSON.doubanBooks || (extJSON.doubanBook && extJSON.doubanBook.title ? [extJSON.doubanBook] : [])" :key="(book.id || index) + '-b'">
             <douban-book-preview :book="book"/>
           </div>
