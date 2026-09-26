@@ -19,12 +19,14 @@
       "
     >
       <img :src="img.url" class="cursor-move rounded" loading="lazy" decoding="async" />
-      <div
-        class="absolute top-0 right-0 px-1 bg-white dark:bg-gray-900 m-2 rounded hover:text-red-500 cursor-pointer"
+      <button
+        type="button"
+        aria-label="移除图片"
+        class="remove-image-btn absolute top-0 right-0 m-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition duration-150 hover:bg-red-500/80 active:scale-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white motion-reduce:transition-none motion-reduce:active:scale-100"
         @click="removeImage(i)"
       >
         <UIcon name="i-carbon-trash-can" />
-      </div>
+      </button>
     </div>
   </div>
 
