@@ -7,10 +7,10 @@
       <div class="space-y-3 p-4">
         <div>
           <p class="font-semibold text-gray-800 dark:text-gray-100">引用站内动态</p>
-          <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">粘贴 /memo/{id} 或本站动态链接，确认后立即抓取预览，发表后可点击跳转。</p>
+          <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">输入动态 ID 数字即可（如 123），粘贴 /memo/{id} 或本站动态链接也可以。确认后立即抓取预览，发表后可点击跳转。</p>
         </div>
-        <UInput v-model="draft" placeholder="/memo/123 或 https://本站/memo/123" @keyup.enter="confirm(close)"/>
-        <p v-if="draft && !valid" class="text-xs text-red-500">请输入本站 /memo/{id} 动态链接</p>
+        <UInput v-model="draft" placeholder="动态 ID，如 123" inputmode="numeric" @keyup.enter="confirm(close)"/>
+        <p v-if="draft && !valid" class="text-xs text-red-500">请输入有效的动态 ID 数字（纯数字即可，无需 /memo/ 前缀）</p>
         <div class="flex justify-end gap-2">
           <UButton color="white" @click="clear(close)">清空</UButton>
           <UButton :disabled="Boolean(draft) && !valid" :loading="loading" @click="confirm(close)">确定</UButton>
@@ -31,8 +31,10 @@ const draft = ref(props.id ? `/memo/${props.id}` : '')
 const loading = ref(false)
 watch(() => props.id, value => { draft.value = value ? `/memo/${value}` : '' })
 const parsed = computed(() => {
+  const text = draft.value.trim()
+  // 纯数字：直接当动态 ID（/memo/ 前缀已省略）
+  if (/^\d+$/.test(text)) return { valid: true, id: Number(text) }
   try {
-    const text = draft.value.trim()
     if (text.startsWith('/')) {
       const m = text.match(/^\/memo\/(\d+)\/?$/)
       return { valid: Boolean(m), id: m ? Number(m[1]) : 0 }
@@ -49,7 +51,9 @@ const confirm = async (close: Function) => {
   if (!url) { emit('confirm', {} as MemoRef); close(); return }
   loading.value = true
   try {
-    const snapshot = await useMyFetch<MemoRef>('/memo/preview', { kind: 'memo', url })
+    // 纯数字输入省略了 /memo/ 前缀，后端 parseMemoRefUrl 只认 /memo/{id} 或完整 URL，这里补全后再发
+    const normalized = /^\d+$/.test(url) ? `/memo/${url}` : url
+    const snapshot = await useMyFetch<MemoRef>('/memo/preview', { kind: 'memo', url: normalized })
     emit('confirm', snapshot)
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '站内动态抓取失败')
