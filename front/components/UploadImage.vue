@@ -123,9 +123,17 @@ const loadLib = async (page = 1) => {
       size: 60,
       keyword: libKeyword.value.trim(),
     })
+    // 同一张图会以 memo 与 upload 两种来源同时出现在 /photo/all（发表后必然如此），
+    // 选取与「已添加」都按 URL 判定，因此除按 id 去重外还必须按 URL 去重（同屏内也生效）
     const known = new Set(libPhotos.value.map(photo => String(photo.id)))
-    const fresh = (result.list || []).filter(photo => !known.has(String(photo.id)))
-    libPhotos.value = page > 1 ? [...libPhotos.value, ...fresh] : (result.list || [])
+    const knownUrls = new Set(libPhotos.value.map(photo => photo.url))
+    const fresh = (result.list || []).filter(photo => {
+      if (known.has(String(photo.id)) || knownUrls.has(photo.url)) return false
+      known.add(String(photo.id))
+      knownUrls.add(photo.url)
+      return true
+    })
+    libPhotos.value = page > 1 ? [...libPhotos.value, ...fresh] : fresh
     libPage.value = page
     libHasNext.value = Boolean(result.hasNext) && fresh.length > 0
   } catch (error: any) {
@@ -215,6 +223,10 @@ const clear = (close: Function) => {
 }
 .lib-tile {
   position: relative;
+  /* min-size 0：Firefox 系内核里 grid 项默认 min-width/height:auto，
+     大图的固有尺寸会撑破 aspect-ratio 轨道导致溢出 */
+  min-width: 0;
+  min-height: 0;
   aspect-ratio: 1;
   padding: 0;
   border: 2px solid transparent;
@@ -228,6 +240,7 @@ const clear = (close: Function) => {
   display: block;
   width: 100%;
   height: 100%;
+  min-height: 0;
   object-fit: cover;
 }
 .lib-tile--active {

@@ -25,6 +25,13 @@ assert.match(picker, /已添加/, '已添加图片必须有明确标识');
 
 // 列表去重：分页追加必须按 photo.id 过滤，避免翻页重复
 assert.match(picker, /known\.has\(String\(photo\.id\)\)/, '分页追加必须按 id 去重');
+// 同一张图发表后会以 memo 与 upload 两种来源并存，必须再按 URL 去重（第 1 页响应内部就会重复）
+assert.match(picker, /knownUrls\.has\(photo\.url\)/, '同图多来源必须按 URL 去重');
+assert.match(picker, /knownUrls\.add\(photo\.url\)/, 'URL 去重必须在本页内生效，而非只对已加载页');
+
+// 布局：Firefox 系内核 grid 项 min-size:auto 会用大图固有尺寸撑破 aspect-ratio 轨道
+assert.match(picker, /\.lib-tile\s*\{[^}]*min-width:\s*0/, '图块必须 min-width:0 防止溢出');
+assert.match(picker, /\.lib-tile\s*\{[^}]*min-height:\s*0/, '图块必须 min-height:0 防止溢出');
 
 // 无障碍与体验
 assert.match(picker, /type="button"/, '图块必须是 button 而非默认提交行为');
