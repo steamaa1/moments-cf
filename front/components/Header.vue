@@ -94,14 +94,14 @@
         <path d="m19.07 4.93-1.41 1.41"></path>
       </svg>
 
-      <NuxtLink v-if="$route.path !== '/photos'" to="/photos" title="照片墙">
-        <UIcon name="i-carbon-image-search" class="text-[#9fc84a] w-5 h-5 cursor-pointer" />
-      </NuxtLink>
       <NuxtLink v-if="authUser.token" to="/new" title="发表">
         <UIcon
           name="i-carbon-camera"
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
+      </NuxtLink>
+      <NuxtLink v-if="$route.path !== '/photos'" to="/photos" title="照片墙">
+        <UIcon name="i-carbon-image-search" class="text-[#9fc84a] w-5 h-5 cursor-pointer" />
       </NuxtLink>
       <NuxtLink
         v-if="$route.path !== '/user/calendar' && authUser.token"
