@@ -45,7 +45,7 @@
 - **友情链接申请与须知**：系统可配置须知内容与申请邮箱，友链页展示申请表单
 - **Telegram 评论通知**：系统配置 Bot Token/用户名，个人配置 User ID，评论时推送
 - **评论通知免打扰**：评论者即动态作者本人时不发送邮件/Telegram 通知，避免打扰自己；作者回复他人评论时仍通知被回复人
-- **SEO 与 GEO**：动态 sitemap.xml（Google 图片扩展、首页 lastmod、图集与标签聚合页收录）、全站 og/twitter meta 与 canonical、`html lang="zh-CN"`；动态详情页/用户主页注入页面级 meta 与 JSON-LD 结构化数据（`SocialMediaPosting`/`ProfilePage`），私密动态 noindex；`/llms.txt`、`/llms-full.txt` 面向 AI 搜索引擎的纯文本摘要；robots.txt 放行搜索引用类 AI 爬虫（GPTBot 等训练类已屏蔽）、放行图片与社交预览爬虫取图
+- **SEO 与 GEO**：动态 sitemap.xml（Google 图片扩展、首页 lastmod、标签聚合页收录；图集详情路由已删除，图集浏览改由照片墙内按需分页承担）、全站 og/twitter meta 与 canonical、`html lang="zh-CN"`；动态详情页/用户主页注入页面级 meta 与 JSON-LD 结构化数据（`SocialMediaPosting`/`ProfilePage`），私密动态 noindex；`/llms.txt`、`/llms-full.txt` 面向 AI 搜索引擎的纯文本摘要；robots.txt 放行搜索引用类 AI 爬虫（GPTBot 等训练类已屏蔽）、放行图片与社交预览爬虫取图
 - **体验优化**：上传媒体短随机命名（约 14 字符）、自定义 JS 路由切换后重新执行
 - **其它**：添加关于页面、朋友圈式时间线
 

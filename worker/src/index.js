@@ -833,7 +833,7 @@ async function photoWall(request, env, headers) {
   const albumViews = [];
   for (const album of albums.results || []) {
     const items = await env.DB.prepare('SELECT i.*, m.created_at AS memo_created_at, m.user_id, u.username, u.nickname, u.avatar_url FROM photo_album_items i LEFT JOIN memos m ON i.source_type=\'memo\' AND i.source_ref=CAST(m.id AS TEXT) LEFT JOIN users u ON u.id=m.user_id WHERE i.album_id=? ORDER BY i.sort_order ASC, i.created_at DESC LIMIT 9').bind(album.id).all();
-    const custom = (items.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView({ ...row, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
+    const custom = (items.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView({ ...row, album_item_id: row.id, created_at: row.memo_created_at }, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
     const combined = Number(album.is_default) === 1 ? photos.slice(0, 9) : custom;
     albumViews.push({ id: Number(album.id), name: album.name, description: album.description, isDefault: Boolean(album.is_default), count: Number(album.is_default) ? photos.length : Number(album.item_count || 0), photos: combined });
   }
@@ -856,7 +856,7 @@ async function photoAlbum(request, env, headers) {
   if (Number(album.is_default) === 1) { const photos = await publicPhotoMemos(request, env); const list = photos.slice((page - 1) * size, page * size); return json(ok({ album: { id: Number(album.id), name: album.name, description: album.description, isDefault: true }, list, total: photos.length, hasNext: page * size < photos.length }), 200, headers); }
   const count = await env.DB.prepare('SELECT COUNT(*) AS total FROM photo_album_items WHERE album_id=?').bind(albumId).first();
   const rows = await env.DB.prepare('SELECT * FROM photo_album_items WHERE album_id=? ORDER BY sort_order ASC, created_at DESC LIMIT ? OFFSET ?').bind(albumId, size, (page - 1) * size).all();
-  const list = (rows.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView(row, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
+  const list = (rows.results || []).map(row => { const url = photoUrl(row.image_url); return url ? photoView({ ...row, album_item_id: row.id }, url, url, row.source_type, row.source_index) : null; }).filter(Boolean);
   const total = Number(count?.total || 0); return json(ok({ album: { id: Number(album.id), name: album.name, description: album.description, isDefault: Boolean(Number(album.is_default)) }, list, total, hasNext: page * size < total }), 200, headers);
 }
 async function photoAll(request, env, headers) {
@@ -1228,7 +1228,7 @@ function toIsoTime(value) { return value ? `${String(value).replace(' ', 'T')}Z`
 // 若不区分路由，未知路径（软 404）就会带着「自引用 canonical + index,follow」被 Google 收录成重复页。
 // 公开路由可索引；私密路由与未知路由统一注入 noindex（与 front/layouts/default.vue、robots.txt 对齐）。
 const PRIVATE_ROUTE_PATTERNS = [/^\/new$/, /^\/edit\/[^/]+$/, /^\/user\/(?:login|reg|settings)$/, /^\/sys(?:\/|$)/];
-const PUBLIC_ROUTE_PATTERNS = [/^\/$/, /^\/about$/, /^\/friend$/, /^\/photos$/, /^\/photos\/album\/[^/]+$/, /^\/memo\/\d+$/, /^\/user\/\d+$/, /^\/user\/calendar$/, /^\/tags\/[^/]+\/[^/]+$/];
+const PUBLIC_ROUTE_PATTERNS = [/^\/$/, /^\/about$/, /^\/friend$/, /^\/photos$/, /^\/memo\/\d+$/, /^\/user\/\d+$/, /^\/user\/calendar$/, /^\/tags\/[^/]+\/[^/]+$/];
 // 组装页面级 SEO 数据（页面级 meta 与 JSON-LD）。
 // 私密路由、未知路由、私密/定时未发布/不存在的动态与用户页返回 noindex；
 // 其余公开路由返回 null 时回退站点级 meta。
@@ -1298,11 +1298,10 @@ async function pageSeo(env, config, path, origin = '') {
 function rssText(value) { return String(value || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[>#*_`~-]/g, '').trim(); }
 async function sitemap(request, env) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
-  const [memos, users, tags, albums, configRow] = await Promise.all([
+  const [memos, users, tags, configRow] = await Promise.all([
     env.DB.prepare('SELECT id, created_at, imgs FROM memos WHERE show_type=1 AND created_at<=CURRENT_TIMESTAMP LIMIT 50000').all(),
     env.DB.prepare('SELECT id, updated_at FROM users LIMIT 5000').all(),
     env.DB.prepare('SELECT u.username, m.tags FROM memos m JOIN users u ON u.id=m.user_id WHERE m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP AND m.tags<>\'\' LIMIT 50000').all(),
-    env.DB.prepare('SELECT id, updated_at FROM photo_albums WHERE is_default=0 LIMIT 5000').all(),
     env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(),
   ]);
   const config = parseConfig(configRow?.content);
@@ -1330,8 +1329,6 @@ async function sitemap(request, env) {
     for (const tag of String(row.tags || '').split(',').filter(Boolean)) tagUrls.set(`${username}\n${tag}`, `${encodeURIComponent(username)}/${encodeURIComponent(tag)}`);
   }
   for (const tagPath of tagUrls.values()) push(`/tags/${tagPath}`, null, 'weekly', '0.5');
-  // 自定义图集页（默认图集「全部照片」等价于 /photos，不重复收录）
-  for (const album of albums.results || []) push(`/photos/album/${Number(album.id)}`, album.updated_at || '', 'weekly', '0.6');
   const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${urls.join('')}</urlset>`;
   return new Response(xml, { headers: { 'content-type': 'application/xml; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
 }

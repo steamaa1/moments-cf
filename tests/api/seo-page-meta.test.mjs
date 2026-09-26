@@ -127,7 +127,7 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
 
 // 9) 尾斜杠变体：canonical 统一为无尾斜杠（与 sitemap 一致，避免「重复网页、规范网页不同」）
 {
-  const cases = [['/memo/7/', 'https://seo.example/memo/7'], ['/user/1/', 'https://seo.example/user/1'], ['/photos/album/2/', 'https://seo.example/photos/album/2'], ['/', 'https://seo.example/']];
+  const cases = [['/memo/7/', 'https://seo.example/memo/7'], ['/user/1/', 'https://seo.example/user/1'], ['/', 'https://seo.example/']];
   for (const [path, expected] of cases) {
     const response = await worker.fetch(new Request(`https://seo.example${path}`), { DB: makeDb(publicMemo, userRow), ASSETS: assets });
     const html = await response.text();
@@ -138,7 +138,7 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
 
 // 10) 静态目录页与聚合页：公认公开路由，不注入 noindex
 {
-  for (const path of ['/photos', '/about', '/friend', '/photos/album/2', '/tags/admin/%E6%97%A5%E5%B8%B8']) {
+  for (const path of ['/photos', '/about', '/friend', '/tags/admin/%E6%97%A5%E5%B8%B8']) {
     const response = await worker.fetch(new Request(`https://seo.example${path}`), { DB: makeDb(publicMemo, userRow), ASSETS: assets });
     const html = await response.text();
     assert.doesNotMatch(html, /noindex/, `${path} 是公开路由，不应 noindex`);
@@ -148,7 +148,7 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
 
 // 11) 未知路径与私密路径：SPA 回退一律返回 index.html，必须注入 noindex（防软 404 被收录成重复页）
 {
-  for (const path of ['/__not-a-real-page__', '/memo/abc', '/foo/bar', '/new', '/edit/7', '/user/login', '/user/reg', '/user/settings', '/sys/settings']) {
+  for (const path of ['/__not-a-real-page__', '/memo/abc', '/foo/bar', '/photos/album/2', '/new', '/edit/7', '/user/login', '/user/reg', '/user/settings', '/sys/settings']) {
     const response = await worker.fetch(new Request(`https://seo.example${path}`), { DB: makeDb(publicMemo, userRow), ASSETS: assets });
     const html = await response.text();
     assert.match(html, /<meta name="robots" content="noindex, nofollow">/, `${path} 应注入 noindex`);

@@ -25,5 +25,9 @@ assert.doesNotMatch(workerSource, /UPDATE photo_albums SET name=\?,description=\
 
 assert.match(workerSource, /row\.source_type === 'memo' \? \{ \.\.\.row, id: Number\(row\.source_ref\) \} : row/, 'photoAll 自定义图集项必须使用动态 ID 作为照片标识，避免重复与精选状态丢失');
 assert.match(workerSource, /album: \{ id: Number\(album\.id\)/, '默认图集详情必须返回真实图集 ID');
+// 回归：图集项必须带上自身的 albumItemId，否则管理端无法选中/移除该照片
+// （memo 来源的收录项曾经没有这个字段，导致这类照片在图集里完全删不掉）
+assert.match(workerSource, /photoView\(\{ \.\.\.row, album_item_id: row\.id \}/, '图集列表与详情必须把收录项 ID 作为 albumItemId 暴露给管理端');
+assert.match(workerSource, /album_item_id: row\.id, created_at: row\.memo_created_at/, '照片墙图集预览必须为 memo 收录项补上 albumItemId');
 
 console.log('Photo wall visibility and URL tests: PASS');
