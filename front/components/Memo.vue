@@ -151,11 +151,11 @@
           <div
             v-if="showToolbar"
             ref="toolbarRef"
-            class="absolute top-[-8px] right-[32px] bg-[#4c4c4c] rounded text-white p-2"
+            class="absolute top-[-8px] right-[32px] max-w-[calc(100vw-2rem)] bg-[#4c4c4c] rounded text-white p-2"
           >
-            <div class="flex flex-row gap-2">
+            <div class="flex flex-row gap-1">
               <div
-                class="flex flex-row gap-1 cursor-pointer items-center px-4"
+                class="flex flex-row gap-1 cursor-pointer items-center px-3 whitespace-nowrap"
                 @click="likeMemo(item.id)"
               >
                 <UIcon
@@ -167,26 +167,16 @@
               <template v-if="sysConfig.enableComment">
                 <span class="bg-[#6b7280] h-[20px] w-[1px]"></span>
                 <div
-                  class="flex flex-row gap-1 cursor-pointer items-center px-4"
+                  class="flex flex-row gap-1 cursor-pointer items-center px-3 whitespace-nowrap"
                   @click="doComment"
                 >
                   <UIcon name="i-octicon-comment" />
                   <div>评论</div>
                 </div>
               </template>
-              <template v-if="$route.path !== `/memo/${item.id}`">
-                <span class="bg-[#6b7280] h-[20px] w-[1px]"></span>
-                <div
-                  class="flex flex-row gap-1 cursor-pointer items-center px-4"
-                  @click="navigateTo(`/memo/${item.id}`)"
-                >
-                  <UIcon name="i-carbon-view" />
-                  <div>详情</div>
-                </div>
-              </template>
               <span class="bg-[#6b7280] h-[20px] w-[1px]"></span>
               <div
-                class="flex flex-row gap-1 cursor-pointer items-center px-4"
+                class="flex flex-row gap-1 cursor-pointer items-center px-3 whitespace-nowrap"
                 role="button"
                 tabindex="0"
                 @click="shareMemo(item.id)"
@@ -195,6 +185,16 @@
                 <UIcon name="i-carbon-share" />
                 <div>分享</div>
               </div>
+              <template v-if="$route.path !== `/memo/${item.id}`">
+                <span class="bg-[#6b7280] h-[20px] w-[1px]"></span>
+                <div
+                  class="flex flex-row gap-1 cursor-pointer items-center px-3 whitespace-nowrap"
+                  @click="navigateTo(`/memo/${item.id}`)"
+                >
+                  <UIcon name="i-carbon-view" />
+                  <div>详情</div>
+                </div>
+              </template>
             </div>
           </div>
           <template>
