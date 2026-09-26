@@ -119,6 +119,19 @@ assert.equal(dedupedFile.size, 2048);
 assert.equal(inserted.length, before, '去重命中不得重复写入媒体记录');
 duplicate = null;
 
+// 纯文本/代码/电子书类必须可上传（浏览器对 .log/.yml 等常报空声明类型，依赖扩展名归一）
+config = { storageType: 'r2', attachmentMaxSize: 1, attachmentMaxCount: 5 };
+const plain = await upload([makeFile('server.log', '', 128), makeFile('config.yml', 'text/yaml', 64), makeFile('run.sh', 'application/octet-stream', 32)]);
+assert.equal(plain.status, 200, '纯文本/配置类附件必须被接受');
+const plainFiles = (await body(plain)).data.files;
+assert.deepEqual(plainFiles.map(f => f.type), ['text/plain', 'text/yaml', 'text/plain']);
+
+// 同源可执行/可解释类型必须继续拒绝
+for (const [name, type] of [['page.html', 'text/html'], ['icon.svg', 'image/svg+xml'], ['app.js', 'text/javascript'], ['data.xml', 'application/xml']]) {
+  const rejected = await upload([makeFile(name, type, 64)]);
+  assert.equal(rejected.status, 415, `${name} 必须被拒绝`);
+}
+
 // 下载头：显式 download=1 必须带原始文件名（含中文走 RFC 5987），并保持 nosniff
 const pdfKey = payload.data.files[0].path.slice('/upload/'.length);
 rows.set(pdfKey, { id: 1, storage_backend: 'r2', r2_key: pdfKey, thumbnail_key: null, trashed_at: null, original_filename: '报告 v2.pdf', content_type: 'application/pdf' });

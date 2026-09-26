@@ -4,8 +4,9 @@
     <template #panel>
       <div class="p-4 flex flex-col gap-2 w-[min(20rem,80vw)] max-h-[420px] overflow-y-auto">
         <div class="text-xs text-gray-400">上传附件</div>
-        <UInput ref="fileInput" type="file" size="sm" multiple @change="pickFiles" />
+        <UInput ref="fileInput" type="file" size="sm" multiple :accept="ACCEPT" @change="pickFiles" />
         <p class="text-xs text-gray-400">单个不超过 {{ maxSize }}MB，一次最多 {{ maxCount }} 个</p>
+        <p class="text-xs text-gray-400">支持文档、压缩包与纯文本；图片请用左侧图片入口</p>
 
         <template v-if="uploading">
           <p class="text-xs text-gray-400">正在上传…</p>
@@ -41,6 +42,16 @@ import type { AttachmentVO, SysConfigVO } from '~/types'
 const attachments = defineModel<AttachmentVO[]>('attachments', { default: () => [] })
 
 const sysConfig = useState<SysConfigVO>('sysConfig')
+
+// 与 worker 的 ALLOWED_ATTACHMENT_TYPES 保持一致：选择器只做过滤提示，服务端仍是权威
+const ACCEPT = [
+  '.pdf', '.doc', '.docx', '.odt', '.rtf', '.wps', '.pages',
+  '.xls', '.xlsx', '.ods', '.csv', '.tsv', '.et', '.numbers',
+  '.ppt', '.pptx', '.odp', '.dps', '.key',
+  '.txt', '.md', '.log', '.json', '.yml', '.yaml', '.ini', '.conf', '.toml', '.properties', '.tex',
+  '.zip', '.7z', '.rar', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.zst',
+  '.epub', '.mobi', '.azw', '.azw3',
+].join(',')
 
 // 限额来自系统配置，缺失或非法时回退到默认值（单文件 10MB、单次 5 个）
 const positiveInt = (value: unknown, fallback: number) => {

@@ -37,6 +37,14 @@ assert.match(uploadAttachment, /UProgress/, '上传必须有进度反馈');
 assert.match(uploadAttachment, /known\.has\(item\.path\)/, '重复上传的同一文件必须按 path 去重');
 assert.match(uploadAttachment, /toast\.error/, '上传失败必须有明确提示');
 
+// 失败原因必须透传：服务端 415/413 带中文原因，前端不得只抛状态码
+const uploadUtil = await read('front/utils/upload.ts');
+assert.match(uploadUtil, /JSON\.parse\(xhr\.responseText\)/, '非 2xx 时必须解析服务端信封取原因');
+assert.match(uploadUtil, /message \|\| `上传失败 \(\$\{xhr\.status\}\)`/, '解析不到原因时才回退状态码文案');
+assert.match(uploadAttachment, /:accept="ACCEPT"/, '附件选择器必须按支持格式过滤');
+assert.match(uploadAttachment, /const ACCEPT = \[/, '必须有与白名单一致的可选格式清单');
+assert.match(uploadAttachment, /图片请用左侧图片入口/, '必须说明附件不含图片，避免用户误用');
+
 // 展示卡片：样式参考「链接」卡片（ExternalUrlPreview），并提供下载按钮
 assert.match(preview, /flex flex-row gap-2 my-2 bg-\[#f7f7f7\] dark:bg-\[#212121\] items-center dark:border-gray-700\/50 p-2 border rounded/, '附件卡片必须沿用链接卡片的元素样式');
 assert.match(preview, /\?download=1/, '下载必须走 download=1 约定');

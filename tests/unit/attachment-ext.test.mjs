@@ -12,6 +12,21 @@ assert.equal(attachmentContentType('a.pdf', 'application/pdf'), 'application/pdf
 assert.equal(attachmentContentType('a.md', ''), 'text/markdown');
 assert.equal(attachmentContentType('a.csv', 'application/octet-stream'), 'text/csv');
 assert.equal(attachmentContentType('a.zip', 'application/x-zip-compressed'), 'application/zip');
+// 纯文本/代码/配置/电子书类：浏览器常报空 MIME，必须能按扩展名归一（否则用户看到无从下手的 415）
+assert.equal(attachmentContentType('a.log', ''), 'text/plain');
+assert.equal(attachmentContentType('a.sh', ''), 'text/plain');
+assert.equal(attachmentContentType('a.py', 'application/octet-stream'), 'text/plain');
+assert.equal(attachmentContentType('a.yml', ''), 'text/yaml');
+assert.equal(attachmentContentType('a.yaml', 'text/yaml'), 'text/yaml');
+assert.equal(attachmentContentType('a.mobi', ''), 'application/x-mobipocket-ebook');
+assert.equal(attachmentContentType('a.azw3', ''), 'application/x-mobipocket-ebook');
+assert.equal(attachmentContentType('a.wps', ''), 'application/vnd.ms-works');
+assert.equal(attachmentContentType('a.pages', ''), 'application/vnd.apple.pages');
+
+// 可在浏览器内解释执行或影响同源的类型必须继续拒绝
+for (const danger of ['a.html', 'a.htm', 'a.svg', 'a.js', 'a.mjs', 'a.xml', 'a.css']) {
+  assert.equal(attachmentContentType(danger, ''), '', `${danger} 必须被拒绝（无扩展名兜底）`);
+}
 assert.equal(attachmentContentType('a.html', 'text/html'), '', 'html 必须被拒绝');
 assert.equal(attachmentContentType('a.exe', 'application/x-msdownload'), '', 'exe 必须被拒绝');
 assert.equal(attachmentContentType('noext', ''), '', '无扩展名且无有效声明必须被拒绝');

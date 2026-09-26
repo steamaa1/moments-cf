@@ -103,6 +103,14 @@ const ALLOWED_ATTACHMENT_TYPES = new Set([
   'text/plain',
   'text/markdown',
   'text/csv',
+  'text/yaml',
+  'application/x-yaml',
+  'application/x-mobipocket-ebook',
+  'application/vnd.amazon.ebook',
+  'application/vnd.ms-works',
+  'application/vnd.apple.pages',
+  'application/vnd.apple.numbers',
+  'application/vnd.apple.keynote',
 ]);
 // 浏览器对 md/csv/7z 等常报空 type 或平台相关类型，按扩展名兜底归一
 const ATTACHMENT_EXTENSION_TYPES = {
@@ -126,6 +134,18 @@ const ATTACHMENT_EXTENSION_TYPES = {
   txt: 'text/plain',
   md: 'text/markdown',
   csv: 'text/csv',
+  // 纯文本/代码/配置类统一按 text/plain 归一并强制下载（浏览器对这些扩展名多报空 MIME）。
+  // 刻意不含 html/htm/svg/js/mjs/xml/css 等可在浏览器内解释执行或作为样式/脚本生效的类型。
+  log: 'text/plain', ini: 'text/plain', conf: 'text/plain', toml: 'text/plain', env: 'text/plain',
+  sql: 'text/plain', sh: 'text/plain', bash: 'text/plain', py: 'text/plain', go: 'text/plain',
+  java: 'text/plain', rs: 'text/plain', c: 'text/plain', cpp: 'text/plain', h: 'text/plain', hpp: 'text/plain',
+  cs: 'text/plain', rb: 'text/plain', pl: 'text/plain', lua: 'text/plain', swift: 'text/plain',
+  kt: 'text/plain', dart: 'text/plain', tex: 'text/plain', diff: 'text/plain', patch: 'text/plain',
+  srt: 'text/plain', vtt: 'text/plain', tsv: 'text/plain', properties: 'text/plain',
+  yml: 'text/yaml', yaml: 'text/yaml',
+  mobi: 'application/x-mobipocket-ebook', azw: 'application/x-mobipocket-ebook', azw3: 'application/x-mobipocket-ebook',
+  wps: 'application/vnd.ms-works', et: 'application/vnd.ms-excel', dps: 'application/vnd.ms-powerpoint',
+  pages: 'application/vnd.apple.pages', numbers: 'application/vnd.apple.numbers', key: 'application/vnd.apple.keynote',
 };
 const ATTACHMENT_HARD_MAX_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_HARD_MAX_COUNT = 20;

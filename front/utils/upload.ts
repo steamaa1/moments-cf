@@ -50,7 +50,14 @@ function xhrUpload(url: string, method: string, body: XMLHttpRequestBodyInit, he
     const xhr = new XMLHttpRequest(); xhr.open(method, url, true)
     for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value)
     xhr.upload.onprogress = event => { if (event.lengthComputable) progress?.(0.15 + event.loaded / event.total * 0.85) }
-    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(xhr.responseText) : reject(new Error(`上传失败 (${xhr.status})`))
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(xhr.responseText)
+      // 服务端失败时信封里带中文原因（如「不支持的附件类型」「单个附件不能超过 10MB」），
+      // 必须透出，否则用户只看到「上传失败 (415)」这种无从下手的提示
+      let message = ''
+      try { message = String((JSON.parse(xhr.responseText) as ResultVO<unknown>)?.message || '') } catch { message = '' }
+      reject(new Error(message || `上传失败 (${xhr.status})`))
+    }
     xhr.onerror = () => reject(new Error('上传网络错误')); xhr.onabort = () => reject(new Error('上传已取消')); xhr.send(body)
   })
 }
