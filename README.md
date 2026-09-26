@@ -32,6 +32,8 @@
 - **无服务器部署**：单 Cloudflare Worker 提供前端、API、RSS 与媒体代理，D1 存结构化数据，R2 存图片/视频，无需服务器
 - **可插拔媒体存储**：R2 / S3 兼容 / WebDAV 三选一，切换后旧 R2 媒体仍可访问（读旧写新），凭据 AES-GCM 加密存储
 - **大文件直传**：SHA-256 内容寻址秒传去重；20MB～500MB 走 SigV4 预签名直传；浏览器生成 WebP 缩略图
+- **附件上传**：动态可携带文档、压缩包与纯文本等附件（类型白名单，刻意排除 html/svg/js 等同源可执行类型）；单个大小与单次数量上限可在系统设置里配置；附件一律以「另存为」下发，中文文件名不乱码
+- **照片墙与图集**：动态图片自动汇总为时间线，可按图集浏览与分页加载；图集管理集中在管理面板（新建/编辑/添加照片/精选），删除统一收进照片管理并支持多选批量移除，未被动态引用的上传文件移入回收站
 - **数据安全**：D1 自动备份（间隔与保留天数可配置，目标可选 R2/S3/WebDAV）、手动备份、本地导出、双重确认恢复、未引用媒体 7 天回收站
 - **微信状态**：每用户一个带 emoji 的状态（默认 24 小时，时长可自定义），封面昵称与动态作者昵称旁展示，内置 30+ 微信同款状态
 - **人机验证**：Cloudflare Turnstile（可优先于 Google reCAPTCHA）
@@ -40,13 +42,16 @@
 - **X 原帖快照卡片**：发表时从 X syndication 抓取作者/头像/正文/图片/互动数据并永久保存，媒体走同域代理，刷新不依赖 iframe 或 X Widget
 - **Git 静态嵌入**：支持 GitHub、GitLab、Gitea、Forgejo、Codeberg 等公开 Git 托管平台的仓库、文件、Issue、PR、Commit、Release 链接；发表时抓取公开元数据并保存为静态卡片，不依赖第三方 iframe
 - **站内动态引用**：发表面板粘贴 `/memo/{id}` 或本站动态链接，自动抓取被引用动态的作者、正文与图片生成静态卡片，点击可跳转回原动态，仅支持本站 `/memo/*`
+- **内容块手动排序**：图片、链接、音乐、Git/X 嵌入、站内引用、附件、豆瓣卡片与视频可按需拖拽排序（左侧圆点手柄，触屏可用，聚焦后亦可用方向键微调）；编辑面板与动态展示共用同一顺序，所见即所得
+- **照片墙选图**：发表面板可直接引用照片墙/图集中已有图片，支持关键词搜索、分页加载与已添加去重
+- **动态分享**：每条动态的「更多」操作里可一键复制动态链接
 - **豆瓣多卡片**：读书/电影各最多 10 个，兼容旧单卡片数据
 - **音乐直链增强**：支持歌手与封面（上传或直链），LRC 滚动歌词
 - **友情链接申请与须知**：系统可配置须知内容与申请邮箱，友链页展示申请表单
 - **Telegram 评论通知**：系统配置 Bot Token/用户名，个人配置 User ID，评论时推送
 - **评论通知免打扰**：评论者即动态作者本人时不发送邮件/Telegram 通知，避免打扰自己；作者回复他人评论时仍通知被回复人
-- **SEO 与 GEO**：动态 sitemap.xml（Google 图片扩展、首页 lastmod、标签聚合页收录；图集详情路由已删除，图集浏览改由照片墙内按需分页承担）、全站 og/twitter meta 与 canonical、`html lang="zh-CN"`；动态详情页/用户主页注入页面级 meta 与 JSON-LD 结构化数据（`SocialMediaPosting`/`ProfilePage`），私密动态 noindex；`/llms.txt`、`/llms-full.txt` 面向 AI 搜索引擎的纯文本摘要；robots.txt 放行搜索引用类 AI 爬虫（GPTBot 等训练类已屏蔽）、放行图片与社交预览爬虫取图
-- **体验优化**：上传媒体短随机命名（约 14 字符）、自定义 JS 路由切换后重新执行
+- **SEO 与 GEO**：动态 sitemap.xml（Google 图片扩展、首页 lastmod、标签聚合页收录；图集详情路由已删除，图集浏览改由照片墙内按需分页承担）、全站 og/twitter meta 与 canonical、`html lang="zh-CN"`；动态详情页/用户主页注入页面级 meta 与 JSON-LD 结构化数据（`SocialMediaPosting`/`ProfilePage`），私密动态 noindex；`/llms.txt`、`/llms-full.txt` 面向 AI 搜索引擎的纯文本摘要；robots.txt 放行搜索引用类 AI 爬虫（GPTBot 等训练类已屏蔽）、放行图片与社交预览爬虫取图；**SEO 总开关**可在系统设置一键关闭全站收录（全站 noindex、robots 全站 Disallow、sitemap 与 llms 摘要停止提供）
+- **体验优化**：上传媒体短随机命名（约 14 字符）、自定义 JS 路由切换后重新执行、系统设置按分区标签页陈列并支持 `?tab=` 深链与未保存更改提示
 - **其它**：添加关于页面、朋友圈式时间线
 
 ## 快速开始
@@ -126,7 +131,7 @@ curl -X POST "https://your-worker.workers.dev/api/admin/initialize" \
 
 ## 使用指南
 
-- **系统设置**（`/sys/settings`）：网站信息、评论/注册开关、人机验证、关于页、媒体存储（R2/S3/WebDAV）、D1 备份（间隔/保留/目标/立即备份/管理恢复）、本地备份导出
+- **系统设置**（`/sys/settings`）：按六个分区陈列——**站点**（标题/域名/Favicon/备案/自定义 CSS·JS·RSS/展示偏好）、**SEO**（总开关、描述与关键词）、**内容与互动**（评论、注册与审批、关于页、友链申请）、**附件**（大小与单次数量上限）、**安全与通知**（reCAPTCHA/Turnstile、邮件与 Telegram 通知）、**存储与数据**（存储后端、媒体回收站、本地备份、D1 备份、一键导入）。支持 `?tab=storage` 这类深链直达分区，底部常驻保存条会提示「有未保存更改」
 - **一键导入**（`/sys/migration`）：旧 Docker 站数据迁移。先用本地转换器生成迁移包（见 [迁移文档](scripts/migrate/README.md)），再后台上传预检导入；数据库导出异常时可勾选“跳过导入前备份”
 - **微信状态**：自己空间页封面昵称左侧点击设置（内置状态/自定义/备注/时长），他人状态显示在动态作者昵称右侧
 
@@ -157,38 +162,19 @@ MOMENTS_BASE_URL=https://your-worker.workers.dev node scripts/release/smoke-test
 
 ## API 使用说明
 
-网站前端通过同域 `/api/*` 调用 Worker。接口统一返回 `{"code":0,"data":{}}`；失败时 `code` 非 0，并可能包含 `message`。需要登录的接口使用请求头 `x-api-token: <token>`。
+网站前端通过同域 `/api/*` 调用 Worker。接口统一返回 `{"code":0,"data":{}}`；失败时 `code` 非 0 并带 `message`（未登录 `code 3`、无权限 `code 4`）。需要登录的接口使用请求头 `x-api-token: <token>`。
+
+**完整接口清单见 [API.md](API.md)**（按分组列出全部 65 个 `/api/*` 接口与站点级端点，含权限与参数）。下面是几个最常用的：
 
 | 方法 | 路径 | 说明 | 权限 |
 | --- | --- | --- | --- |
-| POST | `/api/user/login` | 登录 | 公开 |
-| POST | `/api/user/reg` | 注册 | 注册开关开启 |
-| GET | `/api/user/profile` | 用户资料（含微信状态） | 公开 |
-| POST | `/api/user/saveProfile` | 保存资料 | 登录 |
-| POST | `/api/user/status/set` | 设置微信状态 | 登录 |
-| POST | `/api/user/status/clear` | 清除状态 | 登录 |
-| GET | `/api/user/status/get` | 查询某用户状态 | 公开 |
+| POST | `/api/user/login` | 登录，返回 token | 公开 |
 | POST | `/api/memo/list` | 动态列表（分页/筛选/含状态） | 公开（私密需登录） |
 | POST | `/api/memo/save` | 发表 / 编辑 | 登录 |
-| POST | `/api/memo/remove` | 删除动态 | 登录 |
-| POST | `/api/memo/setPinned` | 置顶 | 登录 |
-| POST | `/api/memo/like` | 点赞 | 公开 |
-| GET | `/api/tag/list` | 标签 | 公开 |
-| POST | `/api/comment/add` | 发表评论 | 公开（需人机验证） |
-| POST | `/api/comment/remove` | 删除评论 | 登录 |
-| GET | `/api/friend/list` | 友情链接 | 公开 |
-| POST | `/api/sysConfig/get` | 公开配置 | 公开 |
-| POST | `/api/sysConfig/getFull` | 完整配置 | 管理员 |
-| POST | `/api/sysConfig/save` | 保存配置 | 管理员 |
-| POST | `/api/file/upload` | 上传媒体 | 登录 |
-| POST | `/api/admin/backup/*` | 备份列表/创建/下载/恢复/本地导出 | 管理员 |
-| POST | `/api/admin/migration/*` | 一键导入（预检/准备/导入/状态） | 管理员 |
-| GET | `/rss` | RSS 订阅 | 公开 |
-| GET | `/sitemap.xml` | 站点地图（含图片扩展与聚合页） | 公开 |
-| GET | `/robots.txt` | 爬虫规则（AI 爬虫策略） | 公开 |
-| GET | `/llms.txt`、`/llms-full.txt` | AI 搜索引擎纯文本站点摘要 | 公开 |
-| GET | `/x-media` | X 图片同域代理 | 公开 |
-| GET | `/upload/*` | 媒体代理（R2/S3/WebDAV） | 公开 |
+| POST | `/api/file/upload` | 上传媒体（图片/音频/视频） | 登录 |
+| POST | `/api/file/attachment` | 上传附件（文档/压缩包/纯文本） | 登录 |
+| POST | `/api/sysConfig/get` | 站点公开配置 | 公开 |
+| GET | `/upload/*` | 媒体与附件访问（`?download=1` 强制下载） | 公开 |
 
 调用示例（登录获取 Token）：
 
@@ -199,8 +185,7 @@ curl -X POST "https://your-worker.workers.dev/api/user/login" \
 # 返回 {"code":0,"data":{"token":"eyJ..."}}
 ```
 
-完整接口以当前 `cf` 分支实现为准；网站不提供公开 Swagger/OpenAPI 页面。
-
+站点级端点（`/rss`、`/sitemap.xml`、`/robots.txt`、`/llms.txt`、`/llms-full.txt`、`/x-media`、`/douban-cover`）与全部管理接口同样收录在 [API.md](API.md)。完整接口以当前 `cf` 分支实现为准；网站不提供公开 Swagger/OpenAPI 页面。
 
 ## 架构
 
@@ -219,7 +204,8 @@ R2/S3/WebDAV: 图片、视频、备份文件
 
 ## 相关文档
 
-- [Worker 说明](worker/README.md)：接口、Migration、备份机制
+- [接口文档](API.md)：全部 `/api/*` 接口与站点级端点（权限、参数、约定）
+- [Worker 说明](worker/README.md)：部署、Bindings 与 Secrets、Phase 7 能力、Migration 与自检
 - [部署与资源脚本](scripts/README.md)：bootstrap、preflight、smoke test
 - [旧站迁移工具](scripts/migrate/README.md)：本地转换器与迁移包格式
 
