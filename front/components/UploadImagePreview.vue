@@ -64,7 +64,7 @@ interface ImgConfig {
 }
 
 const route = useRoute();
-const el = ref(null);
+const el = ref<HTMLElement | null>(null);
 const props = defineProps<{ imgs?: string; imgConfigs?: ImgConfig[] }>();
 const emit = defineEmits(["removeImage", "dragImage"]);
 
@@ -103,13 +103,28 @@ const fallbackToOriginal = (event: Event, url: string) => {
   image.src = url;
 };
 
-onMounted(() => {
-  if (route.path.startsWith("/new") || route.path.startsWith("/edit")) {
-    setTimeout(() => {
-      useSortable(el, images);
-    }, 500);
-  }
+// 图片组内部排序：
+// ① 容器是 v-if="images.length > 0" 渲染的，新建动态挂载时还没有图片，el 为 null；
+//    若在 onMounted 里一次性初始化，实例根本建不起来，之后再加图片也拖不动。
+//    因此改为监听「容器出现/可编辑态」来 start/stop（start 自身幂等）。
+// ② 触摸屏上原生 HTML5 拖放无效，必须 forceFallback；fallbackTolerance 避免轻扫被误判为拖拽。
+const canSortImages = computed(() => route.path.startsWith("/new") || route.path.startsWith("/edit"));
+const imageSortable = useSortable(el, images, {
+  forceFallback: true,
+  fallbackOnBody: true,
+  fallbackTolerance: 4,
+  ghostClass: "image-sortable-ghost",
+  chosenClass: "image-sortable-chosen",
+  animation: 150,
 });
+watch(
+  [el, canSortImages],
+  ([element, sortableEnabled]) => {
+    if (element && sortableEnabled) imageSortable.start();
+    else imageSortable.stop();
+  },
+  { immediate: true }
+);
 
 const gridStyle = computed(() => {
   let style = "max-width:100%; display:grid; gap: 0.5rem; align-items: start;"; // 确保内容顶部对齐
@@ -134,6 +149,19 @@ const gridStyle = computed(() => {
 </script>
 
 <style scoped>
+/* 拖拽反馈：占位图半透明、被拖图轻微弱化（类由 SortableJS 运行时添加，故用 :deep） */
+:deep(.image-sortable-ghost) {
+  opacity: 0.35;
+}
+:deep(.image-sortable-chosen) {
+  opacity: 0.9;
+}
+@media (prefers-reduced-motion: reduce) {
+  :deep(.image-sortable-ghost),
+  :deep(.image-sortable-chosen) {
+    transition: none;
+  }
+}
 .full-cover-image-mult {
   width: 100%;
   max-height: 300px;

@@ -51,6 +51,17 @@ assert.match(memoEdit, /forceFallback: true/, '必须启用 fallback 才能支�
 assert.match(memoEdit, /fallbackOnBody: true/, 'fallback 必须挂到 body，避免被容器裁剪');
 assert.match(memoEdit, /fallbackTolerance: \d+/, '必须有拖拽容差');
 assert.match(memoEdit, /ghostClass: 'block-ghost'/, '必须有拖拽占位反馈类');
+// 回归：绝不能用「拖拽结束时的 DOM 顺序」写回 order —— useSortable 的 onUpdate 会先把被拖节点
+// 挪回原位（removeNode + insertNodeAt）再在 nextTick 替换数组，读 DOM 只会读到旧顺序，
+// 表现为「拖到目标位置、松手又弹回原位」
+assert.doesNotMatch(memoEdit, /blocksEl\.value\?\.querySelectorAll/, '不得读取 DOM 顺序来持久化排序');
+assert.match(memoEdit, /onEnd: \(event: any\) => \{[\s\S]{0,400}nextTick\(\(\) => \{/, 'onEnd 必须等一 tick，以数组为事实源');
+assert.match(memoEdit, /state\.order = sortableBlocks\.value\.map\(block => block\.key\)/, '最终顺序必须取自数组');
+assert.match(memoEdit, /blocksBeforeDrag = \[\.\.\.sortableBlocks\.value\]/, '必须在拖拽开始时留存快照用于兜底');
+assert.match(memoEdit, /if \(!draggingBlocks\) sortableBlocks\.value = \[\.\.\.value\]/, '拖拽期间必须暂停从 orderedBlocks 回灌，避免中途重渲染打断拖拽');
+assert.match(memoEdit, /draggingBlocks = true/, '拖拽开始必须进入暂停态');
+assert.match(memoEdit, /draggingBlocks = false/, '拖拽结束必须恢复回灌');
+assert.match(memoEdit, /moveMemoBlock\(beforeKeys, blocksBeforeDrag\[from\]\.key, to - from\)/, '库未同步时必须按事件索引兜底重排');
 assert.match(memoEdit, /:deep\(\.block-ghost\)/, '占位块必须有可见样式');
 assert.match(memoEdit, /order: Array<string>\(\)/, 'state 必须有 order 字段');
 assert.match(memoEdit, /state\.order = Array\.isArray\(ext\.order\) \? ext\.order : \[\]/, '编辑已有动态必须回填 order');

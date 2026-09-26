@@ -331,6 +331,8 @@ const clickTag = (tag: string) => {
 }
 const memoSaving = ref(false)
 const blocksEl = ref<HTMLElement | null>(null)
+// 拖拽开始时的块顺序快照：仅用于「库未同步数组」时按事件索引兜底重排
+let blocksBeforeDrag: MemoBlock[] = []
 
 onMounted(async () => {
   if (state.id > 0) {
@@ -351,7 +353,7 @@ onMounted(async () => {
     state.createdAt = dayjs.utc(res.createdAt).local().format()
   }
   await loadTags()
-  // 外层块列表的拖拽只允许手柄发起，避免与图片组内部排序、页面纵向滚动打架。
+  // 外层块列表的拖拽只允许圆点发起，避免与图片组内部排序、页面纵向滚动打架。
   // 这里刻意不判断「当前块数」：新建动态一开始没有块，若那时不初始化，
   // 等用户添加内容后就再也拖不动了（SortableJS 基于 DOM，动态增删子节点无需重建实例）。
   await nextTick()
@@ -366,12 +368,28 @@ onMounted(async () => {
       fallbackTolerance: 4,
       ghostClass: 'block-ghost',
       chosenClass: 'block-chosen',
-      onEnd: () => {
-        // 以 DOM 顺序为准写回 order：不依赖 useSortable 对数组的同步行为
-        const keys = [...(blocksEl.value?.querySelectorAll('[data-block-key]') || [])]
-          .map(node => node.getAttribute('data-block-key') || '')
-          .filter(Boolean)
-        if (keys.length) state.order = keys
+      onStart: () => { draggingBlocks = true; blocksBeforeDrag = [...sortableBlocks.value] },
+      onEnd: (event: any) => {
+        // 关键：绝不能在这里读 DOM 顺序。useSortable 的默认 onUpdate 会先把被拖节点挪回原位
+        // （removeNode + insertNodeAt），再在 nextTick 里替换数组交给 Vue 重渲染；
+        // 若在 onEnd 读 DOM，读到的正是「已复位」的旧顺序，写回后就会表现为「松手弹回原位」。
+        // 因此这里等一 tick，以**数组**为唯一事实源：库同步成功就直接采用，
+        // 只用事件索引兜底「库没能同步数组」的异常情况。
+        const from = Number(event?.oldIndex ?? -1)
+        const to = Number(event?.newIndex ?? -1)
+        nextTick(() => {
+          const beforeKeys = blocksBeforeDrag.map(block => block.key)
+          const keys = sortableBlocks.value.map(block => block.key)
+          if (keys.join('|') === beforeKeys.join('|') && from >= 0 && to >= 0 && from !== to && blocksBeforeDrag[from]) {
+            const moved = moveMemoBlock(beforeKeys, blocksBeforeDrag[from].key, to - from)
+            sortableBlocks.value = moved
+              .map(key => blocksBeforeDrag.find(block => block.key === key))
+              .filter(Boolean) as MemoBlock[]
+          }
+          state.order = sortableBlocks.value.map(block => block.key)
+          // 顺序已落定，恢复回灌（此时 orderedBlocks 与数组一致，不会有可见跳动）
+          draggingBlocks = false
+        })
       },
     })
   }
@@ -406,9 +424,11 @@ const availableBlocks = computed<MemoBlock[]>(() => {
   return blocks
 })
 const orderedBlocks = computed(() => orderMemoBlocks(availableBlocks.value, state.order))
-// 交给 SortableJS 的数组：拖拽时它按 DOM 顺序改写，因此模板渲染它而不是 computed
+// 交给 SortableJS 的数组：拖拽时由库（onUpdate）按新顺序重建，因此模板渲染它而不是 computed
 const sortableBlocks = ref<MemoBlock[]>([])
-watch(orderedBlocks, value => { sortableBlocks.value = [...value] }, { immediate: true })
+// 拖拽期间暂停从 orderedBlocks 回灌，避免中途任何响应式变化让 Vue 按旧数组重渲染、打断拖拽
+let draggingBlocks = false
+watch(orderedBlocks, value => { if (!draggingBlocks) sortableBlocks.value = [...value] }, { immediate: true })
 
 const moveBlock = (key: string, delta: number) => {
   state.order = moveMemoBlock(orderedBlocks.value.map(block => block.key), key, delta)
