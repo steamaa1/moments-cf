@@ -184,6 +184,17 @@
                   <div>详情</div>
                 </div>
               </template>
+              <span class="bg-[#6b7280] h-[20px] w-[1px]"></span>
+              <div
+                class="flex flex-row gap-1 cursor-pointer items-center px-4"
+                role="button"
+                tabindex="0"
+                @click="shareMemo(item.id)"
+                @keydown.enter.prevent="shareMemo(item.id)"
+              >
+                <UIcon name="i-carbon-share" />
+                <div>分享</div>
+              </div>
             </div>
           </div>
           <template>
@@ -384,6 +395,43 @@ const doComment = () => {
     currentCommentBox.value = value;
   }
   showToolbar.value = false;
+};
+
+// 分享：复制动态详情页绝对链接；http 等非安全上下文没有 clipboard API，退回 execCommand
+const copyText = async (text: string): Promise<boolean> => {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // 落到 execCommand 兜底
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  document.body.removeChild(textarea);
+  return copied;
+};
+
+const shareMemo = async (id: number) => {
+  showToolbar.value = false;
+  const url = `${window.location.origin}/memo/${id}`;
+  const copied = await copyText(url);
+  if (copied) {
+    toast.success("链接已复制，快去分享吧！");
+  } else {
+    toast.error(`复制失败，请手动复制：${url}`);
+  }
 };
 
 const doShowMore = () => {
