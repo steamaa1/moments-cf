@@ -74,54 +74,42 @@
         </div>
 
         <div class="flex flex-col gap-2">
-          <external-url-preview
-            v-if="
-              item.externalFavicon && item.externalTitle && item.externalUrl
-            "
-            :favicon="item.externalFavicon"
-            :title="item.externalTitle"
-            :url="item.externalUrl"
-          />
-          <upload-image-preview
-            :imgs="item.imgs"
-            :imgConfigs="item.imgConfigs"
-            :memo-id="item.id"
-          />
-
-          <music-preview
-            v-if="extJSON.music && (extJSON.music.id || extJSON.music.url)"
-            v-bind="extJSON.music"
-          />
-          <x-preview v-if="extJSON.x?.url && extJSON.x?.id" v-bind="extJSON.x"/>
-          <git-preview v-if="extJSON.git?.url" v-bind="extJSON.git"/>
-          <memo-ref-preview v-if="extJSON.memoRef?.id" v-bind="extJSON.memoRef"/>
-          <attachment-preview
-            v-for="attachment in extJSON.attachments || []"
-            :key="attachment.path"
-            :attachment="attachment"
-          />
-          <div v-for="(book, index) in extJSON.doubanBooks || (extJSON.doubanBook && extJSON.doubanBook.title ? [extJSON.doubanBook] : [])" :key="(book.id || index) + '-b'">
-            <douban-book-preview :book="book"/>
-          </div>
-          <div v-for="(movie, index) in extJSON.doubanMovies || (extJSON.doubanMovie && extJSON.doubanMovie.title ? [extJSON.doubanMovie] : [])" :key="(movie.id || index) + '-m'">
-            <douban-movie-preview :movie="movie"/>
-          </div>
-          <video-preview-iframe
-            v-if="
-              extJSON.video &&
-              ['bilibili', 'youtube'].includes(extJSON.video.type) &&
-              extJSON.video.value
-            "
-            :url="extJSON.video.value"
-          />
-          <video-preview
-            v-if="
-              extJSON.video &&
-              extJSON.video.type === 'online' &&
-              extJSON.video.value
-            "
-            :url="extJSON.video.value"
-          />
+          <!-- 内容块顺序与编辑态共用 ext.order（见 front/utils/memoBlocks.js），保证所见即所得 -->
+          <template v-for="block in orderedBlocks" :key="block.key">
+            <external-url-preview
+              v-if="block.kind === 'external'"
+              :favicon="item.externalFavicon"
+              :title="item.externalTitle"
+              :url="item.externalUrl"
+            />
+            <upload-image-preview
+              v-else-if="block.kind === 'images'"
+              :imgs="item.imgs"
+              :imgConfigs="item.imgConfigs"
+              :memo-id="item.id"
+            />
+            <music-preview
+              v-else-if="block.kind === 'music'"
+              v-bind="extJSON.music"
+            />
+            <x-preview v-else-if="block.kind === 'x'" v-bind="extJSON.x"/>
+            <git-preview v-else-if="block.kind === 'git'" v-bind="extJSON.git"/>
+            <memo-ref-preview v-else-if="block.kind === 'memoRef'" v-bind="extJSON.memoRef"/>
+            <attachment-preview
+              v-else-if="block.kind === 'attachment'"
+              :attachment="block.attachment"
+            />
+            <douban-book-preview v-else-if="block.kind === 'doubanBook'" :book="block.book"/>
+            <douban-movie-preview v-else-if="block.kind === 'doubanMovie'" :movie="block.movie"/>
+            <video-preview-iframe
+              v-else-if="block.kind === 'video' && ['bilibili', 'youtube'].includes(extJSON.video?.type || '')"
+              :url="extJSON.video.value"
+            />
+            <video-preview
+              v-else-if="block.kind === 'video'"
+              :url="extJSON.video.value"
+            />
+          </template>
         </div>
 
         <div
@@ -329,12 +317,13 @@
 </template>
 
 <script setup lang="ts">
-import type { ExtDTO, MemoVO, SysConfigVO } from "~/types";
+import type { AttachmentVO, DoubanBook, DoubanMovie, ExtDTO, MemoVO, SysConfigVO } from "~/types";
 import { toast } from "vue-sonner";
 import { memoChangedEvent, memoReloadEvent } from "~/event";
 import Comment from "~/components/Comment.vue";
 import { useGlobalState } from "~/store";
 import { md } from "~/utils";
+import { orderMemoBlocks, attachmentBlockKey, doubanBookBlockKey, doubanMovieBlockKey } from "~/utils/memoBlocks";
 
 const showMore = ref(false);
 const showMoreClicked = ref(false);
@@ -366,6 +355,32 @@ const extJSON = computed(() => {
 const item = computed(() => {
   return props.memo;
 });
+
+// ---- 内容块顺序：默认顺序必须与编辑态 MemoEdit 一致 ----
+type MemoBlock =
+  | { kind: 'external' | 'images' | 'music' | 'x' | 'git' | 'memoRef' | 'video'; key: string }
+  | { kind: 'attachment'; key: string; attachment: AttachmentVO }
+  | { kind: 'doubanBook'; key: string; book: DoubanBook }
+  | { kind: 'doubanMovie'; key: string; movie: DoubanMovie }
+
+const doubanBookList = computed<DoubanBook[]>(() => extJSON.value.doubanBooks || (extJSON.value.doubanBook && extJSON.value.doubanBook.title ? [extJSON.value.doubanBook] : []))
+const doubanMovieList = computed<DoubanMovie[]>(() => extJSON.value.doubanMovies || (extJSON.value.doubanMovie && extJSON.value.doubanMovie.title ? [extJSON.value.doubanMovie] : []))
+
+const availableBlocks = computed<MemoBlock[]>(() => {
+  const blocks: MemoBlock[] = []
+  if (item.value.externalFavicon && item.value.externalTitle && item.value.externalUrl) blocks.push({ kind: 'external', key: 'external' })
+  if (String(item.value.imgs || '').split(',').filter(Boolean).length) blocks.push({ kind: 'images', key: 'images' })
+  if (extJSON.value.music && (extJSON.value.music.id || extJSON.value.music.url)) blocks.push({ kind: 'music', key: 'music' })
+  if (extJSON.value.x?.url && extJSON.value.x?.id) blocks.push({ kind: 'x', key: 'x' })
+  if (extJSON.value.git?.url) blocks.push({ kind: 'git', key: 'git' })
+  if (extJSON.value.memoRef?.id) blocks.push({ kind: 'memoRef', key: 'memoRef' })
+  for (const attachment of extJSON.value.attachments || []) blocks.push({ kind: 'attachment', key: attachmentBlockKey(attachment.path), attachment })
+  doubanBookList.value.forEach((book, index) => blocks.push({ kind: 'doubanBook', key: doubanBookBlockKey(book, index), book }))
+  doubanMovieList.value.forEach((movie, index) => blocks.push({ kind: 'doubanMovie', key: doubanMovieBlockKey(movie, index), movie }))
+  if (extJSON.value.video?.value) blocks.push({ kind: 'video', key: 'video' })
+  return blocks
+})
+const orderedBlocks = computed(() => orderMemoBlocks(availableBlocks.value, extJSON.value.order))
 
 const global = useGlobalState();
 

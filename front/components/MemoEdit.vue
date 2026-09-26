@@ -87,38 +87,52 @@
         </div>
       </div>
 
-    <div class="flex flex-col gap-2">
-      <external-url-preview :favicon="state.externalFavicon" :title="state.externalTitle" :url="state.externalUrl"/>
-      <upload-image-preview :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
-      <div v-for="(attachment, index) in state.attachments" :key="attachment.path" class="flex items-center gap-2">
-        <attachment-preview :attachment="attachment" class="flex-1 min-w-0"/>
-        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" aria-label="移除附件" title="移除附件" @click="removeAttachment(index)"/>
+    <div ref="blocksEl" class="flex flex-col gap-2">
+      <div
+        v-for="block in sortableBlocks"
+        :key="block.key"
+        :data-block-key="block.key"
+        class="relative pl-6"
+      >
+        <!-- 排序控件：手柄拖拽 + 上移/下移按钮（触屏拖拽易误触，按钮是稳妥兜底） -->
+        <div class="absolute left-0 top-1 flex flex-col items-center gap-0.5 text-gray-400">
+          <button type="button" class="block-handle cursor-grab touch-none rounded p-0.5 hover:text-gray-600 dark:hover:text-gray-200" aria-label="拖动排序" title="拖动排序"><UIcon name="i-carbon-drag-vertical" class="h-4 w-4"/></button>
+          <button type="button" class="rounded p-0.5 hover:text-gray-600 dark:hover:text-gray-200" aria-label="上移" title="上移" @click="moveBlock(block.key, -1)"><UIcon name="i-carbon-arrow-up" class="h-4 w-4"/></button>
+          <button type="button" class="rounded p-0.5 hover:text-gray-600 dark:hover:text-gray-200" aria-label="下移" title="下移" @click="moveBlock(block.key, 1)"><UIcon name="i-carbon-arrow-down" class="h-4 w-4"/></button>
+        </div>
+
+        <external-url-preview v-if="block.kind === 'external'" :favicon="state.externalFavicon" :title="state.externalTitle" :url="state.externalUrl"/>
+        <upload-image-preview v-else-if="block.kind === 'images'" :imgs="state.imgs" @remove-image="handleRemoveImage" @drag-image="handleDragImage"/>
+        <div v-else-if="block.kind === 'attachment'" class="flex items-center gap-2">
+          <attachment-preview :attachment="block.attachment" class="flex-1 min-w-0"/>
+          <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" aria-label="移除附件" title="移除附件" @click="removeAttachment(block.index)"/>
+        </div>
+        <music-preview v-else-if="block.kind === 'music'" v-bind="state.music"/>
+        <div v-else-if="block.kind === 'git'" class="relative">
+          <git-preview v-if="state.git.title" v-bind="state.git"/>
+          <p v-else class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:bg-gray-800">Git 链接将在发表时抓取并保存为静态卡片。</p>
+          <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除 Git 嵌入" @click="updateGit({})"/>
+        </div>
+        <div v-else-if="block.kind === 'x'" class="relative">
+          <x-preview v-if="state.x.text" v-bind="state.x"/>
+          <p v-else class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:bg-gray-800">X 原帖将在发表时抓取并保存为静态卡片。</p>
+          <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除 X 嵌入" @click="updateX({})"/>
+        </div>
+        <div v-else-if="block.kind === 'memoRef'" class="relative">
+          <memo-ref-preview v-bind="state.memoRef"/>
+          <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除站内动态引用" @click="updateMemoRef({ id: 0 } as MemoRef)"/>
+        </div>
+        <div v-else-if="block.kind === 'doubanBook'" class="relative">
+          <douban-book-preview :book="block.book"/>
+          <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-1 top-1" @click="removeDouban('book', block.index)"/>
+        </div>
+        <div v-else-if="block.kind === 'doubanMovie'" class="relative">
+          <douban-movie-preview :movie="block.movie"/>
+          <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-1 top-1" @click="removeDouban('movie', block.index)"/>
+        </div>
+        <video-preview-iframe v-else-if="block.kind === 'video' && ['bilibili', 'youtube'].includes(state.video.type)" :url="state.video.value"/>
+        <video-preview v-else-if="block.kind === 'video'" :url="state.video.value"/>
       </div>
-      <music-preview v-if="state.music && (state.music.id || state.music.url)" v-bind="state.music"/>
-      <div v-if="state.git.url" class="relative">
-        <git-preview v-if="state.git.title" v-bind="state.git"/>
-        <p v-else class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:bg-gray-800">Git 链接将在发表时抓取并保存为静态卡片。</p>
-        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除 Git 嵌入" @click="updateGit({})"/>
-      </div>
-      <div v-if="state.x.url && state.x.id" class="relative">
-        <x-preview v-if="state.x.text" v-bind="state.x"/>
-        <p v-else class="rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:bg-gray-800">X 原帖将在发表时抓取并保存为静态卡片。</p>
-        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除 X 嵌入" @click="updateX({})"/>
-      </div>
-      <div v-if="state.memoRef.id" class="relative">
-        <memo-ref-preview v-bind="state.memoRef"/>
-        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-2 top-2" aria-label="移除站内动态引用" @click="updateMemoRef({ id: 0 } as MemoRef)"/>
-      </div>
-      <div v-for="(book, index) in doubanBooks" :key="(book.id || index) + '-b'" class="relative">
-        <douban-book-preview :book="book"/>
-        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-1 top-1" @click="removeDouban('book', index)"/>
-      </div>
-      <div v-for="(movie, index) in doubanMovies" :key="(movie.id || index) + '-m'" class="relative">
-        <douban-movie-preview :movie="movie"/>
-        <UButton size="xs" color="red" variant="soft" icon="i-carbon-close" class="absolute right-1 top-1" @click="removeDouban('movie', index)"/>
-      </div>
-      <video-preview-iframe v-if="['bilibili', 'youtube'].includes(state.video.type) && state.video.value" :url="state.video.value"/>
-      <video-preview v-if="state.video.type === 'online' && state.video.value" :url="state.video.value"/>
     </div>
   </div>
 
@@ -142,6 +156,8 @@ import type {
   GitEmbed,
   MemoRef
 } from "~/types";
+import {useSortable} from '@vueuse/integrations/useSortable'
+import {orderMemoBlocks, moveMemoBlock, attachmentBlockKey, doubanBookBlockKey, doubanMovieBlockKey} from '~/utils/memoBlocks'
 import {toast} from "vue-sonner";
 import UploadImage from "~/components/UploadImage.vue";
 import Emoji from "~/components/Emoji.vue";
@@ -187,6 +203,8 @@ const defaultState = {
   doubanBook: {} as DoubanBook,
   doubanMovie: {} as DoubanMovie,
   attachments: Array<AttachmentVO>(),
+  // 内容块顺序（ext.order）：空数组表示尚未自定义，按默认顺序渲染
+  order: Array<string>(),
   tags: Array<string>(),
 }
 const selectedTags = ref<Array<string>>([])
@@ -305,6 +323,7 @@ const clickTag = (tag: string) => {
   (contentRef.value?.textarea as HTMLTextAreaElement).focus()
 }
 const memoSaving = ref(false)
+const blocksEl = ref<HTMLElement | null>(null)
 
 onMounted(async () => {
   if (state.id > 0) {
@@ -318,12 +337,30 @@ onMounted(async () => {
     updateMemoRef(ext.memoRef || {})
     Object.assign(state.video, ext.video)
     state.attachments = Array.isArray(ext.attachments) ? ext.attachments : []
+    state.order = Array.isArray(ext.order) ? ext.order : []
     doubanBooks.value = Array.isArray(ext.doubanBooks) ? ext.doubanBooks : (ext.doubanBook && ext.doubanBook.title ? [ext.doubanBook] : [])
     doubanMovies.value = Array.isArray(ext.doubanMovies) ? ext.doubanMovies : (ext.doubanMovie && ext.doubanMovie.title ? [ext.doubanMovie] : [])
     selectedLabel.value = res.tags ? res.tags.substring(0,res.tags.length-1).split(',') : []
     state.createdAt = dayjs.utc(res.createdAt).local().format()
   }
   await loadTags()
+  // 外层块列表的拖拽只允许手柄发起，避免与图片组内部排序、页面纵向滚动打架。
+  // 这里刻意不判断「当前块数」：新建动态一开始没有块，若那时不初始化，
+  // 等用户添加内容后就再也拖不动了（SortableJS 基于 DOM，动态增删子节点无需重建实例）。
+  await nextTick()
+  if (blocksEl.value) {
+    useSortable(blocksEl.value, sortableBlocks, {
+      handle: '.block-handle',
+      animation: 150,
+      onEnd: () => {
+        // 以 DOM 顺序为准写回 order：不依赖 useSortable 对数组的同步行为
+        const keys = [...(blocksEl.value?.querySelectorAll('[data-block-key]') || [])]
+          .map(node => node.getAttribute('data-block-key') || '')
+          .filter(Boolean)
+        if (keys.length) state.order = keys
+      },
+    })
+  }
 })
 
 // const keydown=(event:KeyboardEvent)=>{
@@ -333,6 +370,36 @@ onMounted(async () => {
 // }
 
 // 附件移除只改本地数组：已上传文件由服务端回收策略处理，与图片移除语义一致
+// ---- 内容块排序：默认顺序必须与 Memo.vue 展示态一致（external → images → music → x → git → memoRef → 附件 → 豆瓣书 → 豆瓣影 → 视频）----
+type MemoBlock =
+  | { kind: 'external' | 'images' | 'music' | 'x' | 'git' | 'memoRef' | 'video'; key: string }
+  | { kind: 'attachment'; key: string; attachment: AttachmentVO; index: number }
+  | { kind: 'doubanBook'; key: string; book: DoubanBook; index: number }
+  | { kind: 'doubanMovie'; key: string; movie: DoubanMovie; index: number }
+
+const availableBlocks = computed<MemoBlock[]>(() => {
+  const blocks: MemoBlock[] = []
+  if (state.externalUrl) blocks.push({ kind: 'external', key: 'external' })
+  if (state.imgs.split(',').filter(Boolean).length) blocks.push({ kind: 'images', key: 'images' })
+  if (state.music?.id || state.music?.url) blocks.push({ kind: 'music', key: 'music' })
+  if (state.x?.url && state.x?.id) blocks.push({ kind: 'x', key: 'x' })
+  if (state.git?.url) blocks.push({ kind: 'git', key: 'git' })
+  if (state.memoRef?.id) blocks.push({ kind: 'memoRef', key: 'memoRef' })
+  state.attachments.forEach((attachment, index) => blocks.push({ kind: 'attachment', key: attachmentBlockKey(attachment.path), attachment, index }))
+  doubanBooks.value.forEach((book, index) => blocks.push({ kind: 'doubanBook', key: doubanBookBlockKey(book, index), book, index }))
+  doubanMovies.value.forEach((movie, index) => blocks.push({ kind: 'doubanMovie', key: doubanMovieBlockKey(movie, index), movie, index }))
+  if (state.video?.value) blocks.push({ kind: 'video', key: 'video' })
+  return blocks
+})
+const orderedBlocks = computed(() => orderMemoBlocks(availableBlocks.value, state.order))
+// 交给 SortableJS 的数组：拖拽时它按 DOM 顺序改写，因此模板渲染它而不是 computed
+const sortableBlocks = ref<MemoBlock[]>([])
+watch(orderedBlocks, value => { sortableBlocks.value = [...value] }, { immediate: true })
+
+const moveBlock = (key: string, delta: number) => {
+  state.order = moveMemoBlock(orderedBlocks.value.map(block => block.key), key, delta)
+}
+
 const removeAttachment = (index: number) => {
   state.attachments = state.attachments.filter((_, i) => i !== index)
 }
@@ -366,6 +433,7 @@ const saveMemo = async () => {
         doubanBooks: doubanBooks.value.filter(book => book && book.title),
         doubanMovies: doubanMovies.value.filter(movie => movie && movie.title),
         attachments: state.attachments.filter(attachment => attachment && attachment.path),
+        order: state.order.filter(key => availableBlocks.value.some(block => block.key === key)),
         video: state.video.value ? state.video : {},
       },
       showType: state.showType ? 1 : 0,

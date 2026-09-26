@@ -149,6 +149,9 @@ const ATTACHMENT_EXTENSION_TYPES = {
   wps: 'application/vnd.ms-works', et: 'application/vnd.ms-excel', dps: 'application/vnd.ms-powerpoint',
   pages: 'application/vnd.apple.pages', numbers: 'application/vnd.apple.numbers', key: 'application/vnd.apple.keynote',
 };
+// 动态内容块顺序的 key 格式：单块 key、附件按 path 逐条、豆瓣按 id 逐条
+const MEMO_BLOCK_KEY_PATTERN = /^(?:external|images|music|git|x|memoRef|video|attachment:\/upload\/[A-Za-z0-9._/-]+|douban(?:Book|Movie):[A-Za-z0-9_#-]{1,32})$/;
+const MEMO_BLOCK_ORDER_MAX = 50;
 const ATTACHMENT_HARD_MAX_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_HARD_MAX_COUNT = 20;
 const ATTACHMENT_MAX_PER_MEMO = 10;
@@ -1781,7 +1784,7 @@ async function fetchXSnapshot(x) {
 }
 function sanitizeMemoExt(input) {
   const ext = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
-  const output = { music: {}, video: {}, git: {}, memoRef: {}, doubanBook: {}, doubanMovie: {}, attachments: [] };
+  const output = { music: {}, video: {}, git: {}, memoRef: {}, doubanBook: {}, doubanMovie: {}, attachments: [], order: [] };
   if (ext.music?.url || ext.music?.mode === 'direct') {
     const url = safeHttpHref(ext.music.url, '音乐直链');
     const name = String(ext.music.name || '').trim().slice(0, 200);
@@ -1915,6 +1918,15 @@ function sanitizeMemoExt(input) {
     attachments.push({ path: path.slice(0, 2048), name, size: clampInt(item.size, 0, 1024 * 1024 * 1024, 0), type });
   }
   output.attachments = attachments;
+  // 内容块顺序（ext.order）：只校验 key 格式、去重并封顶。这里刻意不校验「块是否仍存在」——
+  // 图片与链接分别落在 memos.imgs / external_url 列，sanitizeMemoExt 看不到它们；失效 key 由前端渲染时忽略。
+  const order = [];
+  for (const raw of Array.isArray(ext.order) ? ext.order.slice(0, MEMO_BLOCK_ORDER_MAX) : []) {
+    const key = String(raw || '').trim();
+    if (!key || order.includes(key) || !MEMO_BLOCK_KEY_PATTERN.test(key)) continue;
+    order.push(key);
+  }
+  output.order = order;
   return output;
 }
 function commentView(row) {

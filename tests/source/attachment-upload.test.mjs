@@ -25,7 +25,9 @@ assert.match(memoEdit, /attachments: state\.attachments\.filter\(attachment => a
 assert.match(memoEdit, /state\.attachments = Array\.isArray\(ext\.attachments\) \? ext\.attachments : \[\]/, '编辑已有动态必须回填附件');
 assert.match(memoEdit, /state\.attachments\.length/, '只有附件时也必须允许发表（非空校验）');
 assert.match(memoEdit, /removeAttachment/, '编辑页必须能移除附件');
-assert.match(memoEdit, /<attachment-preview[^>]*:attachment="attachment"/, '编辑页预览必须渲染附件卡片');
+// 编辑页预览改为「按 ext.order 渲染的有序块列表」（见 tests/source/memo-block-order.test.mjs），
+// 附件块从 block 上取载荷，因此这里断言新绑定而不是旧的 :attachment="attachment"
+assert.match(memoEdit, /block\.kind === 'attachment'[\s\S]{0,200}:attachment="block\.attachment"/, '编辑页预览必须渲染附件卡片');
 
 // 上传组件
 assert.match(uploadAttachment, /defineModel<AttachmentVO\[\]>\('attachments'/, '附件必须用 attachments 模型双向绑定');
@@ -75,7 +77,9 @@ assert.match(preview, /dark:bg-\[#d94a4a\]\/20/, '深色模式必须有对应底
 assert.doesNotMatch(preview, /useMyFetch|\$fetch|fetch\(/, '展示卡片不得发请求');
 
 // 只读展示页
-assert.match(memo, /extJSON\.attachments \|\| \[\]/, '动态正文必须渲染附件卡片');
+// 展示态同样改为有序块列表：附件在脚本里收集成块，模板按 block.kind 渲染
+assert.match(memo, /extJSON\.value\.attachments \|\| \[\]/, '动态正文必须收集附件为内容块');
+assert.match(memo, /block\.kind === 'attachment'[\s\S]{0,200}:attachment="block\.attachment"/, '动态正文必须渲染附件卡片');
 
 // 系统设置：两项可配置
 assert.match(settings, /name="attachmentMaxSize"/, '系统设置必须有附件大小上限');
