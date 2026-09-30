@@ -4,8 +4,9 @@
        取代原先散落在 29 个 UFormGroup 上的逐字段 label 覆盖写法，保证所有字段视觉一致 -->
   <div class="space-y-4 flex flex-col p-4 my-4 dark:bg-neutral-800 [&_label]:font-bold">
 
-    <!-- 分区导航：UTabs 承载六个分区，面板默认不卸载，切换分区不会丢表单状态。
-         深链 ?tab=site|seo|content|attachment|security|storage 可直达对应分区。 -->
+    <!-- 分区导航：UTabs 承载五个分区，面板默认不卸载，切换分区不会丢表单状态。
+         深链 ?tab=site|seo|content|security|storage 可直达对应分区；
+         旧的 ?tab=attachment 仍可用，会在 syncTabFromQuery 里归一到 storage。 -->
     <UTabs :items="sectionTabs" :model-value="activeTabIndex"
            :ui="{list: {height: 'h-9', tab: {size: 'text-xs', padding: 'px-1.5'}}}"
            @update:model-value="selectTab">
@@ -130,25 +131,6 @@
         </section>
       </template>
 
-      <!-- ============ 附件 ============ -->
-      <template #attachment>
-        <section data-section="attachment" class="mt-4 space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-          <div>
-            <h2 class="font-semibold text-gray-800 dark:text-gray-100">附件</h2>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">动态附件的体积与数量限制。</p>
-          </div>
-          <p class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-neutral-900/40 dark:text-gray-400">
-            当前：单个不超过 {{ state.attachmentMaxSize }}MB，一次最多 {{ state.attachmentMaxCount }} 个
-          </p>
-          <UFormGroup label="附件大小上限" name="attachmentMaxSize" help="单位 MB，可选 1–25；超出会被服务端拒绝">
-            <UInput v-model.number="state.attachmentMaxSize" type="number" min="1" max="25"/>
-          </UFormGroup>
-          <UFormGroup label="单次上传附件数量上限" name="attachmentMaxCount" help="一次上传请求最多可提交的个数，可选 1–20">
-            <UInput v-model.number="state.attachmentMaxCount" type="number" min="1" max="20"/>
-          </UFormGroup>
-        </section>
-      </template>
-
       <!-- ============ 安全与通知 ============ -->
       <template #security>
         <section data-section="security" class="mt-4 space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
@@ -212,7 +194,7 @@
         <section data-section="storage" class="mt-4 space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
           <div>
             <h2 class="font-semibold text-gray-800 dark:text-gray-100">存储与数据</h2>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">媒体存储后端、回收站、备份与旧站导入。</p>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">媒体存储后端、附件限制、回收站、备份与旧站导入。</p>
           </div>
           <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <div class="flex items-start gap-3">
@@ -254,6 +236,21 @@
             </div>
           </div>
           <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+            <div class="flex items-start gap-3">
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><UIcon name="i-carbon-attachment" class="h-5 w-5"/></span>
+              <div>
+                <p class="font-semibold text-gray-800 dark:text-gray-100">附件上传限制</p>
+                <p class="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">动态附件的体积与数量限制。当前：单个不超过 {{ state.attachmentMaxSize }}MB，一次最多 {{ state.attachmentMaxCount }} 个。</p>
+              </div>
+            </div>
+            <UFormGroup label="附件大小上限" name="attachmentMaxSize" help="单位 MB，可选 1–25；超出会被服务端拒绝">
+              <UInput v-model.number="state.attachmentMaxSize" type="number" min="1" max="25"/>
+            </UFormGroup>
+            <UFormGroup label="单次上传附件数量上限" name="attachmentMaxCount" help="一次上传请求最多可提交的个数，可选 1–20">
+              <UInput v-model.number="state.attachmentMaxCount" type="number" min="1" max="20"/>
+            </UFormGroup>
+          </div>
+          <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
             <div class="flex items-center justify-between gap-3">
               <div><p class="font-semibold">本地备份</p><p class="mt-1 text-xs text-gray-500">将数据库导出为 SQL 文件，下载到本地保存。</p></div>
               <UButton size="sm" icon="i-carbon-download" :loading="localBackupLoading" @click="exportLocalBackup">导出文件</UButton>
@@ -282,15 +279,13 @@
       </template>
     </UTabs>
 
-    <!-- 常驻保存条：sticky 吸底，脏标记提示未保存更改，保存后重新拉取配置而不整页刷新 -->
-    <div :data-dirty="dirty ? 'true' : 'false'"
+    <!-- 保存条：sticky 吸底，仅在存在未保存更改时出现——没有改动时整条隐藏，不占底部空间。
+         保存后重新拉取配置而不整页刷新 -->
+    <div v-if="dirty"
          class="sticky bottom-3 z-20 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-neutral-900/95">
       <div class="flex items-center gap-2 text-xs">
-        <template v-if="dirty">
-          <span class="h-2 w-2 rounded-full bg-amber-500"></span>
-          <span class="text-amber-600 dark:text-amber-400">有未保存更改</span>
-        </template>
-        <span v-else class="text-gray-400">所有更改已保存</span>
+        <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+        <span class="text-amber-600 dark:text-amber-400">有未保存更改</span>
       </div>
       <UButton :loading="saving" @click="save">保存设置</UButton>
     </div>
@@ -429,10 +424,11 @@ const sectionTabs = [
   { key: 'site', label: '站点', slot: 'site' },
   { key: 'seo', label: 'SEO', slot: 'seo' },
   { key: 'content', label: '内容与互动', slot: 'content' },
-  { key: 'attachment', label: '附件', slot: 'attachment' },
   { key: 'security', label: '安全与通知', slot: 'security' },
   { key: 'storage', label: '存储与数据', slot: 'storage' },
 ]
+// 旧深链兼容：附件限制已并入「存储与数据」，?tab=attachment 归一为 storage
+const LEGACY_TAB_KEYS: Record<string, string> = { attachment: 'storage' }
 const activeTabIndex = ref(0)
 const selectTab = (index: number) => {
   activeTabIndex.value = index
@@ -443,7 +439,8 @@ const selectTab = (index: number) => {
 }
 // ?tab=storage 这类深链（含浏览器前进/后退）→ 切到对应分区
 const syncTabFromQuery = () => {
-  const tab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+  const raw = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+  const tab = LEGACY_TAB_KEYS[String(raw)] || raw
   const index = sectionTabs.findIndex(item => item.key === tab)
   if (index > -1) activeTabIndex.value = index
 }

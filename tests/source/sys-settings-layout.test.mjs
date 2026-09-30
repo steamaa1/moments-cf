@@ -71,27 +71,34 @@ const toggles = [...settings.matchAll(/<UToggle[^>]*v-model="(state\.[^"]+)"/g)]
 assert.equal(toggles.length, 11, '开关数量必须为 11（含新增的 SEO 总开关）');
 assert.ok(toggles.includes('state.enableSeo'), '必须有 SEO 总开关');
 
-// 陈列：六个分区必须存在且带可测标记
-for (const section of ['site', 'seo', 'content', 'attachment', 'security', 'storage']) {
+// 陈列：五个分区必须存在且带可测标记（附件限制已并入「存储与数据」，不再单列分区）
+for (const section of ['site', 'seo', 'content', 'security', 'storage']) {
   assert.match(settings, new RegExp(`data-section="${section}"`), `缺少分区标记 data-section="${section}"`);
 }
+assert.doesNotMatch(settings, /data-section="attachment"/, '附件分区已并入存储与数据，不应再存在独立分区标记');
 
 // 标签页导航与分区标题（使用仓库既有先例组件 UTabs）
 assert.match(settings, /<UTabs/, '必须用 UTabs 承载分区导航');
-for (const label of ['站点', 'SEO', '内容与互动', '附件', '安全与通知', '存储与数据']) {
+for (const label of ['站点', 'SEO', '内容与互动', '安全与通知', '存储与数据']) {
   assert.ok(settings.includes(label), `缺少分区标签：${label}`);
 }
 
-// 保存体验：常驻保存条 + 未保存标记；不再整页刷新（否则会丢掉当前分区与滚动位置）
-assert.match(settings, /sticky/, '保存条必须常驻（sticky）');
+// 保存体验：仅在存在未保存更改时出现保存条（无改动时整条隐藏，不再显示“所有更改已保存”方框）
+assert.match(settings, /v-if="dirty"[\s\S]{0,200}sticky/, '保存条必须在无改动时隐藏');
 assert.match(settings, /dirty/, '必须有未保存更改的脏标记');
+assert.doesNotMatch(settings, /所有更改已保存/, '无改动时不得再显示“所有更改已保存”方框');
 assert.doesNotMatch(settings, /location\.reload\(\)/, '保存后不得整页刷新');
 
-// 深链：支持 ?tab=storage 直接打开指定分区（供注册审批等入口直达）
+// 深链：支持 ?tab=storage 直接打开指定分区（供注册审批等入口直达）；旧 ?tab=attachment 归一为 storage
 assert.match(settings, /query\.tab/, '必须支持 ?tab= 深链');
+assert.match(settings, /LEGACY_TAB_KEYS/, '旧 ?tab=attachment 深链必须归一为 storage');
 
 // 危险操作不得与保存按钮混在同一分区卡片：清理入口必须留在「存储与数据」区
 const storageStart = settings.indexOf('data-section="storage"');
 assert.ok(storageStart > -1 && settings.indexOf('扫描未引用文件') > storageStart, '清理未引用文件必须归入存储与数据分区');
+
+// 附件限制同样必须落在「存储与数据」分区内（2026-09-30 由独立分区并入）
+assert.ok(storageStart > -1 && settings.indexOf('附件大小上限') > storageStart, '附件大小上限必须归入存储与数据分区');
+assert.ok(storageStart > -1 && settings.indexOf('单次上传附件数量上限') > storageStart, '附件数量上限必须归入存储与数据分区');
 
 console.log('sys-settings-layout: PASS');
