@@ -1317,6 +1317,7 @@ const DEFAULT_SEO = {
 // { title, description, ogType, ogImage, noindex, jsonLd }，字段缺省回退站点级。
 export function injectSeoMeta(html, config, path = '/', page = null) {
   const title = escapeXml(String(page?.title || config?.title || DEFAULT_SEO.title));
+  const siteName = escapeXml(String(config?.title || DEFAULT_SEO.title));
   const description = escapeXml(String(page?.description || config?.seoDescription || (config?.slogan ? `${config.slogan} · ${config.title || DEFAULT_SEO.title}` : DEFAULT_SEO.description)));
   const keywords = escapeXml(String(config?.seoKeywords || DEFAULT_SEO.keywords));
   const siteUrl = String(config?.siteUrl || '').trim().replace(/\/+$/, '');
@@ -1334,7 +1335,7 @@ export function injectSeoMeta(html, config, path = '/', page = null) {
   output = output.replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
   output = output.replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${description}">`);
   output = output.replace(/<meta name="keywords"[^>]*>/, `<meta name="keywords" content="${keywords}">`);
-  output = output.replace(/<meta property="og:site_name"[^>]*>/, `<meta property="og:site_name" content="${title}">`);
+  output = output.replace(/<meta property="og:site_name"[^>]*>/, `<meta property="og:site_name" content="${siteName}">`);
   output = output.replace(/<meta property="og:title"[^>]*>/, `<meta property="og:title" content="${title}">`);
   output = output.replace(/<meta property="og:description"[^>]*>/, `<meta property="og:description" content="${description}">`);
   output = output.replace(/<meta name="twitter:title"[^>]*>/, `<meta name="twitter:title" content="${title}">`);
@@ -1394,7 +1395,8 @@ async function pageSeo(env, config, path, origin = '') {
     const view = memoView(await env.DB.prepare(`${MEMO_SELECT} WHERE m.id = ?`).bind(Number(memoMatch[1])).first());
     if (!view || Number(view.showType) !== 1 || Date.parse(view.createdAt) > Date.now()) return { noindex: true };
     const summary = rssText(view.content).split('\n')[0].slice(0, 120) || `${view.user?.nickname || '有人'} 发布了一条动态`;
-    const pageTitle = view.user?.nickname ? `${view.user.nickname} 的动态` : '动态';
+    const fallbackTitle = view.user?.nickname ? `${view.user.nickname} 的动态` : '动态';
+    const pageTitle = memoSeoTitle(view.content, fallbackTitle);
     const memoUrl = `${host}/memo/${view.id}`;
     const images = String(view.imgs || '').split(',').filter(Boolean).slice(0, 10).map(image => (image.startsWith('http') ? image : host + image));
     return {
@@ -1447,6 +1449,18 @@ async function pageSeo(env, config, path, origin = '') {
   return null;
 }
 function rssText(value) { return String(value || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[>#*_`~-]/g, '').trim(); }
+// 动态 SEO 标题取正文纯文本，避免 Google 只显示「某某的动态」而隐藏实际内容。
+// 标题控制在 40 个字符以内；纯图片动态没有正文时回退到作者标题。
+function memoSeoTitle(content, fallback) {
+  const text = String(content || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[>#*_`~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return fallback;
+  return text.length > 40 ? `${text.slice(0, 40)}…` : text;
+}
 async function sitemap(request, env) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
   const [memos, users, tags, configRow] = await Promise.all([

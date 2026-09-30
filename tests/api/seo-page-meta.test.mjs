@@ -48,14 +48,17 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
   const response = await worker.fetch(new Request('https://seo.example/memo/7'), { DB: makeDb(publicMemo, userRow), ASSETS: assets });
   const html = await response.text();
   assert.equal(response.status, 200);
-  assert.match(html, /<title>小明 的动态<\/title>/);
+  assert.match(html, /<title>公开动态的正文内容<\/title>/);
+  assert.match(html, /<meta property="og:site_name" content="站点">/);
   assert.match(html, /<meta name="description" content="公开动态的正文内容">/);
   assert.match(html, /<meta property="og:type" content="article">/);
   assert.match(html, /<meta property="og:image" content="https:\/\/seo\.example\/upload\/pic\.jpg">/);
   assert.match(html, /<meta name="twitter:card" content="summary_large_image">/);
+  assert.match(html, /<meta name="twitter:title" content="公开动态的正文内容">/);
   assert.match(html, /<link rel="canonical" href="https:\/\/seo\.example\/memo\/7">/);
   const ld = html.match(/<script type="application\/ld\+json">([^<]*)<\/script>/)?.[1] || '';
   assert.match(ld, /SocialMediaPosting/);
+  assert.match(ld, /"headline":"公开动态的正文内容"/);
   assert.match(ld, /"datePublished":"2026-01-01T00:00:00Z"/);
   assert.match(ld, /"dateModified":"2026-01-02T00:00:00Z"/);
   assert.match(ld, /"author":\{"@type":"Person","name":"小明"\}/);
@@ -63,28 +66,45 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
   assert.doesNotMatch(html, /noindex/, '公开动态不注入 noindex');
 }
 
-// 2) 私密动态（show_type=0）→ noindex
+// 2) Markdown 正文标题会去除标记并截断，description 保留更长摘要
+{
+  const longMemo = { ...publicMemo, id: 11, content: '# 这是一个超过四十个字符的动态标题，用于验证 SEO 标题截断规则以及摘要保留内容。' };
+  const response = await worker.fetch(new Request('https://seo.example/memo/11'), { DB: makeDb(longMemo, userRow), ASSETS: assets });
+  const html = await response.text();
+  assert.match(html, /<title>这是一个超过四十个字符的动态标题，用于验证 SEO 标题截断规则以及摘要保留内容…<\/title>/);
+  assert.match(html, /<meta name="description" content="这是一个超过四十个字符的动态标题，用于验证 SEO 标题截断规则以及摘要保留内容。">/);
+}
+
+// 3) 纯图片动态没有正文时，标题回退到作者标题
+{
+  const imageOnlyMemo = { ...publicMemo, id: 10, content: '' };
+  const response = await worker.fetch(new Request('https://seo.example/memo/10'), { DB: makeDb(imageOnlyMemo, userRow), ASSETS: assets });
+  const html = await response.text();
+  assert.match(html, /<title>小明 的动态<\/title>/);
+}
+
+// 4) 私密动态（show_type=0）→ noindex
 {
   const response = await worker.fetch(new Request('https://seo.example/memo/8'), { DB: makeDb(privateMemo, userRow), ASSETS: assets });
   const html = await response.text();
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
 }
 
-// 3) 定时未发布动态（未来时间）→ noindex
+// 4) 定时未发布动态（未来时间）→ noindex
 {
   const response = await worker.fetch(new Request('https://seo.example/memo/9'), { DB: makeDb(futureMemo, userRow), ASSETS: assets });
   const html = await response.text();
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
 }
 
-// 4) 动态不存在 → noindex
+// 5) 动态不存在 → noindex
 {
   const response = await worker.fetch(new Request('https://seo.example/memo/999'), { DB: makeDb(null, userRow), ASSETS: assets });
   const html = await response.text();
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
 }
 
-// 5) 用户主页：ProfilePage JSON-LD + profile og:type
+// 6) 用户主页：ProfilePage JSON-LD + profile og:type
 {
   const response = await worker.fetch(new Request('https://seo.example/user/1'), { DB: makeDb(null, userRow), ASSETS: assets });
   const html = await response.text();
@@ -97,14 +117,14 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
   assert.match(ld, /"image":"https:\/\/seo\.example\/upload\/avatar\.jpg"/);
 }
 
-// 6) 用户不存在 → noindex
+// 7) 用户不存在 → noindex
 {
   const response = await worker.fetch(new Request('https://seo.example/user/999'), { DB: makeDb(null, null), ASSETS: assets });
   const html = await response.text();
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
 }
 
-// 7) 首页：WebSite JSON-LD + 相对 og:image 绝对化
+// 8) 首页：WebSite JSON-LD + 相对 og:image 绝对化
 {
   const response = await worker.fetch(new Request('https://seo.example/'), { DB: makeDb(null, null), ASSETS: assets });
   const html = await response.text();
@@ -115,7 +135,7 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
   assert.doesNotMatch(html, /noindex/, '首页不注入 noindex');
 }
 
-// 8) D1 未配置：回退站点级 meta，不注入页面级内容
+// 9) D1 未配置：回退站点级 meta，不注入页面级内容
 {
   const response = await worker.fetch(new Request('https://seo.example/memo/7'), { ASSETS: assets });
   const html = await response.text();
@@ -125,7 +145,7 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
   assert.doesNotMatch(html, /noindex/);
 }
 
-// 9) 尾斜杠变体：canonical 统一为无尾斜杠（与 sitemap 一致，避免「重复网页、规范网页不同」）
+// 10) 尾斜杠变体：canonical 统一为无尾斜杠（与 sitemap 一致，避免「重复网页、规范网页不同」）
 {
   const cases = [['/memo/7/', 'https://seo.example/memo/7'], ['/user/1/', 'https://seo.example/user/1'], ['/', 'https://seo.example/']];
   for (const [path, expected] of cases) {
@@ -136,7 +156,7 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
   }
 }
 
-// 10) 静态目录页与聚合页：公认公开路由，不注入 noindex
+// 11) 静态目录页与聚合页：公认公开路由，不注入 noindex
 {
   for (const path of ['/photos', '/about', '/friend', '/tags/admin/%E6%97%A5%E5%B8%B8']) {
     const response = await worker.fetch(new Request(`https://seo.example${path}`), { DB: makeDb(publicMemo, userRow), ASSETS: assets });
@@ -146,7 +166,7 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
   }
 }
 
-// 11) 未知路径与私密路径：SPA 回退一律返回 index.html，必须注入 noindex（防软 404 被收录成重复页）
+// 12) 未知路径与私密路径：SPA 回退一律返回 index.html，必须注入 noindex（防软 404 被收录成重复页）
 {
   for (const path of ['/__not-a-real-page__', '/memo/abc', '/foo/bar', '/photos/album/2', '/new', '/edit/7', '/user/login', '/user/reg', '/user/settings', '/sys/settings']) {
     const response = await worker.fetch(new Request(`https://seo.example${path}`), { DB: makeDb(publicMemo, userRow), ASSETS: assets });
