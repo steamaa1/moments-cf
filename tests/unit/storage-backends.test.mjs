@@ -36,8 +36,10 @@ assert.equal(streamReq.headers['x-amz-content-sha256'], 'UNSIGNED-PAYLOAD');
 const putReq = requests.find(r => r.method === 'PUT' && r.url.includes('media/a.webp'));
 assert.ok(putReq, 'S3 PUT not issued');
 assert.match(putReq.headers.authorization, /AWS4-HMAC-SHA256 Credential=AK\//);
+assert.match(putReq.headers.authorization, /SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date/);
 assert.match(putReq.headers['content-type'], /image\/webp/);
 assert.ok(putReq.headers['x-amz-content-sha256'], 'S3 payload hash header missing');
+assert.match(putReq.headers['x-amz-date'] || '', /^\d{8}T\d{6}Z$/, 'S3 SigV4 x-amz-date must omit milliseconds');
 
 const list = await s3.list('media/');
 assert.deepEqual(list.map(item => item.key), ['media/a.webp', 'media/b.webp']);

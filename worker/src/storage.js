@@ -21,7 +21,8 @@ function queryEncode(value) { return encodeURIComponent(value).replace(/%2F/gi, 
 /** Sign one S3-compatible request and execute it. */
 export async function s3Request({ endpoint, region, bucket, accessKeyId, secretAccessKey, method, key, query = '', headers = {}, body = null, now = new Date() }) {
   const host = String(endpoint).replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const date = now.toISOString().replace(/[:-]|\\.\\d{3}/g, '');
+  // AWS SigV4 时间戳必须是 YYYYMMDDTHHMMSSZ，不能带毫秒。
+  const date = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const shortDate = date.slice(0, 8);
   const scope = `${shortDate}/${region || 'auto'}/s3/aws4_request`;
   const canonicalUri = key ? `/${bucket}/${key.split('/').map(awsEncode).join('/')}` : `/${bucket}`;
@@ -31,9 +32,15 @@ export async function s3Request({ endpoint, region, bucket, accessKeyId, secretA
   const contentType = headers['content-type'] || '';
   const bodyIsStream = body !== null && typeof body?.getReader === 'function';
   const payloadHash = body === null || bodyIsStream ? 'UNSIGNED-PAYLOAD' : bytesToHex(await sha256(body));
-  const amzPayload = bodyIsStream ? 'UNSIGNED-PAYLOAD' : (headers['x-amz-content-sha256'] || null);
-  const signedHeaders = ['host', ...(contentType ? ['content-type'] : []), ...(amzPayload ? ['x-amz-content-sha256'] : [])];
-  const canonicalHeaders = `host:${host}\n${contentType ? `content-type:${contentType}\n` : ''}${amzPayload ? `x-amz-content-sha256:${amzPayload}\n` : ''}`;
+  const amzPayload = body === null ? '' : (bodyIsStream ? 'UNSIGNED-PAYLOAD' : payloadHash);
+  const canonicalHeaderValues = {
+    host,
+    ...(contentType ? { 'content-type': contentType } : {}),
+    ...(amzPayload ? { 'x-amz-content-sha256': amzPayload } : {}),
+    'x-amz-date': date,
+  };
+  const signedHeaders = Object.keys(canonicalHeaderValues).sort();
+  const canonicalHeaders = signedHeaders.map(name => `${name}:${String(canonicalHeaderValues[name]).trim()}\n`).join('');
   const canonicalRequest = `${method}\n${canonicalUri}\n${sortedQuery}\n${canonicalHeaders}\n${signedHeaders.join(';')}\n${payloadHash}`;
   const stringToSign = `AWS4-HMAC-SHA256\n${date}\n${scope}\n${bytesToHex(await sha256(canonicalRequest))}`;
   const kDate = await hmac(`AWS4${secretAccessKey}`, shortDate);
@@ -43,10 +50,10 @@ export async function s3Request({ endpoint, region, bucket, accessKeyId, secretA
   const signature = bytesToHex(await hmac(kSigning, stringToSign));
   const authorization = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${scope}, SignedHeaders=${signedHeaders.join(';')}, Signature=${signature}`;
   const url = `${String(endpoint).replace(/\/+$/, '')}${canonicalUri}${sortedQuery ? `?${sortedQuery}` : ''}`;
-  const requestHeaders = { authorization, host, ...headers };
+  const requestHeaders = { authorization, host, 'x-amz-date': date, ...headers };
   if (contentType) requestHeaders['content-type'] = contentType;
-  if (payloadHash !== 'UNSIGNED-PAYLOAD') requestHeaders['x-amz-content-sha256'] = payloadHash;
-  if (bodyIsStream) requestHeaders['x-amz-content-sha256'] = 'UNSIGNED-PAYLOAD';
+  if (amzPayload) requestHeaders['x-amz-content-sha256'] = amzPayload;
+  requestHeaders['x-amz-date'] = date;
   return fetch(url, { method, headers: requestHeaders, body });
 }
 
