@@ -137,6 +137,18 @@ export function validateDirectUpload(input, allowedTypes) {
 function utf8Base64(value) {
   let binary = ''; for (const byte of encoder.encode(String(value))) binary += String.fromCharCode(byte); return btoa(binary);
 }
+/**
+ * 校验邮件地址并拒绝 SMTP/邮件头注入字符。
+ * 空字符串代表可选邮箱未填写；必填场景由调用方单独判断。
+ */
+export function validateEmailAddress(value, label = '邮箱') {
+  const raw = String(value ?? '');
+  if (/[\u0000-\u001f\u007f\s<>]/.test(raw)) throw new Error(`${label}格式错误`);
+  const email = raw.trim();
+  if (!email) return '';
+  if (email.length > 254 || !/^[^@]+@[^@]+\.[^@]+$/.test(email)) throw new Error(`${label}格式错误`);
+  return email;
+}
 function escapeEmail(value) { return escapeHtml(value).replace(/\r?\n/g, '<br>'); }
 export function buildCommentEmail({ title, host, poster, commenter, content, memoId, createdAt }) {
   const link = `${String(host).replace(/\/$/, '')}/memo/${Number(memoId)}`;
@@ -177,13 +189,18 @@ async function smtpSession(socket, config, message, startTls = false) {
   await smtpCommand(writer, reader, 'AUTH LOGIN', [334]);
   await smtpCommand(writer, reader, utf8Base64(config.username), [334]);
   await smtpCommand(writer, reader, utf8Base64(config.password), [235]);
-  const envelopeFrom = String(message.from).match(/<([^<>]+@[^<>]+)>/)?.[1] || String(message.from).trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(envelopeFrom)) throw new Error('发件邮箱格式错误');
+  const rawFrom = String(message.from || '');
+  if (/[\u0000-\u001f\u007f]/.test(rawFrom)) throw new Error('发件邮箱格式错误');
+  const envelopeFrom = rawFrom.match(/<([^<>]+@[^<>]+)>/)?.[1] || rawFrom.trim();
+  validateEmailAddress(envelopeFrom, '发件邮箱');
+  const recipient = validateEmailAddress(message.to, '收件邮箱');
+  const mimeFrom = rawFrom.trim();
+  if (!recipient) throw new Error('收件邮箱格式错误');
   await smtpCommand(writer, reader, `MAIL FROM:<${envelopeFrom}>`, [250]);
-  await smtpCommand(writer, reader, `RCPT TO:<${message.to}>`, [250, 251]);
+  await smtpCommand(writer, reader, `RCPT TO:<${recipient}>`, [250, 251]);
   await smtpCommand(writer, reader, 'DATA', [354]);
   const subject = `=?UTF-8?B?${utf8Base64(message.subject)}?=`;
-  const mime = [`From: ${message.from}`, `To: ${message.to}`, `Subject: ${subject}`, 'MIME-Version: 1.0', 'Content-Type: text/html; charset=UTF-8', `Date: ${new Date().toUTCString()}`, '', message.html.replace(/^\./gm, '..'), '.'].join('\r\n');
+  const mime = [`From: ${mimeFrom}`, `To: ${recipient}`, `Subject: ${subject}`,  'MIME-Version: 1.0', 'Content-Type: text/html; charset=UTF-8', `Date: ${new Date().toUTCString()}`, '', message.html.replace(/^\./gm, '..'), '.'].join('\r\n');
   await smtpCommand(writer, reader, mime, [250]);
   await smtpCommand(writer, reader, 'QUIT', [221]);
   reader.releaseLock(); writer.releaseLock(); await socket.close();
@@ -198,7 +215,9 @@ export async function sendSmtp(config, message, connectImpl) {
 }
 export async function sendResend(apiKey, message, fetchImpl = fetch) {
   if (!apiKey) throw new Error('RESEND_API_KEY 未配置');
-  const response = await fetchImpl('https://api.resend.com/emails', { method: 'POST', headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ from: message.from, to: [message.to], subject: message.subject, html: message.html, text: message.text }) });
+  const recipient = validateEmailAddress(message.to, '收件邮箱');
+  if (!recipient) throw new Error('收件邮箱格式错误');
+  const response = await fetchImpl('https://api.resend.com/emails', { method: 'POST', headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ from: message.from, to: [recipient], subject: message.subject, html: message.html, text: message.text }) });
   if (!response.ok) throw new Error(`Resend ${response.status}: ${(await response.text()).slice(0, 300)}`);
   return response.json().catch(() => ({}));
 }

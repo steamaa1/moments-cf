@@ -3,7 +3,7 @@ import {
   sendNotification, createD1Backup, listBackups, restoreD1Backup, renderRssDescription,
   encryptConfigSecret, decryptConfigSecret, BACKUP_PREFIX,
   startD1Export, pollD1Export, storeD1Backup, sendTelegram,
-  sendSmtp, sendResend,
+  sendSmtp, sendResend, validateEmailAddress,
 } from './phase7.js';
 import { storageBackend } from './storage.js';
 /**
@@ -300,7 +300,7 @@ function cleanProfile(input, existing) {
     avatarUrl: String(input.avatarUrl ?? existing.avatar_url ?? '').trim().slice(0, 1024),
     slogan: String(input.slogan ?? existing.slogan ?? '').trim().slice(0, 300),
     coverUrl: String(input.coverUrl ?? existing.cover_url ?? '').trim().slice(0, 1024),
-    email: String(input.email ?? existing.email ?? '').trim().slice(0, 254),
+    email: validateEmailAddress(input.email ?? existing.email ?? '').slice(0, 254),
     telegramChatId: String(input.telegramChatId ?? existing.telegram_chat_id ?? '').trim().replace(/\D/g, '').slice(0, 30),
   };
 }
@@ -386,7 +386,9 @@ async function saveProfile(request, env, headers) {
   if (access.response) return access.response;
   const body = await readJson(request);
   if (!body) return json(fail('参数错误'), 400, headers);
-  const profile = cleanProfile(body, access.user);
+  let profile;
+  try { profile = cleanProfile(body, access.user); }
+  catch (error) { return json(fail(error.message), 400, headers); }
   if (!profile.nickname) return json(fail('昵称不能为空'), 400, headers);
   let password = access.user.password_hash;
   let tokenVersion = Number(access.user.token_version);
@@ -576,7 +578,9 @@ async function register(request, env, headers, ctx) {
   if (password.length < 8) return json(fail('密码至少 8 位'), 400, headers);
   if (password !== String(body?.repeatPassword || '')) return json(fail('两次密码不一致'), 400, headers);
   if (await env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first()) return json(fail('用户名已存在'), 409, headers);
-  const email = String(body?.email || '').trim().slice(0, 254);
+  let email;
+  try { email = validateEmailAddress(body?.email || '').slice(0, 254); }
+  catch (error) { return json(fail(error.message), 400, headers); }
   const reason = String(body?.reason || '').trim().slice(0, 500);
   const awaitingApproval = Boolean(config.enableRegisterApproval);
   if (awaitingApproval && !reason) return json(fail('请填写注册理由'), 400, headers);
@@ -2023,6 +2027,9 @@ async function addComment(request, env, headers, ctx) {
   const website = body.website ? validHttpUrl(String(body.website)) : null;
   if (body.website && !website) return json(fail('网站地址格式错误'), 400, headers);
   const username = user ? user.nickname : String(body.username || `匿名用户_${randomToken(2)}`).trim().slice(0, 80);
+  let commenterEmail = '';
+  try { commenterEmail = validateEmailAddress(user ? user.email : (body.email || '')).slice(0, 254); }
+  catch (error) { return json(fail(error.message), 400, headers); }
   const replyCommentId = intParam(body.replyCommentId);
   let replyTo = '';
   let replyEmail = '';
@@ -2030,16 +2037,20 @@ async function addComment(request, env, headers, ctx) {
     const targetComment = await env.DB.prepare('SELECT id, username, email FROM comments WHERE id=? AND memo_id=?').bind(replyCommentId, memo.id).first();
     if (!targetComment) return json(fail('回复的评论不存在'), 400, headers);
     replyTo = String(targetComment.username || '').slice(0, 80);
-    replyEmail = String(targetComment.email || '').slice(0, 254);
+    try { replyEmail = validateEmailAddress(targetComment.email || '').slice(0, 254); }
+    catch (error) { return json(fail(error.message), 400, headers); }
   }
   await env.DB.prepare('INSERT INTO comments (content, reply_to, reply_email, username, email, website, memo_id, author, identity_hash, network_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(content, replyTo, replyEmail, username || '匿名用户', user ? user.email : String(body.email || '').slice(0, 254), website?.href || '', memo.id, user ? String(user.id) : '', identity.hash, user ? '' : identity.networkHash).run();
+    .bind(content, replyTo, replyEmail, username || '匿名用户', commenterEmail, website?.href || '', memo.id, user ? String(user.id) : '', identity.hash, user ? '' : identity.networkHash).run();
   const owner = await env.DB.prepare('SELECT nickname,email,telegram_chat_id FROM users WHERE id=?').bind(memo.user_id).first();
+  let ownerEmail = '';
+  try { ownerEmail = validateEmailAddress(owner?.email || '').slice(0, 254); }
+  catch (error) { console.error('Owner email validation failed', error); }
   // 评论者是动态作者本人时，不向作者自己发送评论通知；
   // 作者回复他人评论时，仍通知被回复人（replyEmail）。
   const selfComment = Boolean(user && Number(user.id) === Number(memo.user_id));
   if (config.enableEmail) {
-    const target = replyTo ? replyEmail : owner?.email;
+    const target = replyTo ? replyEmail : ownerEmail;
     // 非回复场景的通知对象即作者本人：作者自评时跳过，避免通知自己。
     if (target && config.smtpUsername && !(!replyTo && selfComment)) {
       const email = buildCommentEmail({ title: config.title, host: new URL(request.url).origin, poster: replyTo || owner.nickname, commenter: username || '匿名用户', content, memoId: memo.id, createdAt: new Date().toISOString().slice(0,19).replace('T',' ') });
@@ -2247,11 +2258,14 @@ async function notifyAdminNewRegistration(env, config, { username, email, reason
   const subject = `${title}：新用户注册待审批`;
   const text = `新用户申请注册：\n用户名：${username}\n邮箱：${email || '（未填写）'}\n理由：${reason || '（未填写）'}\n请到后台注册审批页面处理。`;
   const errors = [];
-  if (config.enableEmail && admin?.email && config.smtpUsername) {
+  let adminEmail = '';
+  try { adminEmail = validateEmailAddress(admin?.email || '').slice(0, 254); }
+  catch (error) { console.error('Admin email validation failed', error); }
+  if (config.enableEmail && adminEmail && config.smtpUsername) {
     let mailCredential = '';
     try { mailCredential = config.smtpPasswordEncrypted ? await decryptConfigSecret(config.smtpPasswordEncrypted, env.JWT_SECRET) : ''; } catch (error) { console.error('Mail credential decrypt failed', error); }
     try {
-      await sendNotification(env, { ...config, mailCredential }, { from: mailFrom(config.smtpUsername, config.smtpFromName), to: admin.email, subject, html: `<p>${escapeXml(text).replace(/\n/g, '<br>')}</p>`, text });
+      await sendNotification(env, { ...config, mailCredential }, { from: mailFrom(config.smtpUsername, config.smtpFromName), to: adminEmail, subject, html: `<p>${escapeXml(text).replace(/\n/g, '<br>')}</p>`, text });
       return;
     } catch (error) { errors.push(`Email: ${error.message}`); }
   }
@@ -2407,8 +2421,10 @@ async function adminMailTest(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
   if (access.response) return access.response;
   const body = (await readJson(request)) || {};
-  const to = String(body.to || '').trim().slice(0, 254);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return json(fail('收件邮箱格式错误'), 400, headers);
+  let to;
+  try { to = validateEmailAddress(body.to || '', '收件邮箱'); }
+  catch (error) { return json(fail(error.message), 400, headers); }
+  if (!to) return json(fail('收件邮箱格式错误'), 400, headers);
   const saved = parseConfig((await env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first())?.content);
   const username = String(body.smtpUsername || saved.smtpUsername || '').trim().slice(0, 254);
   if (!username) return json(fail('请先填写发件邮箱（用户名）'), 400, headers);

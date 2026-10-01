@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
-  sendNotification, md5Hex, renderRssDescription, listBackups, purgeOldBackups,
+  sendNotification, sendSmtp, validateEmailAddress, md5Hex, renderRssDescription, listBackups, purgeOldBackups,
   encryptConfigSecret, decryptConfigSecret,
 } from '../../worker/src/phase7.js';
 
@@ -24,6 +24,23 @@ assert.match(presigned, /a%20b\.webp/);
 assert.match(presigned, /X-Amz-SignedHeaders=content-type%3Bhost/);
 assert.equal(validateDirectUpload({ size: 10, sha256: 'a'.repeat(64), contentType: 'image/webp', filename: 'a.webp' }, new Set(['image/webp'])).size, 10);
 assert.throws(() => validateDirectUpload({ size: 500 * 1024 * 1024 + 1, sha256: 'a'.repeat(64), contentType: 'image/webp' }, new Set(['image/webp'])), /500MB/);
+assert.equal(validateEmailAddress('to@example.com'), 'to@example.com');
+assert.throws(() => validateEmailAddress('victim@example.com\r\nRCPT TO:<attacker@example.com>'), /邮箱/);
+const smtpWrites = [];
+const smtpResponses = ['220 ready\r\n', '250 hello\r\n', '334 user\r\n', '334 pass\r\n', '235 auth\r\n', '250 mail\r\n', '250 rcpt\r\n', '354 data\r\n', '250 sent\r\n', '221 bye\r\n'];
+const makeSocket = () => {
+  let smtpIndex = 0;
+  return {
+    opened: Promise.resolve(),
+    readable: { getReader() { return { async read() { return { value: new TextEncoder().encode(smtpResponses[smtpIndex++]), done: false }; }, releaseLock() {} }; } },
+    writable: { getWriter() { return { async write(value) { smtpWrites.push(new TextDecoder().decode(value)); }, releaseLock() {} }; } },
+    async close() {},
+  };
+};
+await sendSmtp({ host: 'smtp.example.com', port: 465, username: 'u', password: 'p', encryption: 'ssl' }, { from: 'from@example.com', to: 'to@example.com', subject: '测试', html: '<p>ok</p>' }, () => makeSocket());
+assert.ok(smtpWrites.some(value => value.includes('RCPT TO:<to@example.com>\r\n')));
+assert.ok(smtpWrites.some(value => value.includes('To: to@example.com')));
+await assert.rejects(() => sendSmtp({ host: 'smtp.example.com', port: 465, username: 'u', password: 'p', encryption: 'ssl' }, { from: 'from@example.com', to: 'victim@example.com\r\nRCPT TO:<attacker@example.com', subject: 'x', html: '<p>x</p>' }, () => makeSocket()), /收件邮箱/);
 
 const mail = buildCommentEmail({ title: '站点', host: 'https://x.example', poster: '<Admin>', commenter: '访客', content: '<script>', memoId: 7, createdAt: '2026-08-06' });
 assert.match(mail.html, /&lt;Admin&gt;/); assert.doesNotMatch(mail.html, /<script>/); assert.match(mail.text, /memo\/7/);
