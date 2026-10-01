@@ -122,7 +122,7 @@
 | `/api/file/upload` | 登录 | multipart `files` + `sha256`（每个文件一个哈希）、可选 `thumbnail_<下标>` | 图片/音频/视频，单文件 ≤25MB；按 `owner_id+sha256` 去重 |
 | `/api/file/direct/init` | 登录 | `filename`、`contentType`、`size`、`sha256` | ≥20MB 走预签名直传（R2/S3；WebDAV 不支持），返回 `uploadUrl` |
 | `/api/file/direct/complete` | 登录 | `key`、`thumbnailKey` | 直传完成校验（大小、类型、校验和）后置为 `ready` |
-| `/api/file/exist` | 登录 | `sha256` 或 `filename` | 秒传预检，返回 `{exist, path, thumbPath}` |
+| `/api/file/exist` | 登录 | `sha256` | 秒传预检，返回 `{exist, path, thumbPath}`；仅接受 64 位 SHA-256
 | **`/api/file/attachment`** | 登录 | multipart `files`（可多个） | **附件上传**：类型限文档/压缩包/纯文本配置/电子书白名单（**不含 html/svg/js/xml/css**）；单文件 ≤ `attachmentMaxSize`，单次 ≤ `attachmentMaxCount`；返回 `{files:[{path,name,size,type}]}` |
 | `/api/file/clean` | 登录 | — | 扫描未被引用的媒体（比对 `memos.imgs`、`ext`、头像封面与配置）→ 移入回收站 |
 | `/api/file/trash/list` | 登录 | — | 回收站列表（默认保留 7 天） |
