@@ -94,7 +94,7 @@ const canonicalUrl = computed(() => canonicalBase ? canonicalBase + canonicalPat
 const seoOgImage = canonicalBase + (site.ogImage || '/cover.webp');
 // 后台关闭 SEO 总开关时全站 noindex；Googlebot 会执行 JS，若不在这里同步，
 // 运行时的 "index, follow" 会覆盖 Worker 注入的 noindex
-const noindex = sysConfigVO.enableSeo === false || ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix));
+const noindex = computed(() => sysConfigVO.enableSeo === false || ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix)));
 useHead(() => ({
   title: seoTitle,
   link: [
@@ -118,7 +118,7 @@ useHead(() => ({
   meta: [
     { name: "description", content: seoDescription },
     { name: "keywords", content: seoKeywords },
-    { name: "robots", content: noindex ? "noindex, nofollow" : "index, follow" },
+    { name: "robots", content: noindex.value ? "noindex, nofollow" : "index, follow" },
     { property: "og:site_name", content: seoTitle },
     { property: "og:type", content: "website" },
     { property: "og:title", content: seoTitle },

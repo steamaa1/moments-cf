@@ -14,6 +14,9 @@ assert.match(page, /to="\/"/, '返回按钮必须指向首页');
 assert.match(page, /memo\.value = undefined/, '失败必须清空动态避免渲染半截内容');
 assert.match(page, /loadError\.value = true/, '失败必须置位错误状态');
 assert.match(page, /loadError\.value = false/, '成功必须复位错误状态');
+assert.match(page, /let requestGeneration = 0/, '详情页必须维护请求代次，防止路由复用时旧响应覆盖新动态');
+assert.match(page, /const targetId = id\.value/, '请求必须捕获发起时的动态 ID');
+assert.match(page, /generation !== requestGeneration \|\| id\.value !== targetId/, '成功与失败响应都必须校验请求代次和当前 ID');
 
 // 失败时同步 noindex，与 worker pageSeo 私密动态 noindex 对齐
 assert.match(page, /noindex, nofollow/, '失败必须注入 noindex');

@@ -19,11 +19,18 @@ const id = computed(() => Number(route.params.id))
 const memo = ref<MemoVO>()
 const loadError = ref(false)
 const sysConfig = useState<SysConfigVO>('sysConfig')
+let requestGeneration = 0
 const reload = async () => {
+  const targetId = id.value
+  const generation = ++requestGeneration
   try {
-    memo.value = await useMyFetch<MemoVO>('/memo/get?id=' + id.value)
+    const result = await useMyFetch<MemoVO>('/memo/get?id=' + targetId)
+    // 路由复用时旧请求可能晚于新请求返回，只有当前代次和目标 ID 都匹配才能提交。
+    if (generation !== requestGeneration || id.value !== targetId) return
+    memo.value = result
     loadError.value = false
   } catch {
+    if (generation !== requestGeneration || id.value !== targetId) return
     // 不存在（404）与无权限（403，私密/定时未发布且非作者）统一呈现，避免向访客泄露动态是否存在
     memo.value = undefined
     loadError.value = true

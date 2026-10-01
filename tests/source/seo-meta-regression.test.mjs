@@ -183,6 +183,8 @@ assert.match(source, /Disallow: \/\\n'/, 'robots 关闭时必须全站禁止抓�
 assert.match(source, /'siteUrl', 'enableSeo',/, '公开配置必须暴露 enableSeo，前端才能同步');
 assert.match(source, /const canonical = siteUrl && seoEnabled \?/, '关闭时必须不输出 canonical');
 assert.match(layoutDefault, /sysConfigVO\.enableSeo === false/, 'layout 必须按开关同步 noindex（Googlebot 会执行 JS，否则运行时覆盖注入值）');
+assert.match(layoutDefault, /const noindex = computed\(\(\) =>/, 'layout noindex 必须是 computed，路由切换后才能响应式更新');
+assert.match(layoutDefault, /name: "robots", content: noindex\.value \?/, 'robots meta 必须读取 noindex computed 当前值');
 assert.match(settings, /v-model="state\.enableSeo"/, '系统设置必须有 SEO 总开关');
 assert.match(settings, /启用 SEO/, '开关必须有明确标签');
 
