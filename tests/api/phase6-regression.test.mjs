@@ -3,8 +3,12 @@ import { readFile } from 'node:fs/promises';
 import worker, { fetchGitSnapshot, fetchXSnapshot, parseDouban, parseDoubanMovieJson, parseGitEmbedUrl, parseMemoRefUrl, parseXEmbedUrl, sanitizeMemoExt, signJwt } from '../../worker/src/index.js';
 
 const userPage = await readFile(new URL('../../front/pages/user/[id].vue', import.meta.url), 'utf8');
-assert.match(userPage, /const userId = computed\(\(\) => Number\(route\.params\.id\)\)/);
-assert.match(userPage, /reactive\(\{ page: 1, size: 10, userId: userId\.value \}\)/);
+// 用户页的 userId 必须先按「正整数」校验（非法/0/负数一律 null），再用于请求，
+// 避免把 400 的 profileById 与空白页抛给用户；见 tests/source/frontend-route-state-regression.test.mjs
+assert.match(userPage, /const userId = computed<number \| null>\(\(\) => \{/);
+assert.match(userPage, /if \(!\/\^\[1-9\]\\d\*\$\/\.test\(value\)\) return null/);
+assert.match(userPage, /const state = reactive\(\{ page: 1, size: 10, userId: 0 \}\)/);
+assert.match(userPage, /state\.userId = targetId/);
 assert.match(userPage, /['"]\/memo\/list['"], \{ \.\.\.state, page: 1 \}/);
 assert.match(userPage, /const page = state\.page \+ 1/);
 assert.match(userPage, /ref<'timeline' \| 'cards'>\('timeline'\)/);

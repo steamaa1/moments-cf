@@ -1,6 +1,6 @@
 <template>
   <iframe
-    v-if="url"
+    v-if="videoUrl"
     :src="videoUrl"
     class="w-full h-[250px] rounded"
     title="Video player iframe"
@@ -16,9 +16,16 @@
 const props = defineProps<{ url: string }>()
 
 const videoUrl = computed(() => {
-  const url = new URL(props.url)
-  url.searchParams.set("autoplay", "0")
-  return url.toString()
+  try {
+    const value = String(props.url || '').trim()
+    if (!value) return ''
+    const url = new URL(value, typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
+    if (!['http:', 'https:'].includes(url.protocol)) return ''
+    url.searchParams.set('autoplay', '0')
+    return url.toString()
+  } catch {
+    return ''
+  }
 })
 </script>
 

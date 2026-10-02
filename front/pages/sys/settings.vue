@@ -358,6 +358,7 @@ import {useUpload} from "~/utils";
 import {useGlobalState} from "~/store";
 
 const currentUser = useState<UserVO>('userinfo')
+const sysConfig = useState<SysConfigVO>('sysConfig', () => ({} as SysConfigVO))
 const global = useGlobalState()
 // 仅管理员可访问系统设置（含注册审批、备份、存储凭据等敏感功能）
 if (global.value.userinfo.id !== 1) await navigateTo('/', { replace: true })
@@ -475,6 +476,7 @@ const reload = async () => {
   const res = await useMyFetch<SysConfigVO>('/sysConfig/getFull')
   if (res) {
     Object.assign(state, res)
+    Object.assign(sysConfig.value, res)
     if (state.smtpEncryption !== 'ssl' && state.smtpEncryption !== 'tls') state.smtpEncryption = state.smtpPort === '587' ? 'tls' : 'ssl'
     version.value = res.version
     commitId.value = res.commitId
@@ -493,6 +495,8 @@ const save = async () => {
   try {
     await useMyFetch('/sysConfig/save', state)
     toast.success("保存成功")
+    // 同步布局与人机验证 composable 共享的会话配置，避免保存后仍使用旧值。
+    Object.assign(sysConfig.value, state)
     // 重新拉取配置而不是整页刷新：保留当前分区与滚动位置
     await reload()
   } finally {

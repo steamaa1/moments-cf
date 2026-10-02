@@ -70,68 +70,66 @@ const global = useGlobalState();
 const authUser = computed(() => global?.value?.userinfo ?? {});
 const open = useState<boolean>("sidebarOpen", () => false);
 const currentUser = useState<UserVO>("userinfo");
-const sysConfig = useState<SysConfigVO>("sysConfig");
-const [currentProfile, sysConfigVO] = await Promise.all([
+const sysConfig = useState<SysConfigVO>("sysConfig", () => ({} as SysConfigVO));
+const [currentProfile, loadedSysConfig] = await Promise.all([
   useMyFetch<UserVO>("/user/profile"),
   useMyFetch<SysConfigVO>("/sysConfig/get"),
 ]);
-if (currentProfile) {
-  currentUser.value = currentProfile;
-  sysConfig.value = sysConfigVO;
-}
+if (currentProfile) currentUser.value = currentProfile;
+if (loadedSysConfig) sysConfig.value = { ...sysConfig.value, ...loadedSysConfig };
 const { y } = useWindowScroll();
 const route = useRoute();
-const seoTitle = sysConfigVO.title || site.title;
-const seoDescription = sysConfigVO.seoDescription || (sysConfigVO.slogan ? `${sysConfigVO.slogan} · ${seoTitle}` : site.description);
-const seoKeywords = sysConfigVO.seoKeywords || site.keywords;
-const canonicalBase = (sysConfigVO.siteUrl || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, '');
+const seoTitle = computed(() => sysConfig.value.title || site.title);
+const seoDescription = computed(() => sysConfig.value.seoDescription || ((sysConfig.value as any).slogan ? `${(sysConfig.value as any).slogan} · ${seoTitle.value}` : site.description));
+const seoKeywords = computed(() => sysConfig.value.seoKeywords || site.keywords);
+const canonicalBase = computed(() => (sysConfig.value.siteUrl || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/, ''));
 // 规范 URL 统一无尾斜杠（根路径除外），与 Worker 注入值和 sitemap 对齐。
 // unhead 对 link[rel=canonical] 使用固定去重键，运行时会接管并更新服务端已渲染的同名标签，
 // 因此这里若保留 route.path 的尾斜杠，最终生效的 canonical 就会与 sitemap 不一致。
 const canonicalPath = computed(() => route.path.replace(/\/+$/, '') || '/');
-const canonicalUrl = computed(() => canonicalBase ? canonicalBase + canonicalPath.value : '');
+const canonicalUrl = computed(() => canonicalBase.value ? canonicalBase.value + canonicalPath.value : '');
 // og:image 需绝对地址才能被社交与部分搜索引擎爬虫识别；默认站点封面
-const seoOgImage = canonicalBase + (site.ogImage || '/cover.webp');
+const seoOgImage = computed(() => canonicalBase.value + (site.ogImage || '/cover.webp'));
 // 后台关闭 SEO 总开关时全站 noindex；Googlebot 会执行 JS，若不在这里同步，
 // 运行时的 "index, follow" 会覆盖 Worker 注入的 noindex
-const noindex = computed(() => sysConfigVO.enableSeo === false || ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix)));
+const noindex = computed(() => sysConfig.value.enableSeo === false || ['/new', '/edit', '/user/login', '/user/reg', '/user/settings', '/sys/'].some(prefix => route.path.startsWith(prefix)));
 useHead(() => ({
-  title: seoTitle,
+  title: seoTitle.value,
   link: [
     {
       rel: "shortcut icon",
       type: "image/png",
-      href: sysConfigVO.favicon || "/favicon.png",
+      href: sysConfig.value.favicon || "/favicon.png",
     },
     {
       rel: "apple-touch-icon-precomposed",
-      href: sysConfigVO.favicon || "/favicon.png",
+      href: sysConfig.value.favicon || "/favicon.png",
     },
     {
       rel: "alternate",
       type: "application/rss+xml",
       title: "我的 RSS 订阅",
-      href: sysConfigVO.rss || `/rss`,
+      href: sysConfig.value.rss || `/rss`,
     },
     ...(canonicalUrl.value ? [{ rel: "canonical", href: canonicalUrl.value }] : []),
   ],
   meta: [
-    { name: "description", content: seoDescription },
-    { name: "keywords", content: seoKeywords },
+    { name: "description", content: seoDescription.value },
+    { name: "keywords", content: seoKeywords.value },
     { name: "robots", content: noindex.value ? "noindex, nofollow" : "index, follow" },
-    { property: "og:site_name", content: seoTitle },
+    { property: "og:site_name", content: seoTitle.value },
     { property: "og:type", content: "website" },
-    { property: "og:title", content: seoTitle },
-    { property: "og:description", content: seoDescription },
-    { property: "og:image", content: seoOgImage },
+    { property: "og:title", content: seoTitle.value },
+    { property: "og:description", content: seoDescription.value },
+    { property: "og:image", content: seoOgImage.value },
     ...(canonicalUrl.value ? [{ property: "og:url", content: canonicalUrl.value }] : []),
     { name: "twitter:card", content: "summary_large_image" },
-    { name: "twitter:title", content: seoTitle },
-    { name: "twitter:description", content: seoDescription },
+    { name: "twitter:title", content: seoTitle.value },
+    { name: "twitter:description", content: seoDescription.value },
   ],
   style: [
     {
-      innerHTML: sysConfigVO.css || "",
+      innerHTML: sysConfig.value.css || "",
     },
   ],
 }));
@@ -139,13 +137,13 @@ useHead(() => ({
 // 自定义 JS：SPA 路由切换后新页面 DOM 已渲染，此时执行才能挂载页脚/天气/统计等元素。
 // 管理员脚本自带防重复检查，重复执行是幂等的。
 function runCustomJs() {
-  const code = sysConfigVO.js || "";
+  const code = sysConfig.value.js || "";
   if (!code) return;
   try { new Function(code)(); } catch (error) { console.error("自定义 JS 执行失败", error); }
 }
 onMounted(() => { runCustomJs(); const router = useRouter(); router.afterEach(() => { nextTick(() => runCustomJs()); }); });
 
-if (sysConfigVO.enableTurnstile) {
+if (sysConfig.value.enableTurnstile) {
   useHead({
     script: [{
       type: "text/javascript",
@@ -154,12 +152,12 @@ if (sysConfigVO.enableTurnstile) {
       defer: true,
     }],
   });
-} else if (sysConfigVO.enableGoogleRecaptcha) {
+} else if (sysConfig.value.enableGoogleRecaptcha) {
   useHead({
     script: [
       {
         type: "text/javascript",
-        src: `https://recaptcha.net/recaptcha/api.js?render=${sysConfigVO.googleSiteKey}`,
+        src: `https://recaptcha.net/recaptcha/api.js?render=${sysConfig.value.googleSiteKey}`,
       },
     ],
   });

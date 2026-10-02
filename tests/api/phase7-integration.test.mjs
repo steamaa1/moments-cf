@@ -62,12 +62,12 @@ for (const page of [indexPageForBus, userTimeline, tagTimeline, calendar, memoDe
 for (const page of [indexPageForBus, userTimeline, tagTimeline, calendar]) {
   assert.match(page, /const loading = ref\(false\)/);
   assert.match(page, /let requestGeneration = 0/);
-  assert.match(page, /if \(loading\.value \|\| !hasNext\.value\) return/);
+  assert.match(page, /if \(loading\.value \|\| !hasNext\.value(?: \|\| userId\.value === null)?/, '翻页必须先检查加载中与是否还有下一页');
   assert.match(page, /const page = state\.page \+ 1/);
   assert.match(page, /state\.page = page/);
   assert.match(page, /const mergeMemos =/);
   assert.match(page, /incoming\.filter\(memo => !existing\.has\(memo\.id\)\)/);
-  assert.match(page, /if \(generation !== requestGeneration\) return/);
+  assert.match(page, /if \(generation !== requestGeneration/, '过期请求不得提交页面状态');
 }
 const music = await readFile(new URL('../../front/components/Music.vue', import.meta.url), 'utf8');
 const musicPreview = await readFile(new URL('../../front/components/MusicPreview.vue', import.meta.url), 'utf8');
@@ -76,13 +76,13 @@ assert.match(about, /enableAbout/);
 assert.match(timeline, /朋友圈时间轴/);
 assert.match(userTimeline, /viewMode = ref<'timeline' \| 'cards'>\('timeline'\)/);
 assert.match(userTimeline, /Promise\.all\(\[/, '用户空间应并行加载资料与动态');
-assert.match(userTimeline, /\/user\/profileById\?id=\$\{userId\.value\}/, '用户空间应按 ID 独立加载资料，不依赖首条动态');
+assert.match(userTimeline, /\/user\/profileById\?id=\$\{(?:userId\.value|targetId)\}/, '用户空间应按 ID 独立加载资料，不依赖首条动态');
 assert.match(tagTimeline, /username: username\.value,\s*\n\s*tag: tag\.value,/, '标签页请求必须同时按用户名和标签过滤');
 assert.match(memoDetailForBus, /const id = computed\(\(\) => Number\(route\.params\.id\)\)/, '动态详情 ID 必须响应路由变化');
 assert.match(memoDetailForBus, /watch\(id, async/, '动态详情切换 ID 后必须重新加载');
-assert.match(editPage, /<MemoEdit :key="id" :id="id"\/>/, '编辑页切换 ID 后必须重建编辑器');
+assert.match(editPage, /<MemoEdit (?:v-else )?:key="id" :id="id"\/>/, '编辑页切换 ID 后必须重建编辑器');
 assert.match(userTimeline, /watch\(userId, async/, '用户空间切换 ID 后必须重新加载');
-assert.match(tagTimeline, /watch\(\[username, tag\], async/, '标签路由变化后必须重新加载');
+assert.match(tagTimeline, /watch\(\[username, tag\], (?:async )?\(/, '标签路由变化后必须重新加载');
 assert.doesNotMatch(tagTimeline, /@click="loadMore" v-else/, '标签页到底提示不得继续绑定加载事件');
 assert.match(calendar, /时间轴排列/);
 assert.match(music, /直链播放/);

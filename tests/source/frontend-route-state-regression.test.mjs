@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const read = path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
+const edit = await read('front/pages/edit/[id].vue');
+const user = await read('front/pages/user/[id].vue');
+const tags = await read('front/pages/tags/[username]/[tag].vue');
+const settings = await read('front/pages/sys/settings.vue');
+const layout = await read('front/layouts/default.vue');
+const human = await read('front/composables/useHumanVerification.ts');
+const video = await read('front/components/VideoPreviewIframe.vue');
+
+assert.match(edit, /Number\.isSafeInteger\(number\) && number > 0/);
+assert.match(edit, /id === null/);
+assert.match(edit, /<MemoEdit v-else/);
+assert.match(user, /profileError/);
+assert.match(user, /paginationError/);
+assert.match(user, /paginationError\.value = error\?\.message/);
+assert.doesNotMatch(user, /paginationError\.value = error\?\.message[^\n]*profileError/);
+assert.match(user, /@click="loadMore">重试/);
+assert.match(user, /v-if="paginationError"/);
+assert.match(user, /TimelineList[\s\S]*:memos="memos"/);
+assert.match(user, /paginationError\.value = ''[\s\S]*if \(targetId === null\)/);
+const loadMoreStart = user.indexOf('const loadMore = async () =>');
+const loadMoreSource = user.slice(loadMoreStart, user.indexOf('// SEO', loadMoreStart));
+assert.doesNotMatch(loadMoreSource, /profileError\.value/);
+assert.match(loadMoreSource, /paginationError\.value = error\?\.message/);
+assert.match(loadMoreSource, /mergeMemos\(res\.list\)/);
+assert.match(user, /catch \(error: any\)/);
+assert.match(user, /generation !== requestGeneration \|\| userId\.value !== targetId/);
+assert.match(tags, /routeKey = computed/);
+assert.match(tags, /profile, res\] = await Promise\.all/);
+assert.match(tags, /routeKey\.value !== targetKey/);
+assert.match(settings, /useState<SysConfigVO>\('sysConfig'/);
+assert.match(settings, /Object\.assign\(sysConfig\.value, state\)/);
+assert.match(layout, /computed\(\(\) => sysConfig\.value\.title/);
+assert.doesNotMatch(layout, /const sysConfigVO\s*=/);
+assert.match(human, /try \{[\s\S]*window\.turnstile!\.render/);
+assert.match(human, /catch \(error\) \{[\s\S]*cleanup\(\)/);
+assert.match(video, /try \{[\s\S]*new URL\(value,/);
+assert.match(video, /catch \{[\s\S]*return ''/);
+
+console.log('frontend-route-state-regression: PASS');

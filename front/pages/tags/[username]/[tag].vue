@@ -22,21 +22,10 @@ import {memoChangedEvent, memoReloadEvent} from "~/event";
 const route = useRoute()
 const username = computed(() => String(route.params.username || ''))
 const tag = computed(() => String(route.params.tag || ''))
+const routeKey = computed(() => `${username.value}\u0000${tag.value}`)
 const user = ref<UserVO>()
-
-const loadRoute = async () => {
-  user.value = await useMyFetch<UserVO>('/user/profile/' + encodeURIComponent(username.value))
-  await reload()
-}
-onMounted(loadRoute)
-
 const loadMoreEle = ref(null)
 const targetIsVisible = useElementVisibility(loadMoreEle)
-watch(targetIsVisible, async (visible) => {
-  if (visible) {
-    await loadMore()
-  }
-})
 const hasNext = ref(false)
 const loading = ref(false)
 let requestGeneration = 0
@@ -56,25 +45,47 @@ const mergeMemos = (incoming: MemoVO[]) => {
 
 const reload = async () => {
   const generation = ++requestGeneration
+  const targetKey = routeKey.value
+  const targetUsername = username.value
+  const targetTag = tag.value
+  state.username = targetUsername
+  state.tag = targetTag
+  state.page = 1
+  user.value = undefined
+  memos.value = []
+  hasNext.value = false
   loading.value = true
   try {
-    const res = await useMyFetch<{
-      list: Array<MemoVO>,
-      total: number,
-      hasNext: boolean
-    }>('/memo/list', { ...state, page: 1 })
-    if (generation !== requestGeneration) return
-    state.page = 1
+    const [profile, res] = await Promise.all([
+      useMyFetch<UserVO>('/user/profile/' + encodeURIComponent(targetUsername)),
+      useMyFetch<{
+        list: Array<MemoVO>,
+        total: number,
+        hasNext: boolean
+      }>('/memo/list', { ...state, page: 1 }),
+    ])
+    // 路由复用时旧 profile 与动态列表响应都不能写入当前 URL。
+    if (generation !== requestGeneration || routeKey.value !== targetKey) return
+    user.value = profile
     memos.value = res.list
     hasNext.value = res.hasNext
+  } catch (error) {
+    if (generation !== requestGeneration || routeKey.value !== targetKey) return
+    // 页面保持可用，用户可通过再次触发路由或事件重试；避免事件回调产生未处理 Promise。
+    console.warn('[tags] 加载失败', error)
   } finally {
     if (generation === requestGeneration) loading.value = false
   }
 }
 
+watch(targetIsVisible, visible => {
+  if (visible) void loadMore()
+})
+
 const loadMore = async () => {
   if (loading.value || !hasNext.value) return
   const generation = requestGeneration
+  const targetKey = routeKey.value
   const page = state.page + 1
   loading.value = true
   try {
@@ -83,37 +94,39 @@ const loadMore = async () => {
       total: number,
       hasNext: boolean
     }>('/memo/list', { ...state, page })
-    if (generation !== requestGeneration) return
+    if (generation !== requestGeneration || routeKey.value !== targetKey) return
     mergeMemos(res.list)
     state.page = page
     hasNext.value = res.hasNext
+  } catch (error) {
+    if (generation === requestGeneration && routeKey.value === targetKey) console.warn('[tags] 加载更多失败', error)
   } finally {
     if (generation === requestGeneration) loading.value = false
   }
 }
 
-const stopMemoReload = memoReloadEvent.on(async () => {
-  await reload()
+const stopMemoReload = memoReloadEvent.on(() => {
+  void reload()
 })
 
-watch([username, tag], async ([nextUsername, nextTag], previous) => {
+watch([username, tag], ([nextUsername, nextTag], previous) => {
   if (previous && nextUsername === previous[0] && nextTag === previous[1]) return
   state.username = nextUsername
   state.tag = nextTag
-  user.value = undefined
-  memos.value = []
-  hasNext.value = false
-  await loadRoute()
+  void reload()
 })
 
 const stopMemoChanged = memoChangedEvent.on(async (id: number) => {
-  const res = await useMyFetch<MemoVO>('/memo/get?latest=1&id=' + id)
-  const index = memos.value.findIndex(r => r.id === id)
-  if (index >= 0) {
-    memos.value[index] = res
+  try {
+    const res = await useMyFetch<MemoVO>('/memo/get?latest=1&id=' + id)
+    const index = memos.value.findIndex(r => r.id === id)
+    if (index >= 0) memos.value[index] = res
+  } catch {
+    // 动态已删除或无权访问时保持当前列表。
   }
 })
 
+onMounted(() => { void reload() })
 onBeforeUnmount(() => {
   stopMemoReload()
   stopMemoChanged()

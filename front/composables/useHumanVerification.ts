@@ -34,19 +34,29 @@ export const useHumanVerification = () => {
       document.body.appendChild(overlay)
       let widgetId = ''
       const cleanup = () => {
-        if (widgetId && window.turnstile) window.turnstile.remove(widgetId)
-        overlay.remove()
+        try {
+          if (widgetId && window.turnstile) window.turnstile.remove(widgetId)
+        } catch {
+          // remove 失败也必须继续移除遮罩，避免验证异常永久阻塞页面。
+        } finally {
+          overlay.remove()
+        }
       }
-      widgetId = window.turnstile!.render(container, {
-        sitekey: config.value.turnstileSiteKey,
-        action,
-        appearance: 'interaction-only',
-        execution: 'execute',
-        callback: (token: string) => { cleanup(); resolve(token) },
-        'error-callback': () => { cleanup(); reject(new Error('Cloudflare 人机验证失败')) },
-        'expired-callback': () => { cleanup(); reject(new Error('Cloudflare 人机验证已过期')) },
-      })
-      window.turnstile!.execute(widgetId)
+      try {
+        widgetId = window.turnstile!.render(container, {
+          sitekey: config.value.turnstileSiteKey,
+          action,
+          appearance: 'interaction-only',
+          execution: 'execute',
+          callback: (token: string) => { cleanup(); resolve(token) },
+          'error-callback': () => { cleanup(); reject(new Error('Cloudflare 人机验证失败')) },
+          'expired-callback': () => { cleanup(); reject(new Error('Cloudflare 人机验证已过期')) },
+        })
+        window.turnstile!.execute(widgetId)
+      } catch (error) {
+        cleanup()
+        reject(error instanceof Error ? error : new Error('Cloudflare 人机验证初始化失败'))
+      }
     })
   }
 

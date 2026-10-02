@@ -158,9 +158,9 @@ assert.match(memoPage, /const pageTitle = text \? \(text\.length > 40 \? `\$\{te
 assert.match(memoPage, /title: pageTitle/);
 assert.match(memoPage, /property: 'og:title', content: pageTitle/);
 const layoutDefault = await readFile(new URL('../../front/layouts/default.vue', import.meta.url), 'utf8');
-assert.match(layoutDefault, /sysConfigVO\.seoDescription \|\|/);
-assert.match(layoutDefault, /sysConfigVO\.seoKeywords \|\|/);
-assert.match(layoutDefault, /sysConfigVO\.siteUrl/);
+assert.match(layoutDefault, /sysConfig\.value\.seoDescription \|\|/);
+assert.match(layoutDefault, /sysConfig\.value\.seoKeywords \|\|/);
+assert.match(layoutDefault, /sysConfig\.value\.siteUrl/);
 assert.match(layoutDefault, /og:image/, 'layouts 输出 og:image');
 assert.match(layoutDefault, /summary_large_image/, 'twitter:card 升级大图卡');
 const nuxtConfig = await readFile(new URL('../../front/nuxt.config.ts', import.meta.url), 'utf8');
@@ -172,7 +172,7 @@ assert.match(wrangler, /html_handling = "drop-trailing-slash"/, 'wrangler.toml �
 const wranglerTemplate = await readFile(new URL('../../worker/wrangler.toml.template', import.meta.url), 'utf8');
 assert.match(wranglerTemplate, /html_handling = "drop-trailing-slash"/, '部署模板同样声明尾斜杠策略');
 assert.match(layoutDefault, /canonicalPath = computed\(\(\) => route\.path\.replace/, 'layouts canonical 去尾斜杠');
-assert.match(layoutDefault, /canonicalBase \+ canonicalPath\.value/, 'layouts 用规范化路径拼 canonical');
+assert.match(layoutDefault, /canonicalBase\.value \+ canonicalPath\.value/, 'layouts 用规范化路径拼 canonical');
 
 // 11. SEO 总开关：默认开启、保存写入、四处闸门、公开配置暴露、前端运行时同步
 assert.match(source, /enableSeo: true/, '配置默认必须为开启');
@@ -182,7 +182,7 @@ assert.match(source, /if \(config\?\.enableSeo === false\) return new Response\(
 assert.match(source, /Disallow: \/\\n'/, 'robots 关闭时必须全站禁止抓取');
 assert.match(source, /'siteUrl', 'enableSeo',/, '公开配置必须暴露 enableSeo，前端才能同步');
 assert.match(source, /const canonical = siteUrl && seoEnabled \?/, '关闭时必须不输出 canonical');
-assert.match(layoutDefault, /sysConfigVO\.enableSeo === false/, 'layout 必须按开关同步 noindex（Googlebot 会执行 JS，否则运行时覆盖注入值）');
+assert.match(layoutDefault, /sysConfig\.value\.enableSeo === false/, 'layout 必须按开关同步 noindex（Googlebot 会执行 JS，否则运行时覆盖注入值）');
 assert.match(layoutDefault, /const noindex = computed\(\(\) =>/, 'layout noindex 必须是 computed，路由切换后才能响应式更新');
 assert.match(layoutDefault, /name: "robots", content: noindex\.value \?/, 'robots meta 必须读取 noindex computed 当前值');
 assert.match(settings, /v-model="state\.enableSeo"/, '系统设置必须有 SEO 总开关');
