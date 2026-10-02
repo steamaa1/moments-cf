@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash, createHmac } from 'node:crypto';
 import { s3Backend, webdavBackend, r2Backend } from '../../worker/src/storage.js';
 
 const requests = [];
@@ -53,7 +54,24 @@ assert.ok(metadataHeaders.get('content-type'), 'S3 get should set content-type')
 
 const presigned = await s3.presignPut({ key: 'media/c.webp', contentType: 'image/webp', now: new Date('2026-08-06T00:00:00Z') });
 assert.match(presigned, /X-Amz-Signature=/);
-assert.match(presigned, /X-Amz-Credential=AK\//);
+assert.equal(new URL(presigned).searchParams.get('X-Amz-Credential')?.startsWith('AK/'), true);
+assert.match(presigned, /X-Amz-Date=20260806T000000Z/, '预签名日期必须严格省略毫秒');
+const checksum = 'a'.repeat(64);
+const checksumPresigned = await s3.presignPut({ key: 'media/checksum.webp', contentType: 'image/webp', checksumSha256: checksum, now: new Date('2026-08-06T00:00:00.123Z') });
+const checksumUrl = new URL(checksumPresigned);
+assert.equal(checksumUrl.searchParams.get('X-Amz-Date'), '20260806T000000Z');
+assert.equal(checksumUrl.searchParams.get('X-Amz-SignedHeaders'), 'content-type;host;x-amz-checksum-sha256');
+const checksumBase64 = Buffer.from(checksum, 'hex').toString('base64');
+const awsEncode = value => encodeURIComponent(value).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+const checksumQuery = [...checksumUrl.searchParams.entries()].filter(([key]) => key !== 'X-Amz-Signature').sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${awsEncode(key)}=${awsEncode(value)}`).join('&');
+const checksumCanonical = `PUT\n${checksumUrl.pathname}\n${checksumQuery}\ncontent-type:image/webp\nhost:${checksumUrl.host}\nx-amz-checksum-sha256:${checksumBase64}\n\ncontent-type;host;x-amz-checksum-sha256\nUNSIGNED-PAYLOAD`;
+const checksumHash = createHash('sha256').update(checksumCanonical).digest('hex');
+const kDate = createHmac('sha256', 'AWS4SK').update('20260806').digest();
+const kRegion = createHmac('sha256', kDate).update('us-east-1').digest();
+const kService = createHmac('sha256', kRegion).update('s3').digest();
+const kSigning = createHmac('sha256', kService).update('aws4_request').digest();
+const expected = createHmac('sha256', kSigning).update(`AWS4-HMAC-SHA256\n20260806T000000Z\n20260806/us-east-1/s3/aws4_request\n${checksumHash}`).digest('hex');
+assert.equal(checksumUrl.searchParams.get('X-Amz-Signature'), expected, '独立 SigV4 验签必须通过');
 
 // WebDAV
 const dav = webdavBackend({ url: 'https://dav.example.com/remote.php/dav/files/user', username: 'u', password: 'p' });

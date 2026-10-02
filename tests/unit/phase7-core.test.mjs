@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash, createHmac } from 'node:crypto';
 import {
   sanitizeSafeHtml, createR2PresignedPut, validateDirectUpload, buildCommentEmail,
   sendNotification, sendSmtp, validateEmailAddress, md5Hex, renderRssDescription, listBackups, purgeOldBackups,
@@ -22,6 +23,23 @@ assert.match(presigned, /X-Amz-Signature=/);
 assert.doesNotMatch(presigned, /\+/);
 assert.match(presigned, /a%20b\.webp/);
 assert.match(presigned, /X-Amz-SignedHeaders=content-type%3Bhost/);
+
+// 使用独立 SigV4 验签器重建 canonical request，不能只断言 URL 字符串。
+const checksumHex = 'a'.repeat(64);
+const checksumBase64 = Buffer.from(checksumHex, 'hex').toString('base64');
+const checksumPresigned = await createR2PresignedPut({ accountId: 'abc123', bucket: 'media', key: 'media/checksum.webp', accessKeyId: 'AKID', secretAccessKey: 'secret', contentType: 'image/webp', checksumSha256: checksumHex, now: new Date('2026-08-06T12:00:00.123Z') });
+const checksumUrl = new URL(checksumPresigned);
+assert.equal(checksumUrl.searchParams.get('X-Amz-Date'), '20260806T120000Z');
+assert.equal(checksumUrl.searchParams.get('X-Amz-SignedHeaders'), 'content-type;host;x-amz-checksum-sha256');
+assert.equal(checksumUrl.searchParams.get('x-amz-checksum-sha256'), null, 'checksum 只作为 signed header，不应泄漏到 query');
+const awsEncode = value => encodeURIComponent(value).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+const canonicalQuery = [...checksumUrl.searchParams.entries()].filter(([key]) => key !== 'X-Amz-Signature').sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${awsEncode(key)}=${awsEncode(value)}`).join('&');
+const canonicalHeaders = `content-type:image/webp\nhost:${checksumUrl.host}\nx-amz-checksum-sha256:${checksumBase64}\n`;
+const canonicalRequest = `PUT\n${checksumUrl.pathname}\n${canonicalQuery}\n${canonicalHeaders}\ncontent-type;host;x-amz-checksum-sha256\nUNSIGNED-PAYLOAD`;
+const hash = value => createHash('sha256').update(value).digest();
+const signingKey = createHmac('sha256', createHmac('sha256', createHmac('sha256', createHmac('sha256', 'AWS4secret').update('20260806').digest()).update('auto').digest()).update('s3').digest()).update('aws4_request').digest();
+const expectedSignature = createHmac('sha256', signingKey).update(`AWS4-HMAC-SHA256\n20260806T120000Z\n20260806/auto/s3/aws4_request\n${hash(canonicalRequest).toString('hex')}`).digest('hex');
+assert.equal(checksumUrl.searchParams.get('X-Amz-Signature'), expectedSignature, '独立 SigV4 验签必须通过');
 assert.equal(validateDirectUpload({ size: 10, sha256: 'a'.repeat(64), contentType: 'image/webp', filename: 'a.webp' }, new Set(['image/webp'])).size, 10);
 assert.throws(() => validateDirectUpload({ size: 500 * 1024 * 1024 + 1, sha256: 'a'.repeat(64), contentType: 'image/webp' }, new Set(['image/webp'])), /500MB/);
 assert.equal(validateEmailAddress('to@example.com'), 'to@example.com');

@@ -93,21 +93,28 @@ async function hmac(key, value) {
   return crypto.subtle.sign('HMAC', material, typeof value === 'string' ? encoder.encode(value) : value);
 }
 function awsEncode(value) { return encodeURIComponent(value).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`); }
+function checksumHeaderValue(value) {
+  const text = String(value || '');
+  if (!text) return '';
+  // 直传初始化使用十六进制 SHA-256，S3 x-amz-checksum-sha256 要求 Base64。
+  return /^[a-f0-9]{64}$/i.test(text) ? hexToBase64(text) : text;
+}
 export async function createR2PresignedPut({ accountId, bucket, key, accessKeyId, secretAccessKey, contentType, checksumSha256, expires = 900, now = new Date() }) {
   if (!accountId || !bucket || !accessKeyId || !secretAccessKey) throw new Error('R2 直传凭据未配置');
   const host = `${accountId}.r2.cloudflarestorage.com`;
   const date = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const shortDate = date.slice(0, 8);
   const scope = `${shortDate}/auto/s3/aws4_request`;
+  const checksum = checksumHeaderValue(checksumSha256);
+  const signedHeaders = checksum ? 'content-type;host;x-amz-checksum-sha256' : 'content-type;host';
   const params = new URLSearchParams({
     'X-Amz-Algorithm': 'AWS4-HMAC-SHA256', 'X-Amz-Credential': `${accessKeyId}/${scope}`,
     'X-Amz-Date': date, 'X-Amz-Expires': String(Math.min(3600, Math.max(60, expires))),
-    'X-Amz-SignedHeaders': checksumSha256 ? 'content-type;host;x-amz-checksum-sha256' : 'content-type;host',
+    'X-Amz-SignedHeaders': signedHeaders,
   });
   const canonicalQuery = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${awsEncode(k)}=${awsEncode(v)}`).join('&');
   const canonicalUri = `/${awsEncode(bucket)}/${key.split('/').map(awsEncode).join('/')}`;
-  const canonicalHeaders = `content-type:${contentType}\nhost:${host}\n${checksumSha256 ? `x-amz-checksum-sha256:${checksumSha256}\n` : ''}`;
-  const signedHeaders = checksumSha256 ? 'content-type;host;x-amz-checksum-sha256' : 'content-type;host';
+  const canonicalHeaders = `content-type:${contentType}\nhost:${host}\n${checksum ? `x-amz-checksum-sha256:${checksum}\n` : ''}`;
   const canonicalRequest = `PUT\n${canonicalUri}\n${canonicalQuery}\n${canonicalHeaders}\n${signedHeaders}\nUNSIGNED-PAYLOAD`;
   const stringToSign = `AWS4-HMAC-SHA256\n${date}\n${scope}\n${bytesToHex(await sha256(canonicalRequest))}`;
   const kDate = await hmac(`AWS4${secretAccessKey}`, shortDate);

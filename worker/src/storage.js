@@ -16,7 +16,6 @@ async function hmac(key, value) {
   return crypto.subtle.sign('HMAC', material, typeof value === 'string' ? encoder.encode(value) : value);
 }
 function awsEncode(value) { return encodeURIComponent(value).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`); }
-function queryEncode(value) { return encodeURIComponent(value).replace(/%2F/gi, '/'); }
 
 /** Sign one S3-compatible request and execute it. */
 export async function s3Request({ endpoint, region, bucket, accessKeyId, secretAccessKey, method, key, query = '', headers = {}, body = null, now = new Date() }) {
@@ -137,20 +136,27 @@ export function s3Backend(config) {
       } while (continuationToken);
       return objects;
     },
-    async presignPut({ key, contentType, expires = 900, now = new Date() }) {
+    async presignPut({ key, contentType, checksumSha256, expires = 900, now = new Date() }) {
       requireConfig();
       const host = String(endpoint).replace(/^https?:\/\//, '').replace(/\/+$/, '');
-      const date = now.toISOString().replace(/[:-]|\\.\\d{3}/g, '');
+      // SigV4 时间戳严格为 YYYYMMDDTHHMMSSZ，不能把毫秒带入签名。
+      const date = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
       const shortDate = date.slice(0, 8);
       const scope = `${shortDate}/${region || 'auto'}/s3/aws4_request`;
+      // checksumSha256 由直传初始化传入十六进制摘要；S3 头要求 Base64 摘要。
+      const checksum = checksumSha256 ? (/^[a-f0-9]{64}$/i.test(String(checksumSha256))
+        ? btoa(String.fromCharCode(...Uint8Array.from(String(checksumSha256).match(/.{2}/g).map(value => parseInt(value, 16)))) )
+        : String(checksumSha256)) : '';
+      const signedHeaders = checksum ? 'content-type;host;x-amz-checksum-sha256' : 'content-type;host';
       const params = new URLSearchParams({
         'X-Amz-Algorithm': 'AWS4-HMAC-SHA256', 'X-Amz-Credential': `${accessKeyId}/${scope}`,
         'X-Amz-Date': date, 'X-Amz-Expires': String(Math.min(3600, Math.max(60, expires))),
-        'X-Amz-SignedHeaders': 'content-type;host',
+        'X-Amz-SignedHeaders': signedHeaders,
       });
-      const canonicalQuery = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${awsEncode(k)}=${queryEncode(v)}`).join('&');
+      const canonicalQuery = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${awsEncode(k)}=${awsEncode(v)}`).join('&');
       const canonicalUri = `/${bucket}/${key.split('/').map(awsEncode).join('/')}`;
-      const canonicalRequest = `PUT\n${canonicalUri}\n${canonicalQuery}\ncontent-type:${contentType}\nhost:${host}\n\ncontent-type;host\nUNSIGNED-PAYLOAD`;
+      const canonicalHeaders = `content-type:${contentType}\nhost:${host}\n${checksum ? `x-amz-checksum-sha256:${checksum}\n` : ''}`;
+      const canonicalRequest = `PUT\n${canonicalUri}\n${canonicalQuery}\n${canonicalHeaders}\n${signedHeaders}\nUNSIGNED-PAYLOAD`;
       const stringToSign = `AWS4-HMAC-SHA256\n${date}\n${scope}\n${bytesToHex(await sha256(canonicalRequest))}`;
       const kDate = await hmac(`AWS4${secretAccessKey}`, shortDate);
       const kRegion = await hmac(kDate, region || 'auto');

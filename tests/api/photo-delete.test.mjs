@@ -9,7 +9,7 @@ const users = {
 const album = { id: 7, is_default: 0 };
 const item = { id: 21, album_id: 7, source_type: 'upload', source_ref: '/upload/media/2026/a.jpg', image_url: '/upload/media/2026/a.jpg' };
 const mediaRow = { id: 5, owner_id: 1, r2_key: 'media/2026/a.jpg', trashed_at: null };
-const state = { deleted: 0, trashed: 0, album, item, media: mediaRow, memos: [], otherAlbumItems: [] };
+const state = { deleted: 0, trashed: 0, memoDeleted: 0, albumMemoItemsDeleted: 0, failBatch: false, album, item, media: mediaRow, memos: [], otherAlbumItems: [], memo: { id: 30, user_id: 1, imgs: '/upload/media/2026/a.jpg' } };
 
 class Statement {
   constructor(sql) { this.sql = sql; this.args = []; }
@@ -28,6 +28,7 @@ class Statement {
     if (sql.includes('select id, owner_id from media')) {
       return state.media && state.media.r2_key === this.args[0] && state.media.trashed_at === null ? { ...state.media } : null;
     }
+    if (sql.includes('select * from memos where id')) return state.memo && Number(this.args[0]) === state.memo.id ? { ...state.memo } : null;
     return null;
   }
   async all() {
@@ -40,13 +41,30 @@ class Statement {
   }
   async run() {
     const sql = this.sql.toLowerCase();
-    if (sql.startsWith('delete from photo_album_items')) { state.deleted++; state.item = null; return { meta: { changes: 1 } }; }
+    if (sql.startsWith('delete from photo_album_items')) {
+      if (sql.includes("source_type='memo'")) state.albumMemoItemsDeleted++;
+      else { state.deleted++; state.item = null; }
+      return { meta: { changes: 1 } };
+    }
+    if (sql.startsWith('delete from memos')) { state.memoDeleted++; state.memo = null; return { meta: { changes: 1 } }; }
     if (sql.startsWith('update media set trashed_at=current_timestamp')) { state.trashed++; return { meta: { changes: 1 } }; }
     throw new Error(`Unhandled SQL: ${this.sql}`);
   }
 }
 
-const env = { JWT_SECRET, DB: { prepare(sql) { return new Statement(sql); } } };
+const batches = [];
+const env = {
+  JWT_SECRET,
+  DB: {
+    prepare(sql) { return new Statement(sql); },
+    async batch(statements) {
+      batches.push(statements);
+      if (state.failBatch) throw new Error('模拟 D1 batch 失败');
+      for (const statement of statements) await statement.run();
+      return { results: [] };
+    },
+  },
+};
 const token = await signJwt({ sub: '1', tv: 0, exp: Math.floor(Date.now() / 1000) + 60 }, JWT_SECRET);
 const headers = { 'content-type': 'application/json', 'x-api-token': token };
 
@@ -101,5 +119,21 @@ assert.equal(state.trashed, 1, '无引用媒体必须移入回收站');
 // 8. 已被删除的照片项再删一次返回 404
 const missing = await call({ albumId: 7, id: 22 });
 assert.equal(missing.status, 404);
+
+// 9. 删除动态同步删除其图集项，避免图集计数虚高
+const removeMemo = await worker.fetch(new Request('https://moments.example/api/memo/remove?id=30', { method: 'POST', headers }), env);
+assert.equal(removeMemo.status, 200, (await removeMemo.clone().json()).message);
+assert.equal(state.memoDeleted, 1);
+assert.equal(state.albumMemoItemsDeleted, 1, '删除动态必须同步清理图集项');
+assert.equal(batches.length, 1, '动态与图集项必须通过同一次 D1 batch 提交');
+assert.equal(batches[0].length, 2);
+
+// batch 失败时 Worker 返回 503，且模拟数据库未执行任何删除。
+state.memo = { id: 31, user_id: 1, imgs: '/upload/media/2026/a.jpg' };
+state.failBatch = true;
+const failedRemove = await worker.fetch(new Request('https://moments.example/api/memo/remove?id=31', { method: 'POST', headers }), env);
+assert.equal(failedRemove.status, 503);
+assert.equal(state.memoDeleted, 1, 'batch 失败不得只删除动态');
+assert.equal(state.albumMemoItemsDeleted, 1, 'batch 失败不得只删除图集项');
 
 console.log('Photo delete API tests: PASS');
