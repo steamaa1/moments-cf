@@ -54,7 +54,7 @@
 
 | 路径 | 权限 | 参数 | 说明 |
 | --- | --- | --- | --- |
-| `/api/memo/list` | 公开(可选登录) | `page`、`size`、`showType`、`userId`、`user`、`tag`、`contentContains`、`start`、`end` | 时间线；未登录只返回已发布的公开动态 |
+| `/api/memo/list` | 公开(可选登录) | `page`、`size`、`showType`、`userId`、`username`（历史别名 `user`，二者等价）、`tag`、`contentContains`、`start`、`end` | 时间线；未登录只返回已发布的公开动态 |
 | `/api/memo/get` | 公开(可选登录) | `id`、`latest` | 单条动态（含评论）；私密/定时未发布仅作者可见，否则 403 |
 | `/api/memo/save` | 登录 | `id`、`content`、`imgs`、`location`、`tags`、`showType`、`createdAt`、`externalUrl`/`externalTitle`/`externalFavicon`、`ext` | 发表或编辑；`ext` 承载扩展内容（见下） |
 | `/api/memo/remove` | 登录 | `id` | 删除（作者或管理员） |
@@ -115,6 +115,8 @@
 | `enableD1Backup`、`backupIntervalDays`、`backupRetentionDays`、`backupTarget` | D1 备份策略 |
 | `enableEmail`、`smtp*`、`enableTelegram`、`telegramBot*` | 通知渠道 |
 
+**SMTP 端口与加密**：`smtpPort` 只接受 `465`/`587`（缺失或非法回退 `465`），`smtpEncryption` 固定由端口推导——`465` → `ssl`（隐式 TLS）、`587` → `tls`（STARTTLS）。保存配置与 `/api/admin/mail/test` 都会按端口规范化，提交 `587`+`ssl` 这类不匹配组合不会被直连握手失败坑到。
+
 ## 文件与媒体
 
 | 路径 | 权限 | 参数 | 说明 |
@@ -122,7 +124,7 @@
 | `/api/file/upload` | 登录 | multipart `files` + `sha256`（每个文件一个哈希）、可选 `thumbnail_<下标>` | 图片/音频/视频，单文件 ≤25MB；按 `owner_id+sha256` 去重 |
 | `/api/file/direct/init` | 登录 | `filename`、`contentType`、`size`、`sha256` | ≥20MB 走预签名直传（R2/S3；WebDAV 不支持），返回 `uploadUrl` |
 | `/api/file/direct/complete` | 登录 | `key`、`thumbnailKey` | 直传完成校验（大小、类型、校验和）后置为 `ready` |
-| `/api/file/exist` | 登录 | `sha256` | 秒传预检，返回 `{exist, path, thumbPath}`；仅接受 64 位 SHA-256
+| `/api/file/exist` | 登录 | `sha256` | 秒传预检，返回 `{exist, path, thumbPath}`；仅接受 64 位 SHA-256 |
 | **`/api/file/attachment`** | 登录 | multipart `files`（可多个） | **附件上传**：类型限文档/压缩包/纯文本配置/电子书白名单（**不含 html/svg/js/xml/css**）；单文件 ≤ `attachmentMaxSize`，单次 ≤ `attachmentMaxCount`；返回 `{files:[{path,name,size,type}]}` |
 | `/api/file/clean` | 登录 | — | 扫描未被引用的媒体（比对 `memos.imgs`、`ext`、头像封面与配置）→ 移入回收站 |
 | `/api/file/trash/list` | 登录 | — | 回收站列表（默认保留 7 天） |

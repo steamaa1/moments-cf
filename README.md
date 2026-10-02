@@ -6,7 +6,7 @@
 
 > 🎮 在线演示：<https://wb.me-i.top>
 
->本项目使用**GPT-5.6-Sol** 和 **DeepSeek-V4-Flash**进行开发
+>本项目使用**AI**进行开发
 
 ## 目录
 

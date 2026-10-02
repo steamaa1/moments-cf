@@ -1,6 +1,6 @@
 # Release checks
 
-Local preflight (read-only; validates generic Wrangler config and the exact `0001`–`0004` migration sequence):
+Local preflight (read-only; validates generic Wrangler config and the exact `0001`–`0017` migration sequence):
 
 ```bash
 node scripts/release/preflight.mjs

@@ -91,4 +91,61 @@ try {
   globalThis.fetch = prevFetch2;
 }
 
+// 10) 端口与加密方式不匹配时按端口规范化：465+tls → 隐式 TLS；587+ssl → STARTTLS
+res = await post('/api/admin/mail/test', { to: 'a@b.com', smtpHost: 'smtp.example.com', smtpPort: '465', smtpEncryption: 'tls', smtpUsername: 'noreply@example.com', smtpPassword: 'secret' }, { connectSockets: connectImpl });
+assert.equal(captured[captured.length - 1].target.port, 465);
+assert.equal(captured[captured.length - 1].extra.secureTransport, 'on', '465 与 tls 不匹配时必须规范化为隐式 TLS');
+
+res = await post('/api/admin/mail/test', { to: 'a@b.com', smtpHost: 'smtp.example.com', smtpPort: '587', smtpEncryption: 'ssl', smtpUsername: 'noreply@example.com', smtpPassword: 'secret' }, { connectSockets: connectImpl });
+assert.equal(captured[captured.length - 1].target.port, 587);
+assert.equal(captured[captured.length - 1].extra.secureTransport, 'starttls', '587 与 ssl 不匹配时必须规范化为 STARTTLS');
+
+// 11) /api/sysConfig/save 落库前同样规范化，避免不匹配组合被持久化
+const persisted = [];
+const saveEnv = {
+  DB: {
+    prepare(sql) {
+      const statement = {
+        bind(...args) { statement.args = args; return statement; },
+        async first() {
+          const text = sql.toLowerCase();
+          if (text.includes('select * from users where id')) return admin;
+          if (text.includes('from users where username')) return null;
+          if (text.includes('from sys_config')) return { content: JSON.stringify({ smtpHost: 'smtp.example.com' }) };
+          return null;
+        },
+        async all() { return { results: [] }; },
+        async run() { return { meta: { changes: 1 } }; },
+      };
+      return statement;
+    },
+    async batch(statements) { for (const item of statements) persisted.push(item.args?.[0]); return []; },
+  },
+  JWT_SECRET,
+};
+const save = body => worker.fetch(new Request('https://moments.example/api/sysConfig/save', {
+  method: 'POST', headers: auth, body: JSON.stringify({ adminUserName: 'admin', ...body }),
+}), saveEnv);
+// batch 内同时包含 sys_config 的 JSON 与 users 的 username 更新，只取 JSON 那条
+const persistedConfig = () => JSON.parse(persisted.filter(item => typeof item === 'string' && item.startsWith('{')).pop());
+
+res = await save({ smtpPort: '587', smtpEncryption: 'ssl' });
+assert.equal(res.status, 200);
+assert.equal(persistedConfig().smtpPort, '587');
+assert.equal(persistedConfig().smtpEncryption, 'tls', '587+ssl 保存时必须规范化为 tls');
+
+res = await save({ smtpPort: '465', smtpEncryption: 'tls' });
+assert.equal(res.status, 200);
+assert.equal(persistedConfig().smtpEncryption, 'ssl', '465+tls 保存时必须规范化为 ssl');
+
+// 12) 端口非法或缺失时回退 465，并按端口推导加密方式
+res = await save({ smtpPort: '25', smtpEncryption: 'tls' });
+assert.equal(res.status, 200);
+assert.equal(persistedConfig().smtpPort, '465');
+assert.equal(persistedConfig().smtpEncryption, 'ssl');
+
+res = await save({ smtpPort: '587' });
+assert.equal(res.status, 200);
+assert.equal(persistedConfig().smtpEncryption, 'tls', '缺省加密方式时必须按 587 推导为 tls');
+
 console.log('Mail notify settings tests: PASS');

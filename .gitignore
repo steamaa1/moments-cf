@@ -26,6 +26,7 @@ findings.md
 progress.md
 AGENTS.md
 .agents/
+.agent-teams/
 
 # 本机专用门禁：依赖 DSH 技能目录里的笔记校验脚本，仓库链路不引用它
 scripts/release/verify-notes.local.mjs
