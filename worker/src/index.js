@@ -359,11 +359,14 @@ async function getProfile(request, env, headers, username = null) {
   let user;
   let includeEmail = false;
   if (username) {
-    user = await db.prepare('SELECT * FROM users WHERE username = ?').bind(decodeURIComponent(username)).first();
+    // 公开资料只暴露已批准账号，避免待审批/已拒绝申请被枚举或索引。
+    let decodedUsername = username;
+    try { decodedUsername = decodeURIComponent(username); } catch { /* 非法 percent 编码按原值查询，不能让接口 503 */ }
+    user = await db.prepare('SELECT * FROM users WHERE username = ? AND registration_state = 1').bind(decodedUsername).first();
   } else {
     const me = await currentUser(request, env);
     if (me) { user = me; includeEmail = true; }
-    else user = await db.prepare('SELECT * FROM users WHERE id = 1').first();
+    else user = await db.prepare('SELECT * FROM users WHERE id = 1 AND registration_state = 1').first();
   }
   const view = publicUser(user, includeEmail);
   if (view && env.DB) {
@@ -375,8 +378,8 @@ async function getProfile(request, env, headers, username = null) {
 async function getProfileById(request, env, headers) {
   const id = intParam(new URL(request.url).searchParams.get('id'));
   if (id < 1) return json(fail('用户 ID 无效'), 400, headers);
-  const user = await requireBinding(env, 'DB').prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
-  const view = publicUser(user, false);
+  const user = await requireBinding(env, 'DB').prepare('SELECT * FROM users WHERE id = ? AND registration_state = 1').bind(id).first();
+  const view = Number(user?.registration_state ?? 1) === 1 ? publicUser(user, false) : null;
   if (!view) return json(fail('用户不存在'), 404, headers);
   view.status = await userStatusView(env, user.id);
   return json(ok(view), 200, headers);
@@ -431,6 +434,12 @@ async function getConfig(request, env, headers, full = false) {
   }
   return json(ok(full ? config : publicConfig(config)), 200, headers);
 }
+// SMTP 端口与加密方式一一对应：465 = 隐式 TLS（ssl），587 = STARTTLS（tls）。
+// 后台表单的端口与加密方式是分别可改的，可能提交不匹配组合（如 587+ssl）；
+// 这里统一按端口规范化，否则会按 ssl 直接对 587 端口握手，连接必然失败。
+function smtpEncryptionForPort(port) {
+  return String(port) === '587' ? 'tls' : 'ssl';
+}
 async function saveConfig(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
   if (access.response) return access.response;
@@ -452,7 +461,7 @@ async function saveConfig(request, env, headers) {
   config.enableEmail = Boolean(body.enableEmail);
   config.smtpHost = String(body.smtpHost || '').trim().slice(0, 253);
   config.smtpPort = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : '465';
-  config.smtpEncryption = ['ssl', 'tls'].includes(body.smtpEncryption) ? String(body.smtpEncryption) : (String(config.smtpPort) === '587' ? 'tls' : 'ssl');
+  config.smtpEncryption = smtpEncryptionForPort(config.smtpPort);
   config.smtpUsername = String(body.smtpUsername || '').trim().slice(0, 254);
   config.smtpFromName = String(body.smtpFromName || '').trim().slice(0, 80);
   config.googleSecretKey = String(body.googleSecretKey || previousConfig.googleSecretKey || '').trim().slice(0, 300);
@@ -719,7 +728,10 @@ async function directUploadComplete(request, env, headers) {
 }
 function collectUploadKeys(value, target) {
   const pattern = /\/upload\/([^\s"'<>),]+)/g;
-  for (const match of String(value || '').matchAll(pattern)) target.add(decodeURIComponent(match[1]));
+  for (const match of String(value || '').matchAll(pattern)) {
+    // 历史正文可能含有坏百分号编码；跳过该 token，不能让整次清理失败。
+    try { target.add(decodeURIComponent(match[1])); } catch { target.add(match[1]); }
+  }
 }
 function mediaStorageBackend(media) {
   return ['r2', 's3', 'webdav'].includes(media?.storage_backend) ? media.storage_backend : 'r2';
@@ -753,18 +765,22 @@ async function cleanFiles(request, env, headers) {
   const cleanStorageConfig = await loadStorageConfig(env);
   if (cleanStorageConfig.storageType === 'r2' && !env.MEDIA) return json(fail('R2 存储未配置'), 503, headers);
   const referenced = new Set();
-  const [memos, users, configRow, mediaRows] = await Promise.all([
+  const [memos, users, configRow, albums, mediaRows] = await Promise.all([
     env.DB.prepare('SELECT imgs, ext FROM memos WHERE user_id=?').bind(access.user.id).all(),
     env.DB.prepare('SELECT avatar_url, cover_url FROM users WHERE id=?').bind(access.user.id).all(),
     Number(access.user.id) === 1 ? env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first() : Promise.resolve(null),
-    env.DB.prepare('SELECT id, r2_key FROM media WHERE owner_id=? AND trashed_at IS NULL').bind(access.user.id).all(),
+    // 图集是全站共享索引，媒体归属另由 media.owner_id 限制，因此必须纳入所有图集项。
+    env.DB.prepare('SELECT image_url FROM photo_album_items').all(),
+    env.DB.prepare('SELECT id, r2_key, thumbnail_key FROM media WHERE owner_id=? AND trashed_at IS NULL').bind(access.user.id).all(),
   ]);
   for (const row of memos.results || []) { collectUploadKeys(row.imgs, referenced); collectUploadKeys(row.ext, referenced); }
   for (const row of users.results || []) { collectUploadKeys(row.avatar_url, referenced); collectUploadKeys(row.cover_url, referenced); }
+  for (const row of albums.results || []) collectUploadKeys(row.image_url, referenced);
   collectUploadKeys(configRow?.content, referenced);
   let num = 0;
   for (const media of mediaRows.results || []) {
-    if (referenced.has(media.r2_key)) continue;
+    // 被内容引用的原图或缩略图都保留；图集项通常只记录原图地址，但历史数据可能直接引用 thumb。
+    if (referenced.has(media.r2_key) || (media.thumbnail_key && referenced.has(media.thumbnail_key))) continue;
     await env.DB.prepare('UPDATE media SET trashed_at=CURRENT_TIMESTAMP WHERE id=? AND owner_id=? AND trashed_at IS NULL').bind(media.id, access.user.id).run();
     num += 1;
   }
@@ -833,7 +849,7 @@ function memoView(row) {
   return {
     id: Number(row.id), content: row.content, imgs, favCount: Number(row.fav_count),
     commentCount: Number(row.comment_count), userId: Number(row.user_id), createdAt: row.created_at,
-    updatedAt: row.updated_at, location: row.location, externalUrl: row.external_url,
+    updatedAt: row.updated_at, registrationState: Number(row.registration_state ?? 1), location: row.location, externalUrl: row.external_url,
     externalTitle: row.external_title, externalFavicon: row.external_favicon, pinned: Boolean(row.pinned),
     ext: row.ext, showType: Number(row.show_type), tags: row.tags, imgConfigs: imgConfigs(imgs),
     comments: [], user: {
@@ -842,28 +858,39 @@ function memoView(row) {
     },
   };
 }
-const MEMO_SELECT = `SELECT m.*, u.username, u.nickname, u.avatar_url, u.slogan, u.cover_url
+const MEMO_SELECT = `SELECT m.*, u.username, u.nickname, u.avatar_url, u.slogan, u.cover_url, u.registration_state
   FROM memos m JOIN users u ON u.id=m.user_id`;
 function requestIdentity(request) {
   const match = request.headers.get('cookie')?.match(/(?:^|;\s*)moments_like_id=([^;]+)/);
   return match?.[1] || null;
 }
-async function likeIdentity(request, env) {
-  let identity = requestIdentity(request);
+async function likeIdentity(request, env, user = null) {
   const headers = new Headers();
+  const secret = env.LIKE_SALT || env.JWT_SECRET;
+  if (!secret) throw new Error('服务端未配置 JWT_SECRET');
+  // 登录用户使用不可伪造的 user_id 作为去重维度；不能再沿用网络指纹，
+  // 否则同一出口 IP 下的多个账号会互相阻塞点赞。
+  if (user) {
+    const userId = Number(user.id);
+    return {
+      hash: base64url(await hmac(secret, `like-user:${userId}`)),
+      networkHash: '',
+      userId,
+      headers,
+    };
+  }
+  let identity = requestIdentity(request);
   if (!identity) {
     identity = randomToken(24);
     headers.append('set-cookie', `moments_like_id=${identity}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`);
   }
-  const secret = env.LIKE_SALT || env.JWT_SECRET;
-  if (!secret) throw new Error('服务端未配置 JWT_SECRET');
   const clientIp = String(request.headers.get('cf-connecting-ip') || '').trim();
   const networkHash = clientIp ? base64url(await hmac(secret, `like-network:${clientIp}`)) : '';
-  return { hash: base64url(await hmac(secret, identity)), networkHash, headers };
+  return { hash: base64url(await hmac(secret, identity)), networkHash, userId: null, headers };
 }
 async function canReadMemo(memo, user) {
   if (!memo) return false;
-  if (Number(memo.show_type) === 1 && Date.parse(memo.created_at) <= Date.now()) return true;
+  if (Number(memo.registration_state ?? 1) === 1 && Number(memo.show_type) === 1 && Date.parse(memo.created_at) <= Date.now()) return true;
   return Boolean(user && Number(user.id) === Number(memo.user_id));
 }
 async function listMemos(request, env, headers) {
@@ -875,12 +902,14 @@ async function listMemos(request, env, headers) {
   const clauses = [];
   const values = [];
   if (user) {
-    clauses.push('(m.user_id = ? OR (m.show_type = 1 AND m.created_at <= CURRENT_TIMESTAMP))');
+    clauses.push('(m.user_id = ? OR (u.registration_state = 1 AND m.show_type = 1 AND m.created_at <= CURRENT_TIMESTAMP))');
     values.push(user.id);
   } else {
-    clauses.push('m.show_type = 1 AND m.created_at <= CURRENT_TIMESTAMP');
+    clauses.push('u.registration_state = 1 AND m.show_type = 1 AND m.created_at <= CURRENT_TIMESTAMP');
   }
-  if (body.username) { clauses.push('u.username = ?'); values.push(String(body.username)); }
+  // `username` 为主参数；`user` 是历史文档与旧客户端使用的兼容别名，语义完全等价
+  const usernameFilter = body.username || body.user;
+  if (usernameFilter) { clauses.push('u.username = ?'); values.push(String(usernameFilter)); }
   if (body.userId != null) { clauses.push('m.user_id = ?'); values.push(intParam(body.userId)); }
   if (body.tag) {
     for (const tag of String(body.tag).split(',').map(v => v.trim()).filter(Boolean)) { clauses.push('m.tags LIKE ?'); values.push(`%${tag},%`); }
@@ -948,7 +977,7 @@ function photoView(row, url, thumbUrl, source = 'memo', sourceIndex = 0) {
   };
 }
 function photoMemoVisible(row, user) {
-  return Number(row.show_type) === 1 && Date.parse(row.created_at) <= Date.now() || Boolean(user && Number(user.id) === Number(row.user_id));
+  return (Number(row.registration_state ?? 1) === 1 && Number(row.show_type) === 1 && Date.parse(row.created_at) <= Date.now()) || Boolean(user && Number(user.id) === Number(row.user_id));
 }
 async function photoMediaMap(env, keys) {
   const values = [...new Set(keys.filter(Boolean))];
@@ -961,7 +990,7 @@ async function photoMediaMap(env, keys) {
 }
 async function publicPhotoMemos(request, env) {
   const user = await currentUser(request, env);
-  const result = await env.DB.prepare(`${MEMO_SELECT} WHERE m.imgs<>'' AND (m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP OR m.user_id=?) ORDER BY m.created_at DESC, m.id DESC LIMIT 500`).bind(user?.id || 0).all();
+  const result = await env.DB.prepare(`${MEMO_SELECT} WHERE m.imgs<>'' AND (m.user_id=? OR (u.registration_state=1 AND m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP)) ORDER BY m.created_at DESC, m.id DESC LIMIT 500`).bind(user?.id || 0).all();
   const rows = (result.results || []).filter(row => photoMemoVisible(row, user));
   const keys = rows.flatMap(row => String(row.imgs || '').split(',').map(value => value.startsWith('/upload/') ? value.slice('/upload/'.length) : '').filter(Boolean));
   const thumbs = await photoMediaMap(env, keys);
@@ -1194,9 +1223,11 @@ async function previewUnfurl(request, env, headers) {
 }
 async function verifyMemoMedia(imgs, user, env) {
   for (const url of imgs) {
-    if (!url.startsWith('/upload/media/')) continue;
+    if (!url.startsWith('/upload/')) continue;
+    if (url.includes('..')) throw new Error('图片不属于当前用户');
     const key = url.slice('/upload/'.length);
-    const media = await env.DB.prepare('SELECT owner_id FROM media WHERE r2_key = ? AND trashed_at IS NULL').bind(key).first();
+    // 原图和缩略图都必须命中同一 media 记录，不能借用其他用户的缩略图地址。
+    const media = await env.DB.prepare('SELECT owner_id FROM media WHERE (r2_key = ? OR thumbnail_key = ?) AND trashed_at IS NULL').bind(key, key).first();
     if (!media || Number(media.owner_id) !== Number(user.id)) throw new Error('图片不属于当前用户');
   }
 }
@@ -1272,7 +1303,11 @@ async function removeMemo(request, env, headers) {
   const memo = await env.DB.prepare('SELECT * FROM memos WHERE id=?').bind(id).first();
   if (!memo) return json(fail('动态不存在'), 404, headers);
   if (Number(memo.user_id) !== Number(access.user.id) && Number(access.user.id) !== 1) return json(fail('没有权限'), 403, headers);
-  await env.DB.prepare('DELETE FROM memos WHERE id=?').bind(id).run();
+  // 图集项与动态必须在同一 D1 batch 中删除，避免单条成功后另一条失败留下幽灵记录。
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM photo_album_items WHERE source_type='memo' AND source_ref=?").bind(String(id)),
+    env.DB.prepare('DELETE FROM memos WHERE id=?').bind(id),
+  ]);
   return json(ok({}), 200, headers);
 }
 async function setPinned(request, env, headers) {
@@ -1295,8 +1330,9 @@ async function likeMemo(request, env, headers) {
   if (!human.ok) return json(fail(human.message), 400, headers);
   const memo = await env.DB.prepare('SELECT id, show_type, created_at FROM memos WHERE id=?').bind(id).first();
   if (!memo || Number(memo.show_type) !== 1 || Date.parse(memo.created_at) > Date.now()) return json(fail('动态不存在或不可点赞'), 404, headers);
-  const identity = await likeIdentity(request, env);
-  const result = await env.DB.prepare('INSERT OR IGNORE INTO memo_likes (memo_id, identity_hash, network_hash) VALUES (?, ?, ?)').bind(id, identity.hash, identity.networkHash).run();
+  const user = await currentUser(request, env);
+  const identity = await likeIdentity(request, env, user);
+  const result = await env.DB.prepare('INSERT OR IGNORE INTO memo_likes (memo_id, identity_hash, network_hash, user_id) VALUES (?, ?, ?, ?)').bind(id, identity.hash, identity.networkHash, identity.userId).run();
   if (Number(result.meta?.changes || 0) === 0) return json(fail('您已经点赞过了'), 409, { ...headers, ...Object.fromEntries(identity.headers) });
   // D1 trigger trg_memo_likes_insert updates fav_count in the same transaction.
   return json(ok({}), 200, { ...headers, ...Object.fromEntries(identity.headers) });
@@ -1397,7 +1433,7 @@ async function pageSeo(env, config, path, origin = '') {
   const memoMatch = cleanPath.match(/^\/memo\/(\d+)$/);
   if (memoMatch) {
     const view = memoView(await env.DB.prepare(`${MEMO_SELECT} WHERE m.id = ?`).bind(Number(memoMatch[1])).first());
-    if (!view || Number(view.showType) !== 1 || Date.parse(view.createdAt) > Date.now()) return { noindex: true };
+    if (!view || Number(view.registrationState ?? 1) !== 1 || Number(view.showType) !== 1 || Date.parse(view.createdAt) > Date.now()) return { noindex: true };
     const summary = rssText(view.content).split('\n')[0].slice(0, 120) || `${view.user?.nickname || '有人'} 发布了一条动态`;
     const fallbackTitle = view.user?.nickname ? `${view.user.nickname} 的动态` : '动态';
     const pageTitle = memoSeoTitle(view.content, fallbackTitle);
@@ -1423,7 +1459,7 @@ async function pageSeo(env, config, path, origin = '') {
   }
   const userMatch = cleanPath.match(/^\/user\/(\d+)$/);
   if (userMatch) {
-    const user = await env.DB.prepare('SELECT id, username, nickname, avatar_url, slogan FROM users WHERE id = ?').bind(Number(userMatch[1])).first();
+    const user = await env.DB.prepare('SELECT id, username, nickname, avatar_url, slogan FROM users WHERE id = ? AND registration_state = 1').bind(Number(userMatch[1])).first();
     if (!user) return { noindex: true };
     const name = String(user.nickname || user.username || '');
     const avatar = String(user.avatar_url || '');
@@ -1468,9 +1504,9 @@ function memoSeoTitle(content, fallback) {
 async function sitemap(request, env) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
   const [memos, users, tags, configRow] = await Promise.all([
-    env.DB.prepare('SELECT id, created_at, imgs FROM memos WHERE show_type=1 AND created_at<=CURRENT_TIMESTAMP LIMIT 50000').all(),
-    env.DB.prepare('SELECT id, updated_at FROM users LIMIT 5000').all(),
-    env.DB.prepare('SELECT u.username, m.tags FROM memos m JOIN users u ON u.id=m.user_id WHERE m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP AND m.tags<>\'\' LIMIT 50000').all(),
+    env.DB.prepare('SELECT m.id, m.created_at, m.imgs FROM memos m JOIN users u ON u.id=m.user_id WHERE u.registration_state=1 AND m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP LIMIT 50000').all(),
+    env.DB.prepare('SELECT id, updated_at FROM users WHERE registration_state = 1 LIMIT 5000').all(),
+    env.DB.prepare('SELECT u.username, m.tags FROM memos m JOIN users u ON u.id=m.user_id WHERE u.registration_state=1 AND m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP AND m.tags<>\'\' LIMIT 50000').all(),
     env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(),
   ]);
   const config = parseConfig(configRow?.content);
@@ -1534,7 +1570,7 @@ async function llmsIndex(request, env, full = false) {
   if (config?.enableSeo === false) return new Response('Not Found', { status: 404 });
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || url.origin;
   const limit = full ? 100 : 50;
-  const rows = await env.DB.prepare(`${MEMO_SELECT} WHERE m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP ORDER BY m.created_at DESC LIMIT ?`).bind(limit).all();
+  const rows = await env.DB.prepare(`${MEMO_SELECT} WHERE u.registration_state=1 AND m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP ORDER BY m.created_at DESC LIMIT ?`).bind(limit).all();
   const title = String(config?.title || DEFAULT_SEO.title);
   const description = String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${title}` : DEFAULT_SEO.description));
   const lines = [`# ${title}`, '', `> ${description}`, '', '## 站点页面', '', `- [首页](${host}/)：${description}`, `- [照片墙](${host}/photos)：照片墙与图集`, `- [友链](${host}/friend)：朋友们`, ...(config.enableAbout ? [`- [关于](${host}/about)：关于本站`] : []), `- [RSS 订阅](${host}/rss)：最新动态订阅`, ''];
@@ -1560,7 +1596,7 @@ async function rss(request, env) {
   const config = parseConfig(configRow?.content);
   if (config.rss) return Response.redirect(config.rss, 302);
   const admin = await env.DB.prepare('SELECT * FROM users WHERE id=1').first();
-  const rows = await env.DB.prepare(`${MEMO_SELECT} WHERE m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP ORDER BY m.created_at DESC LIMIT 15`).all();
+  const rows = await env.DB.prepare(`${MEMO_SELECT} WHERE u.registration_state=1 AND m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP ORDER BY m.created_at DESC LIMIT 15`).all();
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || url.origin;
   const items = (rows.results || []).map(row => {
     const memo = memoView(row);
@@ -2429,7 +2465,7 @@ async function adminMailTest(request, env, headers) {
   const username = String(body.smtpUsername || saved.smtpUsername || '').trim().slice(0, 254);
   if (!username) return json(fail('请先填写发件邮箱（用户名）'), 400, headers);
   const port = ['465', '587'].includes(String(body.smtpPort)) ? String(body.smtpPort) : (['465', '587'].includes(String(saved.smtpPort)) ? String(saved.smtpPort) : '465');
-  const encryption = body.smtpEncryption === 'tls' ? 'tls' : (body.smtpEncryption === 'ssl' ? 'ssl' : (port === '587' ? 'tls' : 'ssl'));
+  const encryption = smtpEncryptionForPort(port);
   let password = String(body.smtpPassword || '').trim();
   if (!password && saved.smtpPasswordEncrypted) { try { password = await decryptConfigSecret(saved.smtpPasswordEncrypted, env.JWT_SECRET); } catch (error) { console.error('Mail credential decrypt failed', error); } }
   if (!password) password = String(env.SMTP_PASSWORD || '').trim();

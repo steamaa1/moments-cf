@@ -22,6 +22,7 @@ const env = {
       const statement = {
         bind(...args) { return statement; },
         async all() {
+          if (sql.includes('SELECT m.id, m.created_at, m.imgs')) return { results: memosRows };
           if (sql.includes('JOIN users u')) return { results: tagRows };
           if (sql.includes('FROM memos')) return { results: memosRows };
           if (sql.includes('FROM users')) return { results: usersRows };
@@ -43,8 +44,9 @@ assert.equal(response.status, 200);
 assert.match(response.headers.get('content-type') || '', /application\/xml/);
 assert.match(response.headers.get('cache-control') || '', /max-age=3600/, 'sitemap 允许缓存');
 assert.match(xml, /https:\/\/moments\.example\/memo\/1/);
-const memoQuery = queries.find(sql => sql.includes('FROM memos') && !sql.includes('JOIN users u')) || '';
-assert.match(memoQuery, /show_type=1 AND created_at<=CURRENT_TIMESTAMP/, 'Sitemap 不得收录未来定时发布动态');
+const memoQuery = queries.find(sql => sql.includes('SELECT m.id, m.created_at, m.imgs')) || '';
+assert.match(memoQuery, /m\.show_type=1 AND m\.created_at<=CURRENT_TIMESTAMP/, 'Sitemap 不得收录未来定时发布动态');
+assert.match(memoQuery, /u\.registration_state=1/, 'Sitemap 不得收录未批准用户动态');
 // Google 图片站点地图扩展：配图绝对地址
 assert.match(xml, /xmlns:image="http:\/\/www\.google\.com\/schemas\/sitemap-image\/1\.1"/);
 assert.match(xml, /<image:image><image:loc>https:\/\/moments\.example\/upload\/a\.jpg<\/image:loc><\/image:image>/);
