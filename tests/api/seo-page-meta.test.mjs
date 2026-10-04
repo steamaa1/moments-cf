@@ -43,22 +43,24 @@ const makeDb = (memo, user) => ({
 });
 const assets = { fetch: async () => new Response(indexHtml, { headers: { 'content-type': 'text/html' } }) };
 
-// 1) 公开动态页：页面级 meta + JSON-LD
+// 1) 公开动态页：标题固定站点标题，正文只进 description/JSON-LD description
 {
   const response = await worker.fetch(new Request('https://seo.example/memo/7'), { DB: makeDb(publicMemo, userRow), ASSETS: assets });
   const html = await response.text();
   assert.equal(response.status, 200);
-  assert.match(html, /<title>公开动态的正文内容<\/title>/);
+  assert.match(html, /<title>站点<\/title>/, '动态页标题必须固定为站点标题');
+  assert.match(html, /<meta property="og:title" content="站点">/, 'og:title 必须与站点标题一致');
   assert.match(html, /<meta property="og:site_name" content="站点">/);
   assert.match(html, /<meta name="description" content="公开动态的正文内容">/);
   assert.match(html, /<meta property="og:type" content="article">/);
   assert.match(html, /<meta property="og:image" content="https:\/\/seo\.example\/upload\/pic\.jpg">/);
   assert.match(html, /<meta name="twitter:card" content="summary_large_image">/);
-  assert.match(html, /<meta name="twitter:title" content="公开动态的正文内容">/);
+  assert.match(html, /<meta name="twitter:title" content="站点">/);
   assert.match(html, /<link rel="canonical" href="https:\/\/seo\.example\/memo\/7">/);
   const ld = html.match(/<script type="application\/ld\+json">([^<]*)<\/script>/)?.[1] || '';
   assert.match(ld, /SocialMediaPosting/);
-  assert.match(ld, /"headline":"公开动态的正文内容"/);
+  assert.match(ld, /"headline":"站点"/, 'JSON-LD headline 必须固定为站点标题');
+  assert.match(ld, /"description":"公开动态的正文内容"/);
   assert.match(ld, /"datePublished":"2026-01-01T00:00:00Z"/);
   assert.match(ld, /"dateModified":"2026-01-02T00:00:00Z"/);
   assert.match(ld, /"author":\{"@type":"Person","name":"小明"\}/);
@@ -66,21 +68,23 @@ const assets = { fetch: async () => new Response(indexHtml, { headers: { 'conten
   assert.doesNotMatch(html, /noindex/, '公开动态不注入 noindex');
 }
 
-// 2) Markdown 正文标题会去除标记并截断，description 保留更长摘要
+// 2) 长正文与纯图片动态：标题恒为站点标题，description 仍保留正文摘要
 {
-  const longMemo = { ...publicMemo, id: 11, content: '# 这是一个超过四十个字符的动态标题，用于验证 SEO 标题截断规则以及摘要保留内容。' };
+  const longMemo = { ...publicMemo, id: 11, content: '# 这是一个超过四十个字符的动态标题，用于验证 SEO 标题不再截断正文，但摘要仍保留内容。' };
   const response = await worker.fetch(new Request('https://seo.example/memo/11'), { DB: makeDb(longMemo, userRow), ASSETS: assets });
   const html = await response.text();
-  assert.match(html, /<title>这是一个超过四十个字符的动态标题，用于验证 SEO 标题截断规则以及摘要保留内容…<\/title>/);
-  assert.match(html, /<meta name="description" content="这是一个超过四十个字符的动态标题，用于验证 SEO 标题截断规则以及摘要保留内容。">/);
+  assert.match(html, /<title>站点<\/title>/, '长正文不得改变页面标题');
+  assert.match(html, /<meta name="description" content="这是一个超过四十个字符的动态标题，用于验证 SEO 标题不再截断正文，但摘要仍保留内容。">/);
+  assert.doesNotMatch(html, /…<\/title>/, '标题不再做正文截断');
 }
 
-// 3) 纯图片动态没有正文时，标题回退到作者标题
+// 3) 纯图片动态没有正文时，标题同样固定为站点标题，description 回退作者文案
 {
   const imageOnlyMemo = { ...publicMemo, id: 10, content: '' };
   const response = await worker.fetch(new Request('https://seo.example/memo/10'), { DB: makeDb(imageOnlyMemo, userRow), ASSETS: assets });
   const html = await response.text();
-  assert.match(html, /<title>小明 的动态<\/title>/);
+  assert.match(html, /<title>站点<\/title>/);
+  assert.match(html, /<meta name="description" content="小明 发布了一条动态">/);
 }
 
 // 4) 私密动态（show_type=0）→ noindex

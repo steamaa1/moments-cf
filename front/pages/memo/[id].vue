@@ -48,7 +48,8 @@ watch(id, async (value, previous) => {
   if (value > 0 && value !== previous) await reload()
 })
 
-// SEO：动态标题/摘要/首图；canonical/og:url 由 layouts/default.vue 统一输出
+// SEO：正文只用于 description/og:description 与首图；标题（标签页 title、og:title、twitter:title）
+// 固定为站点标题，canonical/og:url/标题都仍由 layouts/default.vue 统一输出，不随正文变化。
 watch(memo, (value) => {
   if (!value) return
   const seoHost = ((sysConfig.value?.siteUrl || (typeof window !== 'undefined' ? window.location.origin : '')) || '').replace(/\/+$/, '')
@@ -58,16 +59,11 @@ watch(memo, (value) => {
     .replace(/[>#*_`~]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  const fallbackTitle = value.user?.nickname ? `${value.user.nickname} 的动态` : '动态'
-  const pageTitle = text ? (text.length > 40 ? `${text.slice(0, 40)}…` : text) : fallbackTitle
   const firstImage = String(value.imgs || '').split(',')[0] || ''
   const ogImage = firstImage ? (firstImage.startsWith('http') ? firstImage : seoHost + firstImage) : ''
   useHead({
-    title: pageTitle,
     meta: [
       { name: 'description', content: text.slice(0, 120) || `${value.user?.nickname || '有人'} 发布了一条动态` },
-      { property: 'og:title', content: pageTitle },
-      { name: 'twitter:title', content: pageTitle },
       { property: 'og:description', content: text },
       { property: 'og:type', content: 'article' },
       ...(ogImage ? [{ property: 'og:image', content: ogImage }] : []),
