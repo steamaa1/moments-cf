@@ -61,16 +61,12 @@ import type { UserStatusVO } from '~/types'
 import { useGlobalState } from '~/store'
 import { toast } from 'vue-sonner'
 import Emoji from '~/components/Emoji.vue'
+// 状态图案数据统一在 utils/statusPatterns.js，与自定义页面编辑器的「图案」选择器共用同一份
+import { STATUS_PATTERN_GROUPS as builtins } from '~/utils/statusPatterns'
 
 const props = withDefaults(defineProps<{ status?: UserStatusVO | null; userId: number; editable?: boolean }>(), { status: null, editable: false })
 const emit = defineEmits<{ refresh: [] }>()
 const global = useGlobalState()
-const builtins = [
-  { group: '心情想法', items: [{ icon: '😄', content: '美滋滋' }, { icon: '😞', content: '郁闷' }, { icon: '😴', content: '数羊' }, { icon: '😶', content: '发呆' }, { icon: '🤔', content: '胡思乱想' }, { icon: '🦲', content: '头秃' }, { icon: '😪', content: '疲惫' }, { icon: '💔', content: '裂开' }, { icon: '🌤️', content: '等天晴' }, { icon: '⚡', content: '冲' }, { icon: '🧊', content: '融化' }] },
-  { group: '工作学习', items: [{ icon: '💼', content: '忙' }, { icon: '🐟', content: '摸鱼' }, { icon: '🧱', content: '搬砖' }, { icon: '✈️', content: '出差' }, { icon: '📚', content: '沉迷学习' }, { icon: '🏃', content: '飞奔回家' }, { icon: '💻', content: '写代码' }] },
-  { group: '活动', items: [{ icon: '📝', content: '打卡' }, { icon: '🍽️', content: '聚餐' }, { icon: '☕', content: '喝咖啡' }, { icon: '🍻', content: '喝酒' }, { icon: '🏋️', content: '运动' }, { icon: '🛍️', content: '买买买' }, { icon: '🧋', content: '喝奶茶' }, { icon: '🍚', content: '干饭' }, { icon: '👶', content: '带娃' }, { icon: '🦸', content: '拯救世界' }, { icon: '🌊', content: '浪' }] },
-  { group: '休息', items: [{ icon: '🎧', content: '听歌' }, { icon: '📺', content: '追剧' }, { icon: '🍉', content: '吃瓜' }, { icon: '🎮', content: '玩游戏' }, { icon: '📱', content: '看直播' }, { icon: '😴', content: '睡觉' }, { icon: '🧘', content: '闭关' }, { icon: '🏠', content: '宅' }] },
-]
 const durations = [{ value: 1, label: '1 小时' }, { value: 4, label: '4 小时' }, { value: 8, label: '8 小时' }, { value: 12, label: '12 小时' }, { value: 24, label: '24 小时（默认）' }, { value: 72, label: '3 天' }, { value: 168, label: '7 天' }]
 // 本地状态：设置后立即更新，不依赖父级重新传入
 const localStatus = ref<UserStatusVO | null>(props.status)

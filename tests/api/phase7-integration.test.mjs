@@ -150,9 +150,13 @@ assert.match(source, /\/api\/user\/status\/clear/);
 assert.match(source, /\/api\/user\/status\/get/);
 assert.match(source, /BUILTIN_STATUSES/);
 assert.match(source, /attachStatuses/);
+// 内置状态图案 2026-10-06 起抽到 front/utils/statusPatterns.js 单一数据源（StatusIcon 与
+// 自定义页面编辑器的「图案」选择器共用），因此图案文案断言指向共享模块，StatusIcon 改为断言它复用该模块
+const statusPatterns = await readFile(new URL('../../front/utils/statusPatterns.js', import.meta.url), 'utf8');
+assert.match(statusPatterns, /美滋滋/);
+assert.match(statusPatterns, /摸鱼/);
 const statusIcon = await readFile(new URL('../../front/components/StatusIcon.vue', import.meta.url), 'utf8');
-assert.match(statusIcon, /美滋滋/);
-assert.match(statusIcon, /摸鱼/);
+assert.match(statusIcon, /~\/utils\/statusPatterns/);
 assert.match(statusIcon, /持续时间/);
 assert.match(statusIcon, /\/user\/status\/set/);
 for (const route of ['/api/file/direct/init', '/api/file/direct/complete', '/api/admin/backup/create', '/api/admin/backup/list', '/api/admin/backup/download', '/api/admin/backup/restore']) assert.ok(source.includes(route));

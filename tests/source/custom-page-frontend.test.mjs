@@ -74,4 +74,22 @@ for (const [index, source] of [renderer, ...uiComponents].entries()) {
   assert.equal(source.includes(':global(.dark'), false, `page-ui 第 ${index + 1} 个组件源码不得使用 :global(.dark) 写法`);
 }
 
+// 7) 状态图案单一数据源：StatusIcon 与页面编辑器的「图案」选择器共用 utils/statusPatterns.js，
+//    且该数据必须与 worker/src/index.js 的 BUILTIN_STATUSES 完全一致（两边各一份，靠本断言防漂移）
+const [statusPatterns, statusIcon] = await Promise.all([
+  read('front/utils/statusPatterns.js'),
+  read('front/components/StatusIcon.vue'),
+]);
+assert.match(statusIcon, /from '~\/utils\/statusPatterns'/, 'StatusIcon.vue 必须复用共享图案模块');
+assert.doesNotMatch(statusIcon, /const builtins = \[/, 'StatusIcon.vue 不得再内联图案数组（两份数据必然漂移）');
+const evalLiteral = (source, name) => {
+  const literal = source.match(new RegExp(`${name} = (\\[[\\s\\S]*?\\n\\])`))?.[1];
+  assert.ok(literal, `必须能从源码中提取 ${name} 数组字面量`);
+  return new Function(`return ${literal}`)();
+};
+const frontPatterns = evalLiteral(statusPatterns, 'STATUS_PATTERN_GROUPS');
+const workerPatterns = evalLiteral(worker, 'BUILTIN_STATUSES');
+assert.deepEqual(frontPatterns, workerPatterns, '前端图案集必须与 worker BUILTIN_STATUSES 逐项一致（含顺序）');
+assert.ok(frontPatterns.length >= 4 && frontPatterns.every(group => group.items.length > 0), '图案集必须至少四组且每组非空');
+
 console.log('custom-page-frontend: PASS');
