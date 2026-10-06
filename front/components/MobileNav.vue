@@ -108,6 +108,19 @@
         </span>
         <span class="text-sm mt-1">友链</span>
       </div>
+      <!-- 自定义页面导航：逐项网格入口，当前正在浏览的页面隐藏自身 -->
+      <div
+        v-for="item in visiblePageNav"
+        :key="item.slug"
+        class="flex flex-col items-center"
+        :title="item.title || item.slug"
+        @click="navigate(`/${item.slug}`)"
+      >
+        <span class="flex items-center bg-gray-200/75 dark:bg-gray-800/75 p-3 rounded-full">
+          <UIcon name="i-carbon-document" class="w-6 h-6 cursor-pointer" />
+        </span>
+        <span class="max-w-[4.5rem] truncate text-sm mt-1">{{ item.title || item.slug }}</span>
+      </div>
       <div
         v-if="$route.path !== '/sys/settings' && authUser.id === 1"
         class="flex flex-col items-center"
@@ -161,6 +174,11 @@ const global = useGlobalState();
 const authUser = computed(() => global?.value?.userinfo ?? {});
 const mode = useColorMode();
 const open = useState<boolean>("sidebarOpen", () => false);
+const route = useRoute();
+
+// 自定义页面导航（layouts/default.vue 拉取 /page/nav 写入）；当前路由等于该项时隐藏
+const pageNav = useState<Array<{ slug: string, title: string }>>("pageNav", () => []);
+const visiblePageNav = computed(() => pageNav.value.filter((item) => item.slug && route.path !== `/${item.slug}`));
 
 const toggleMode = () => {
   if (mode.preference === "system") {

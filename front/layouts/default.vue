@@ -71,12 +71,17 @@ const authUser = computed(() => global?.value?.userinfo ?? {});
 const open = useState<boolean>("sidebarOpen", () => false);
 const currentUser = useState<UserVO>("userinfo");
 const sysConfig = useState<SysConfigVO>("sysConfig", () => ({} as SysConfigVO));
-const [currentProfile, loadedSysConfig] = await Promise.all([
+// 自定义页面导航：启用且 show_in_nav 的页面列表，Header 收进溢出菜单、MobileNav 平铺网格
+const pageNav = useState<Array<{ slug: string, title: string }>>("pageNav", () => []);
+const [currentProfile, loadedSysConfig, loadedPageNav] = await Promise.all([
   useMyFetch<UserVO>("/user/profile"),
   useMyFetch<SysConfigVO>("/sysConfig/get"),
+  // 失败静默为空数组：导航是增强功能，不应阻塞首屏数据
+  useMyFetch<{ list: Array<{ slug: string, title: string }> }>("/page/nav").catch(() => ({ list: [] })),
 ]);
 if (currentProfile) currentUser.value = currentProfile;
 if (loadedSysConfig) sysConfig.value = { ...sysConfig.value, ...loadedSysConfig };
+if (loadedPageNav?.list) pageNav.value = loadedPageNav.list;
 const { y } = useWindowScroll();
 const route = useRoute();
 const seoTitle = computed(() => sysConfig.value.title || site.title);
