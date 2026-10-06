@@ -28,6 +28,7 @@
 | 文件与媒体 | 10 | 登录 |
 | 照片墙与图集 | 3 | 公开 / 管理员 |
 | 管理（照片、备份、迁移、注册审批、邮件） | 22 | 管理员 |
+| 自定义页面 | 6 | 公开（读）/ 管理员 |
 
 ## 系统与健康
 
@@ -116,6 +117,39 @@
 | `enableEmail`、`smtp*`、`enableTelegram`、`telegramBot*` | 通知渠道 |
 
 **SMTP 端口与加密**：`smtpPort` 只接受 `465`/`587`（缺失或非法回退 `465`），`smtpEncryption` 固定由端口推导——`465` → `ssl`（隐式 TLS）、`587` → `tls`（STARTTLS）。保存配置与 `/api/admin/mail/test` 都会按端口规范化，提交 `587`+`ssl` 这类不匹配组合不会被直连握手失败坑到。
+
+## 自定义页面
+
+管理员创建的独立页面，存储在 `custom_pages` 表（migration 0018），以**根级 `/<slug>`** 访问（如 `/about-lab`），是站点唯一的根级可路由数据内容；正文由 markdown + 组件块混合构成（协议见下）。数据库字段为 snake_case，**接口出入参一律 camelCase**（`showInNav`、`sortOrder`、`seoDescription`），由 `pageView` 统一转换。
+
+| 路径 | 权限 | 参数 | 说明 |
+| --- | --- | --- | --- |
+| `/api/admin/page/list` | 管理员 | — | 全部页面（**含停用**），按 `sortOrder` 升序、其次最近更新；条目为完整 camelCase 视图 |
+| `/api/admin/page/get` | 管理员 | `id` | 单条完整视图；不存在返回 404「页面不存在」 |
+| `/api/admin/page/save` | 管理员 | `id`（可选）、`slug`、`title`、`content`、`seoDescription`、`sortOrder`、`enabled`、`showInNav` | 带 `id` 为更新、缺省为新建并返回 `{id}`；`slug` 全站唯一（重复返回 **409**）；非法输入返回 400 |
+| `/api/admin/page/remove` | 管理员 | `id` | 物理删除（自定义页面无回收站）；不存在不报错 |
+| `/api/page/get` | 公开 | `slug` | 仅返回启用中页面，键集合精确为 `{slug, title, content, seoDescription}`（不含 `enabled`）；停用/不存在一律 404 |
+| `/api/page/nav` | 公开 | — | 导航用启用页面列表 `[{slug, title}]`，仅含 `showInNav=1`，按 `sortOrder` 升序 |
+
+**读参规范**：本组所有接口按全站统一规范以 **POST + JSON body** 传参——`/api/page/get` 传 `{slug}`、`/api/admin/page/get` 与 `/api/admin/page/remove` 传 `{id}`、`/api/admin/page/save` 传全字段 JSON。这三个读参接口同时保留 query 读取（如 `?id=`、`?slug=`）作旧客户端兼容：**body 优先、query 兜底，query 不是规范用法**。
+
+**校验规则**（服务端强制，非法输入 400 且不落库）：
+
+- `slug`：正则 `^[a-z0-9-]{1,40}$`（小写字母、数字、连字符，1–40 位）；命中 15 个保留字 `about friend photos new edit user sys memo tags api upload rss x-media douban-cover page` 直接 400「该 slug 为系统保留」（保留字同时约束根级 URL，前端解析器持有同序清单）；与其他页面重复返回 **409**（新建与更新都查重）。
+- `title`：trim 后 1–60 字。
+- `content`：上限 100000 字符，服务端静默截断。
+- `seoDescription`：上限 300 字符；`sortOrder` 钳制 0–999（默认 0）。
+- `enabled`：`0` 视为停用，其余按启用；`showInNav` 任意真值即 1。`enabled=0` 的页面 `/api/page/get` 与根级 URL 都不可见。
+
+**根级 URL 语义**：静态路由永远优先（`/about`、`/photos` 等既有页面与全部 `/api/*`、`/upload/*`、`/rss` 等不受影响），自定义页面只承接无路由的单段路径；两段及以上路径（如 `/foo/bar`）归 SPA 通配 404，不会落到自定义页面。启用页由 `pageSeo()` 注入「页面标题 - 站点标题」、`seoDescription`（空时回退站点描述）与 JSON-LD WebSite 形态 meta；**停用或已删除页面的 URL 返回 SPA 404 并带 `noindex`**，不会泄漏存在性。`/sitemap.xml` 收录启用页（monthly、优先级 0.5、`lastmod` 取 `updated_at`），停用/已删页自动移出。
+
+**组件块协议**：正文里用 ```` ```ui:<kind> ```` 三反引号围栏包裹一段 JSON 表示组件，围栏外内容按 markdown 渲染：
+
+    ```ui:button
+    { "items": [{ "label": "首页", "href": "/" }] }
+    ```
+
+支持的七种 `kind`：`button`（按钮组）、`card`（卡片组）、`countdown`（倒计时）、`timeline`（时间线）、`gallery`（图集）、`music`（音乐播放器）、`icons`（图标行）。解析规则：`kind` 合法且内部 JSON 解析成功才按组件渲染；**未知 kind、坏 JSON、未闭合围栏整块按原文并入 markdown 渲染**，绝不丢弃用户文字。
 
 ## 文件与媒体
 

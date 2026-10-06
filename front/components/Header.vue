@@ -122,6 +122,20 @@
           class="text-[#9fc84a] w-5 h-5 cursor-pointer"
         />
       </NuxtLink>
+      <!-- 自定义页面导航：pageNav 非空时收进溢出菜单，避免图标区过挤 -->
+      <UDropdown
+        v-if="pageNav.length"
+        :items="pageNavItems"
+        :popper="{ placement: 'bottom-end' }"
+      >
+        <UButton
+          color="white"
+          variant="ghost"
+          icon="i-carbon-overflow-menu-horizontal"
+          class="text-[#9fc84a]"
+          title="更多页面"
+        />
+      </UDropdown>
       <NuxtLink
         v-if="$route.path !== '/sys/settings' && authUser.id === 1"
         to="/sys/settings"
@@ -184,6 +198,18 @@ const sysConfig = useState<SysConfigVO>('sysConfig');
 const props = defineProps<{ user?: UserVO | null }>();
 const mode = useColorMode();
 const { y } = useWindowScroll();
+
+// 自定义页面导航（layouts/default.vue 拉取 /page/nav 写入，空数组表示无启用页）
+const pageNav = useState<Array<{ slug: string, title: string }>>("pageNav", () => []);
+const pageNavItems = computed(() =>
+  pageNav.value.map((item) => [
+    {
+      label: item.title || item.slug,
+      // UDropdown item 原生支持 to 路由跳转，站内一律走路由导航
+      to: `/${item.slug}`,
+    },
+  ])
+);
 
 const logout = async () => {
   global.value.userinfo = {};

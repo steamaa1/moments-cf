@@ -152,6 +152,11 @@ const ATTACHMENT_EXTENSION_TYPES = {
 // 动态内容块顺序的 key 格式：单块 key、附件按 path 逐条、豆瓣按 id 逐条
 const MEMO_BLOCK_KEY_PATTERN = /^(?:external|images|music|git|x|memoRef|video|attachment:\/upload\/[A-Za-z0-9._/-]+|douban(?:Book|Movie):[A-Za-z0-9_#-]{1,32})$/;
 const MEMO_BLOCK_ORDER_MAX = 50;
+// 自定义页面：根级 /<slug> 路由的 slug 规则（小写字母/数字/连字符，1-40 位）
+// 与系统保留清单。保留 slug 覆盖 SPA 固有路由与站点级端点，禁止自定义页面占用，
+// 防止管理页面遮蔽 /new、/edit、/sys、/rss 等既有入口。
+const PAGE_SLUG_PATTERN = /^[a-z0-9-]{1,40}$/;
+const RESERVED_PAGE_SLUGS = ['about', 'friend', 'photos', 'new', 'edit', 'user', 'sys', 'memo', 'tags', 'api', 'upload', 'rss', 'x-media', 'douban-cover', 'page'];
 const ATTACHMENT_HARD_MAX_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_HARD_MAX_COUNT = 20;
 const ATTACHMENT_MAX_PER_MEMO = 10;
@@ -1139,6 +1144,98 @@ async function adminPhotoDelete(request, env, headers) {
   const mediaTrashed = await trashOrphanAlbumMedia(env, item, access.user.id);
   return json(ok({ removed: true, mediaTrashed }), 200, headers);
 }
+// 自定义页面行 → 前端视图（camelCase）
+function pageView(row) {
+  return {
+    id: Number(row.id),
+    slug: String(row.slug || ''),
+    title: String(row.title || ''),
+    content: String(row.content || ''),
+    enabled: Number(row.enabled) === 1,
+    showInNav: Number(row.show_in_nav) === 1,
+    sortOrder: Number(row.sort_order || 0),
+    seoDescription: String(row.seo_description || ''),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+// 根级单段路径 /<slug> 的 SEO 数据组装见 pageSeo()：命中启用页时返回
+// 「页面标题 - 站点标题」+ seo_description（站点级回退），正文由前端 /pages/[slug].vue 渲染。
+// 管理端：全部自定义页面（含停用），导航排序优先，其次最近更新
+async function adminPageList(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const rows = await env.DB.prepare('SELECT * FROM custom_pages ORDER BY sort_order ASC, updated_at DESC').all();
+  return json(ok({ list: (rows.results || []).map(pageView) }), 200, headers);
+}
+// 管理端：按 id 取单条（编辑回显）。读参 body 优先、query 兜底（POST+JSON body 为全站规范）
+async function adminPageGet(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = (await readJson(request)) || {};
+  const id = intParam(body.id) || intParam(new URL(request.url).searchParams.get('id'));
+  if (!id) return json(fail('参数错误'), 400, headers);
+  const row = await env.DB.prepare('SELECT * FROM custom_pages WHERE id = ?').bind(id).first();
+  if (!row) return json(fail('页面不存在'), 404, headers);
+  return json(ok(pageView(row)), 200, headers);
+}
+// 管理端：新建/更新自定义页面（有 id 更新、无 id 新建），slug 全站唯一且不得占用保留词
+async function adminPageSave(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = await readJson(request);
+  if (!body || typeof body !== 'object') return json(fail('参数错误'), 400, headers);
+  const slug = String(body.slug || '').trim();
+  if (!PAGE_SLUG_PATTERN.test(slug)) return json(fail('slug 仅支持小写字母、数字、连字符（1-40 位）'), 400, headers);
+  if (RESERVED_PAGE_SLUGS.includes(slug)) return json(fail('该 slug 为系统保留，请更换'), 400, headers);
+  const title = String(body.title || '').trim();
+  if (title.length < 1 || title.length > 60) return json(fail('标题需为 1-60 字'), 400, headers);
+  const content = String(body.content || '').slice(0, 100000);
+  const seoDescription = String(body.seoDescription || '').slice(0, 300);
+  const sortOrder = clampInt(body.sortOrder, 0, 999, 0);
+  const enabled = Number(body.enabled) === 0 ? 0 : 1;
+  const showInNav = body.showInNav ? 1 : 0;
+  const id = intParam(body.id);
+  if (id) {
+    const existing = await env.DB.prepare('SELECT id FROM custom_pages WHERE id = ?').bind(id).first();
+    if (!existing) return json(fail('页面不存在'), 404, headers);
+    const duplicate = await env.DB.prepare('SELECT id FROM custom_pages WHERE slug = ? AND id <> ?').bind(slug, id).first();
+    if (duplicate) return json(fail('slug 已存在'), 409, headers);
+    await env.DB.prepare('UPDATE custom_pages SET slug=?, title=?, content=?, enabled=?, show_in_nav=?, sort_order=?, seo_description=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, id).run();
+  } else {
+    const duplicate = await env.DB.prepare('SELECT id FROM custom_pages WHERE slug = ?').bind(slug).first();
+    if (duplicate) return json(fail('slug 已存在'), 409, headers);
+    const result = await env.DB.prepare('INSERT INTO custom_pages (slug, title, content, enabled, show_in_nav, sort_order, seo_description, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)')
+      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, access.user.id).run();
+    return json(ok({ id: Number(result.meta?.last_row_id || 0) }), 200, headers);
+  }
+  return json(ok({ id }), 200, headers);
+}
+// 管理端：物理删除自定义页面。读参 body 优先、query 兜底（POST+JSON body 为全站规范）
+async function adminPageRemove(request, env, headers) {
+  const access = await requireUser(request, env, headers, true);
+  if (access.response) return access.response;
+  const body = (await readJson(request)) || {};
+  const id = intParam(body.id) || intParam(new URL(request.url).searchParams.get('id'));
+  if (!id) return json(fail('参数错误'), 400, headers);
+  await env.DB.prepare('DELETE FROM custom_pages WHERE id = ?').bind(id).run();
+  return json(ok({}), 200, headers);
+}
+// 公开：按 slug 取启用中的自定义页面正文。读参 body 优先、query 兜底（POST+JSON body 为全站规范）
+async function pageGet(request, env, headers) {
+  const body = (await readJson(request)) || {};
+  const slug = String(body.slug ?? new URL(request.url).searchParams.get('slug') ?? '').trim();
+  if (!slug) return json(fail('参数错误'), 400, headers);
+  const row = await env.DB.prepare('SELECT slug, title, content, seo_description FROM custom_pages WHERE slug = ? AND enabled = 1').bind(slug).first();
+  if (!row) return json(fail('页面不存在'), 404, headers);
+  return json(ok({ slug: String(row.slug || ''), title: String(row.title || ''), content: String(row.content || ''), seoDescription: String(row.seo_description || '') }), 200, headers);
+}
+// 公开：导航用启用页面（slug + title），按 sort_order 升序
+async function pageNav(request, env, headers) {
+  const rows = await env.DB.prepare('SELECT slug, title FROM custom_pages WHERE enabled = 1 AND show_in_nav = 1 ORDER BY sort_order ASC').all();
+  return json(ok({ list: (rows.results || []).map(row => ({ slug: String(row.slug || ''), title: String(row.title || '') })) }), 200, headers);
+}
 async function getMemo(request, env, headers) {
   const url = new URL(request.url);
   const id = intParam(url.searchParams.get('id'));
@@ -1421,13 +1518,30 @@ const PRIVATE_ROUTE_PATTERNS = [/^\/new$/, /^\/edit\/[^/]+$/, /^\/user\/(?:login
 const PUBLIC_ROUTE_PATTERNS = [/^\/$/, /^\/about$/, /^\/friend$/, /^\/photos$/, /^\/memo\/\d+$/, /^\/user\/\d+$/, /^\/user\/calendar$/, /^\/tags\/[^/]+\/[^/]+$/];
 // 组装页面级 SEO 数据（页面级 meta 与 JSON-LD）。
 // 私密路由、未知路由、私密/定时未发布/不存在的动态与用户页返回 noindex；
-// 其余公开路由返回 null 时回退站点级 meta。
+// 其余公开路由返回 null 时回退站点级 meta。未知单段路径再查一次 custom_pages（自定义页面）。
 async function pageSeo(env, config, path, origin = '') {
   // SEO 总开关关闭：所有页面一律 noindex，不组装 canonical/JSON-LD，与 robots/sitemap 的关闭语义保持一致
   if (config?.enableSeo === false) return { noindex: true };
   const cleanPath = String(path || '/').replace(/\/+$/, '') || '/';
   if (PRIVATE_ROUTE_PATTERNS.some(pattern => pattern.test(cleanPath))) return { noindex: true };
-  if (!PUBLIC_ROUTE_PATTERNS.some(pattern => pattern.test(cleanPath))) return { noindex: true };
+  if (!PUBLIC_ROUTE_PATTERNS.some(pattern => pattern.test(cleanPath))) {
+    // 未知路由中的单段路径：可能是一条自定义页面（根级 /<slug>），查库确认；
+    // 表未建（未跑 0018 迁移）等异常按未命中处理，维持 noindex 回退。
+    const slug = cleanPath.replace(/^\//, '');
+    if (PAGE_SLUG_PATTERN.test(slug)) {
+      let row = null;
+      try {
+        row = await env.DB.prepare('SELECT title, seo_description FROM custom_pages WHERE slug = ? AND enabled = 1').bind(slug).first();
+      } catch { row = null; }
+      if (row) {
+        const siteTitle = String(config?.title || DEFAULT_SEO.title);
+        const description = String(row.seo_description || '')
+          || String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${siteTitle}` : DEFAULT_SEO.description));
+        return { title: `${String(row.title || '')} - ${siteTitle}`, description, ogType: 'website' };
+      }
+    }
+    return { noindex: true };
+  }
   if (!env.DB) return null;
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || String(origin || '').replace(/\/+$/, '');
   const memoMatch = cleanPath.match(/^\/memo\/(\d+)$/);
@@ -1492,10 +1606,12 @@ async function pageSeo(env, config, path, origin = '') {
 function rssText(value) { return String(value || '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[>#*_`~-]/g, '').trim(); }
 async function sitemap(request, env) {
   if (!env.DB) return new Response('D1 binding is not configured', { status: 503 });
-  const [memos, users, tags, configRow] = await Promise.all([
+  // 自定义页面查询失败（如未跑 0018 迁移表缺失）时按空列表容错，不影响其余 sitemap 输出
+  const [memos, users, tags, customPages, configRow] = await Promise.all([
     env.DB.prepare('SELECT m.id, m.created_at, m.imgs FROM memos m JOIN users u ON u.id=m.user_id WHERE u.registration_state=1 AND m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP LIMIT 50000').all(),
     env.DB.prepare('SELECT id, updated_at FROM users WHERE registration_state = 1 LIMIT 5000').all(),
     env.DB.prepare('SELECT u.username, m.tags FROM memos m JOIN users u ON u.id=m.user_id WHERE u.registration_state=1 AND m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP AND m.tags<>\'\' LIMIT 50000').all(),
+    env.DB.prepare('SELECT slug, updated_at FROM custom_pages WHERE enabled = 1 ORDER BY sort_order ASC').all().catch(() => ({ results: [] })),
     env.DB.prepare('SELECT content FROM sys_config WHERE id=1').first(),
   ]);
   const config = parseConfig(configRow?.content);
@@ -1524,6 +1640,8 @@ async function sitemap(request, env) {
     for (const tag of String(row.tags || '').split(',').filter(Boolean)) tagUrls.set(`${username}\n${tag}`, `${encodeURIComponent(username)}/${encodeURIComponent(tag)}`);
   }
   for (const tagPath of tagUrls.values()) push(`/tags/${tagPath}`, null, 'weekly', '0.5');
+  // 自定义页面：启用中的根级 /<slug> 路径，lastmod 取页面 updated_at
+  for (const page of customPages.results || []) push(`/${String(page.slug || '')}`, String(page.updated_at || ''), 'monthly', '0.5');
   const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${urls.join('')}</urlset>`;
   return new Response(xml, { headers: { 'content-type': 'application/xml; charset=UTF-8', 'cache-control': 'public, max-age=3600' } });
 }
@@ -1559,10 +1677,23 @@ async function llmsIndex(request, env, full = false) {
   if (config?.enableSeo === false) return new Response('Not Found', { status: 404 });
   const host = String(config?.siteUrl || '').trim().replace(/\/+$/, '') || url.origin;
   const limit = full ? 100 : 50;
+  // 自定义页面：每个启用页追加一行（不看 show_in_nav，导航隐藏的页面仍可被 AI 引擎发现）；
+  // 查询失败（0018 表未建）按空列表容错。刻意先于动态列表查询，保持「最后一次查询是动态列表」的既有形态
+  let navPages = { results: [] };
+  try {
+    navPages = await env.DB.prepare('SELECT slug, title, seo_description FROM custom_pages WHERE enabled = 1 ORDER BY sort_order ASC').all();
+  } catch { /* 0018 迁移未应用时忽略 */ }
   const rows = await env.DB.prepare(`${MEMO_SELECT} WHERE u.registration_state=1 AND m.show_type=1 AND m.created_at<=CURRENT_TIMESTAMP ORDER BY m.created_at DESC LIMIT ?`).bind(limit).all();
   const title = String(config?.title || DEFAULT_SEO.title);
   const description = String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${title}` : DEFAULT_SEO.description));
   const lines = [`# ${title}`, '', `> ${description}`, '', '## 站点页面', '', `- [首页](${host}/)：${description}`, `- [照片墙](${host}/photos)：照片墙与图集`, `- [友链](${host}/friend)：朋友们`, ...(config.enableAbout ? [`- [关于](${host}/about)：关于本站`] : []), `- [RSS 订阅](${host}/rss)：最新动态订阅`, ''];
+  // 页面行并入「站点页面」列表：插在模板收尾空行之前，保证该小节 markdown 连续
+  const pageLines = (navPages.results || []).map(page => {
+    const pageTitle = String(page.title || '').replace(/[[\]]/g, '').slice(0, 60);
+    const pageDesc = String(page.seo_description || '').replace(/[[\]]/g, '').slice(0, 100);
+    return `- [${pageTitle}](${host}/${String(page.slug || '')})${pageDesc ? `：${pageDesc}` : ''}`;
+  });
+  lines.splice(lines.length - 1, 0, ...pageLines);
   lines.push(full ? '## 最近动态（全文）' : '## 最近动态', '');
   for (const row of rows.results || []) {
     const memo = memoView(row);
@@ -2874,6 +3005,12 @@ async function handleApi(request, env, ctx) {
     if (url.pathname === '/api/admin/backup/download') return await backupDownload(request, env, headers);
     if (url.pathname === '/api/admin/backup/restore') return await backupRestore(request, env, headers);
     if (url.pathname === '/api/admin/mail/test') return await adminMailTest(request, env, headers);
+    if (url.pathname === '/api/admin/page/list') return await adminPageList(request, env, headers);
+    if (url.pathname === '/api/admin/page/get') return await adminPageGet(request, env, headers);
+    if (url.pathname === '/api/admin/page/save') return await adminPageSave(request, env, headers);
+    if (url.pathname === '/api/admin/page/remove') return await adminPageRemove(request, env, headers);
+    if (url.pathname === '/api/page/get') return await pageGet(request, env, headers);
+    if (url.pathname === '/api/page/nav') return await pageNav(request, env, headers);
 
     return json(fail('Cloudflare API migration endpoint not implemented yet', 404), 404, headers);
   } catch (error) {
@@ -2890,7 +3027,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured, adminPhotoDelete, trashOrphanAlbumMedia, attachmentUpload, attachmentContentType, ALLOWED_ATTACHMENT_TYPES };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured, adminPhotoDelete, trashOrphanAlbumMedia, attachmentUpload, attachmentContentType, ALLOWED_ATTACHMENT_TYPES, PAGE_SLUG_PATTERN, RESERVED_PAGE_SLUGS, pageView, adminPageList, adminPageGet, adminPageSave, adminPageRemove, pageGet, pageNav };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

@@ -277,6 +277,39 @@
           </div>
         </section>
       </template>
+
+      <!-- ============ 自定义页面 ============ -->
+      <template #pages>
+        <section data-section="pages" class="mt-4 space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h2 class="font-semibold text-gray-800 dark:text-gray-100">自定义页面</h2>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">根级路径 /slug 的独立页面；启用并加入导航后出现在站点菜单。</p>
+            </div>
+            <UButton size="sm" icon="i-carbon-add" to="/sys/pages/new">新建页面</UButton>
+          </div>
+          <p v-if="!pageList.length" class="py-8 text-center text-sm text-gray-400">暂无自定义页面，点击右上角「新建页面」创建。</p>
+          <div v-else class="space-y-2">
+            <div v-for="row in pageList" :key="row.id" class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+              <div class="min-w-0 flex-1">
+                <p class="truncate font-semibold text-gray-800 dark:text-gray-100">{{ row.title }}</p>
+                <NuxtLink :to="`/${row.slug}`" class="text-xs text-gray-500 hover:text-primary-500 dark:text-gray-400">/{{ row.slug }}</NuxtLink>
+              </div>
+              <span class="shrink-0 text-xs text-gray-400">排序 {{ row.sortOrder }}</span>
+              <label class="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                <UToggle :model-value="row.enabled" @update:model-value="value => togglePageRow(row, 'enabled', value)"/>启用
+              </label>
+              <label class="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                <UToggle :model-value="row.showInNav" @update:model-value="value => togglePageRow(row, 'showInNav', value)"/>导航
+              </label>
+              <UButton size="xs" color="gray" variant="soft" icon="i-carbon-edit" :to="`/sys/pages/${row.id}`">编辑</UButton>
+              <Confirm @ok="removePageRow(row)">
+                <UButton size="xs" color="red" variant="soft" icon="i-carbon-trash-can">删除</UButton>
+              </Confirm>
+            </div>
+          </div>
+        </section>
+      </template>
     </UTabs>
 
     <!-- 保存条：sticky 吸底，仅在存在未保存更改时出现——没有改动时整条隐藏，不占底部空间。
@@ -427,6 +460,7 @@ const sectionTabs = [
   { key: 'content', label: '内容与互动', slot: 'content' },
   { key: 'security', label: '安全与通知', slot: 'security' },
   { key: 'storage', label: '存储与数据', slot: 'storage' },
+  { key: 'pages', label: '自定义页面', slot: 'pages' },
 ]
 // 旧深链兼容：附件限制已并入「存储与数据」，?tab=attachment 归一为 storage
 const LEGACY_TAB_KEYS: Record<string, string> = { attachment: 'storage' }
@@ -600,6 +634,43 @@ const purgeTrashFile = async (id: number) => {
   toast.success('文件已永久删除')
   await loadTrash()
 }
+
+// 自定义页面列表：独立 ref 管理，刻意不进 state/snapshot——
+// state 绑定受 tests/source/sys-settings-layout.test.mjs 的 exact-set 硬断言约束，
+// 列表数据也不属于 sys_config，混进去会让保存接口收到多余字段。
+type CustomPageRow = { id: number, slug: string, title: string, enabled: boolean, showInNav: boolean, sortOrder: number, seoDescription?: string }
+const pageList = ref<CustomPageRow[]>([])
+const loadPageList = async () => {
+  try {
+    const res = await useMyFetch<{ list: CustomPageRow[] }>('/admin/page/list')
+    pageList.value = res?.list || []
+  } catch {
+    // 列表加载失败不打断设置页（非管理员或网络异常时静默为空）
+    pageList.value = []
+  }
+}
+// 行级开关即时保存：带全行字段提交，失败回滚开关并提示
+const togglePageRow = async (row: CustomPageRow, field: 'enabled' | 'showInNav', value: any) => {
+  const next = value === true || value === 1
+  const previous = row[field]
+  row[field] = next
+  try {
+    await useMyFetch('/admin/page/save', { id: row.id, slug: row.slug, title: row.title, content: row.content ?? '', seoDescription: row.seoDescription || '', sortOrder: row.sortOrder ?? 0, enabled: row.enabled ? 1 : 0, showInNav: row.showInNav ? 1 : 0 })
+    toast.success('已更新')
+  } catch (error: any) {
+    row[field] = previous
+    toast.error(error?.message || '更新失败')
+  }
+}
+const removePageRow = async (row: CustomPageRow) => {
+  try {
+    await useMyFetch('/admin/page/remove', { id: row.id })
+    toast.success('已删除')
+    await loadPageList()
+  } catch (error: any) {
+    toast.error(error?.message || '删除失败')
+  }
+}
 const formatBytes = (size: number) => {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
@@ -607,7 +678,8 @@ const formatBytes = (size: number) => {
 }
 
 onMounted(async () => {
-  await reload()
+  // 自定义页面列表与配置加载并行：列表失败静默为空，不影响配置回显
+  await Promise.all([reload(), loadPageList()])
   syncTabFromQuery()
 })
 

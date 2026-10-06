@@ -1,0 +1,71 @@
+# CI：拉取请求与手动触发时的自动化校验。
+# 两个 job 互不依赖，可并行执行：
+#   1) worker-check —— Worker 全链路校验（npm run check）：
+#      node --check 语法 → 配置检查 → phase1 → 仓库全部测试（node --test）→
+#      preflight → self-check（GitHub runner 自带 python3，Python 迁移测试会真实执行）。
+#      Worker 是零依赖纯 Node 项目，无需安装任何包。
+#   2) front-build —— 前端在真实 Linux 上完成 pnpm 安装与 Nuxt 静态生成。
+#      pnpm 由 front/package.json 的 packageManager 字段（当前 10.10.0）锁定版本，
+#      --frozen-lockfile 保证锁文件不被改动；generate 是前端产物的唯一构建防线。
+#      两个 job 都显式钉 Node 24：ubuntu-latest 镜像的默认 Node 处于 20→22 过渡期，
+#      不钉版本可能跑到已 EOL 的 Node，导致两侧校验结果不一致。
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支/PR 的新推送自动取消仍在跑的旧一次，节省 runner 时长
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 只需读代码，不申请任何写权限
+permissions:
+  contents: read
+
+jobs:
+  worker-check:
+    name: Worker 全量校验
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Worker 全链路校验（npm run check）
+        working-directory: worker
+        run: npm run check
+
+  front-build:
+    name: Front 构建
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 显式钉 Node 24：ubuntu-latest 镜像处于 Node 20→22 过渡期，默认版本可能已 EOL；
+      # 与 worker-check 保持一致，保证两侧校验跑在同一 Node 主版本上
+      - name: 安装 Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # 不写 version，由 package_json_file 指向的 packageManager 字段决定 pnpm 版本，
+      # 以后升级 pnpm 只需改 front/package.json，无需动本工作流
+      - name: 安装 pnpm（版本跟随 front/package.json）
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: front/package.json
+
+      - name: 安装依赖（frozen lockfile）
+        working-directory: front
+        run: pnpm install --frozen-lockfile
+
+      - name: Nuxt 静态生成（nuxt generate）
+        working-directory: front
+        run: pnpm run generate
