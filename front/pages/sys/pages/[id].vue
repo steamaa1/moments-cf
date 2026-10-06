@@ -35,7 +35,8 @@
           <UFormGroup label="正文" help="Markdown 与组件围栏（```ui:kind）混合文本">
             <div class="mb-2 flex flex-wrap gap-2">
               <UButton size="xs" color="white" icon="i-carbon-list" @click="showKindModal = true">插入组件</UButton>
-              <UButton size="xs" color="white" icon="i-carbon-smile" @click="showEmojiModal = true">插入图案</UButton>
+              <UButton size="xs" color="white" icon="i-carbon-smile" @click="showEmojiModal = true">插入表情</UButton>
+              <UButton size="xs" color="white" icon="i-carbon-paint-brush" @click="showPatternModal = true">图案</UButton>
               <UButton size="xs" color="white" icon="i-carbon-star" @click="showIconModal = true">插入图标</UButton>
             </div>
             <textarea ref="contentRef" v-model="form.content" rows="18"
@@ -104,22 +105,59 @@
       </div>
     </UModal>
 
-    <!-- 插入图案：内嵌 Emoji 组件 -->
+    <!-- 插入表情：内嵌 Emoji 组件（五组 emoji 字符） -->
     <UModal v-model="showEmojiModal" :ui="{ container: 'flex justify-center items-center backdrop-blur' }">
       <div class="w-full max-w-md rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-800">
-        <p class="mb-3 text-lg font-bold">插入图案</p>
+        <p class="mb-3 text-lg font-bold">插入表情</p>
         <Emoji @selected="onEmojiSelected"/>
         <div class="mt-3 flex justify-end"><UButton color="gray" variant="ghost" @click="showEmojiModal = false">关闭</UButton></div>
       </div>
     </UModal>
 
-    <!-- 插入图标：常用 Iconify 名下拉 + 自定义输入 -->
+    <!-- 图案：复用站内内置的状态图案集（utils/statusPatterns.js，与用户状态设置共用同一份数据） -->
+    <UModal v-model="showPatternModal" :ui="{ container: 'flex justify-center items-center backdrop-blur' }">
+      <div class="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-800">
+        <p class="mb-1 text-lg font-bold">图案</p>
+        <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">站内内置的「图案 + 文案」四组，点一下插入光标处。</p>
+        <div class="mb-3 flex items-center gap-2">
+          <UToggle v-model="patternWithText"/>
+          <span class="text-sm text-gray-500 dark:text-gray-400">同时插入文案（如「💼 忙」）</span>
+        </div>
+        <div v-for="group in STATUS_PATTERN_GROUPS" :key="group.group" class="mb-3">
+          <p class="mb-1 text-xs font-semibold text-gray-400">{{ group.group }}</p>
+          <div class="flex flex-wrap gap-1">
+            <button v-for="item in group.items" :key="item.content" type="button"
+              class="rounded-lg border border-gray-200 px-2 py-1 text-sm hover:border-primary-400 hover:bg-primary-50 dark:border-gray-600 dark:hover:bg-neutral-700"
+              :title="item.content" @click="onPatternSelected(item)">{{ item.icon }} {{ item.content }}</button>
+          </div>
+        </div>
+        <div class="mt-2 flex justify-end"><UButton color="gray" variant="ghost" @click="showPatternModal = false">关闭</UButton></div>
+      </div>
+    </UModal>
+
+    <!-- 插入图标：带图标预览的常用名网格 + 自定义输入（右侧实时预览） -->
     <UModal v-model="showIconModal" :ui="{ container: 'flex justify-center items-center backdrop-blur' }">
-      <div class="w-full max-w-md rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-800">
+      <div class="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-800">
         <p class="mb-3 text-lg font-bold">插入图标</p>
-        <USelectMenu v-model="selectedIcon" :options="ICON_PRESETS"/>
-        <UInput v-model="customIcon" class="mt-2" placeholder="自定义 Iconify 名，如 i-heroicons-heart-solid"/>
-        <p class="mt-2 text-xs text-gray-500">插入的是图标名文本，可填进组件 JSON 的 icon 字段</p>
+        <div class="grid max-h-64 grid-cols-2 gap-1 overflow-auto sm:grid-cols-3">
+          <button v-for="name in ICON_PRESETS" :key="name" type="button"
+            class="flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs"
+            :class="(!customIcon && selectedIcon === name)
+              ? 'border-primary-400 bg-primary-50 dark:border-primary-400 dark:bg-neutral-700'
+              : 'border-gray-200 hover:border-primary-300 dark:border-gray-600'"
+            @click="selectedIcon = name; customIcon = ''">
+            <UIcon :name="name" class="h-5 w-5 shrink-0"/>
+            <span class="truncate">{{ name }}</span>
+          </button>
+        </div>
+        <div class="mt-3 flex items-center gap-2">
+          <UInput v-model="customIcon" class="flex-1" placeholder="自定义 Iconify 名，如 i-heroicons-heart-solid"/>
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 dark:border-gray-600">
+            <UIcon v-if="effectiveIcon" :name="effectiveIcon" class="h-5 w-5"/>
+            <UIcon v-else name="i-carbon-help" class="h-5 w-5 text-gray-400"/>
+          </span>
+        </div>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">右侧方框是实时预览；插入的是图标名文本，可填进组件 JSON 的 icon 字段</p>
         <div class="mt-4 flex justify-end gap-2">
           <UButton color="gray" variant="soft" @click="showIconModal = false">取消</UButton>
           <UButton @click="confirmInsertIcon">插入</UButton>
@@ -137,11 +175,13 @@
  * 保存统一调 /admin/page/save（新建不带 id、更新带 id），成功后跳 /sys/settings?tab=pages。
  * 提交前先按 SLUG_PATTERN 与保留字校验（与 worker 侧同规则，先拦截再请求）。
  *
- * 正文编辑：大文本域 + 工具条三按钮，光标插入统一走 textarea 的
+ * 正文编辑：大文本域 + 工具条四按钮，光标插入统一走 textarea 的
  * selectionStart/selectionEnd 拼接并恢复焦点：
  *   - 插入组件：先选 kind（七种）再填极简表单，实时 JSON 预览，确认后按
  *     「```ui:kind / 一行 JSON / ```」三行围栏协议插入（协议见 utils/pageBlocks.js）；
- *   - 插入图案：内嵌 Emoji 组件，监听 selected 事件即点即插；
+ *   - 插入表情：内嵌 Emoji 组件（五组 emoji 字符），监听 selected 事件即点即插；
+ *   - 图案：复用 utils/statusPatterns.js 的站内内置图案集（四组「图案 + 文案」），
+ *     可选是否连文案一起插入（如「💼 忙」）；
  *   - 插入图标：常用 Iconify 名下拉 + 自定义输入，插入图标名文本。
  * 预览：computed 调 parsePageBlocks 后交给 PageRenderer，大屏右栏、小屏下方。
  */
@@ -149,6 +189,7 @@ import { toast } from 'vue-sonner'
 import type { SysConfigVO, UserVO } from '~/types'
 import site from '~/site.config'
 import { parsePageBlocks, SLUG_PATTERN, RESERVED_PAGE_SLUGS } from '~/utils/pageBlocks'
+import { STATUS_PATTERN_GROUPS } from '~/utils/statusPatterns'
 
 const config = useState<SysConfigVO>('sysConfig')
 const currentUser = useState<UserVO | null>('userinfo')
@@ -275,11 +316,20 @@ const confirmInsertComponent = () => {
   showComponentModal.value = false
 }
 
-/* ---------- 插入图案（Emoji 组件） ---------- */
+/* ---------- 插入表情（Emoji 组件：常用/人物/食物/物品/标志五组字符） ---------- */
 const showEmojiModal = ref(false)
 const onEmojiSelected = (value: string) => {
   insertAtCursor(value)
   showEmojiModal.value = false
+}
+
+/* ---------- 图案：复用站内内置状态图案集（与用户状态设置同一份数据） ---------- */
+const showPatternModal = ref(false)
+/** 关闭时只插图案字符；开启时连文案一起插（如「💼 忙」） */
+const patternWithText = ref(false)
+const onPatternSelected = (item: { icon: string, content: string }) => {
+  insertAtCursor(patternWithText.value ? `${item.icon} ${item.content}` : item.icon)
+  showPatternModal.value = false
 }
 
 /* ---------- 插入图标（常用 Iconify 名 + 自定义输入） ---------- */
@@ -291,8 +341,10 @@ const ICON_PRESETS = [
 const showIconModal = ref(false)
 const selectedIcon = ref(ICON_PRESETS[0])
 const customIcon = ref('')
+/** 当前将要插入的图标名：自定义输入优先，否则用网格里选中的那个（网格与预览框都用它渲染） */
+const effectiveIcon = computed(() => String(customIcon.value || '').trim() || String(selectedIcon.value || '').trim())
 const confirmInsertIcon = () => {
-  const value = String(customIcon.value || '').trim() || String(selectedIcon.value || '').trim()
+  const value = effectiveIcon.value
   if (!value) return toast.error('请选择或输入图标名')
   insertAtCursor(value)
   customIcon.value = ''

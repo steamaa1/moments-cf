@@ -92,4 +92,12 @@ const workerPatterns = evalLiteral(worker, 'BUILTIN_STATUSES');
 assert.deepEqual(frontPatterns, workerPatterns, '前端图案集必须与 worker BUILTIN_STATUSES 逐项一致（含顺序）');
 assert.ok(frontPatterns.length >= 4 && frontPatterns.every(group => group.items.length > 0), '图案集必须至少四组且每组非空');
 
+// 8) 编辑器工具条：表情/图案是两个独立入口，图案复用共享数据，图标选择器必须带预览
+assert.match(editorPage, /插入表情/, 'emoji 入口必须命名为「插入表情」');
+assert.doesNotMatch(editorPage, /插入图案/, '不应再有「插入图案」字样（表情与图案是两个入口）');
+assert.match(editorPage, /STATUS_PATTERN_GROUPS/, '「图案」选择器必须复用 utils/statusPatterns.js 的数据');
+assert.match(editorPage, /onPatternSelected/, '「图案」必须有点选即插入的处理函数');
+assert.match(editorPage, /effectiveIcon/, '图标选择器必须计算当前图标名供预览');
+assert.match(editorPage, /<UIcon :name="name"/, '常用图标列表必须用 UIcon 渲染图标预览');
+
 console.log('custom-page-frontend: PASS');
