@@ -35,7 +35,7 @@
           <UFormGroup label="正文" help="Markdown 与组件围栏（```ui:kind）混合文本">
             <div class="mb-2 flex flex-wrap gap-2">
               <UButton size="xs" color="white" icon="i-carbon-list" @click="showKindModal = true">插入组件</UButton>
-              <UButton size="xs" color="white" icon="i-carbon-smile" @click="showEmojiModal = true">插入表情</UButton>
+              <UButton size="xs" color="white" icon="i-carbon-face-satisfied" @click="showEmojiModal = true">插入表情</UButton>
               <UButton size="xs" color="white" icon="i-carbon-star" @click="showIconModal = true">插入图标</UButton>
             </div>
             <textarea ref="contentRef" v-model="form.content" rows="18"
@@ -300,8 +300,8 @@ const onEmojiSelected = (value: string) => {
 
 /* ---------- 插入图标（常用 Iconify 名 + 自定义输入） ---------- */
 const ICON_PRESETS = [
-  'i-carbon-home', 'i-carbon-star', 'i-carbon-heart', 'i-carbon-user', 'i-carbon-image',
-  'i-carbon-camera', 'i-carbon-music', 'i-carbon-video', 'i-carbon-mail', 'i-carbon-link',
+  'i-carbon-home', 'i-carbon-star', 'i-carbon-favorite', 'i-carbon-user', 'i-carbon-image',
+  'i-carbon-camera', 'i-carbon-music', 'i-carbon-video', 'i-carbon-email', 'i-carbon-link',
   'i-carbon-calendar', 'i-carbon-location', 'i-carbon-search', 'i-carbon-settings', 'i-carbon-download',
 ]
 const showIconModal = ref(false)
