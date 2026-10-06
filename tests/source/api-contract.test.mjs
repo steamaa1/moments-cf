@@ -10,6 +10,9 @@ const routes = [
   '/api/memo/getDoubanMovieInfo', '/api/file/trash/list', '/api/file/trash/restore', '/api/file/trash/purge',
   '/api/file/direct/init', '/api/file/direct/complete', '/api/admin/backup/list', '/api/admin/backup/create',
   '/api/admin/backup/download', '/api/admin/backup/restore',
+  // 自定义页面（migration 0018）：管理四接口 + 公开两接口
+  '/api/admin/page/list', '/api/admin/page/get', '/api/admin/page/save', '/api/admin/page/remove',
+  '/api/page/get', '/api/page/nav',
 ];
 for (const route of routes) assert.ok(source.includes(`url.pathname === '${route}'`), `missing ${route}`);
 assert.match(source, /config\.enableS3 = false/);
@@ -55,6 +58,11 @@ assert.ok(listRow && listRow.includes('`username`'), 'API.md 的 memo/list 必�
 assert.match(listRow, /别名 `user`/, 'API.md 必须标注 user 为兼容别名');
 const existRow = apiRows.find(line => line.startsWith('| `/api/file/exist`'));
 assert.ok(existRow && existRow.trimEnd().endsWith('|'), 'API.md 的 /api/file/exist 行必须以 | 收尾');
+// 自定义页面（migration 0018）：文档必须覆盖管理保存与公开读取两条核心契约
+const pageSaveRow = apiRows.find(line => line.startsWith('| `/api/admin/page/save`'));
+assert.ok(pageSaveRow && pageSaveRow.includes('`slug`') && pageSaveRow.includes('409'), 'API.md 的 admin/page/save 必须写全字段参数并标注 slug 重复 409');
+const pageGetRow = apiRows.find(line => line.startsWith('| `/api/page/get`'));
+assert.ok(pageGetRow && pageGetRow.includes('`slug`'), 'API.md 的 page/get 必须写 slug 读参（POST body {slug}）');
 // 表格格式：同一表格内每行单元格数必须与表头一致（注意：单元格内不要写裸 | ）
 const brokenRows = [];
 let table = [];
