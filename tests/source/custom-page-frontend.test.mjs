@@ -74,4 +74,12 @@ for (const [index, source] of [renderer, ...uiComponents].entries()) {
   assert.equal(source.includes(':global(.dark'), false, `page-ui 第 ${index + 1} 个组件源码不得使用 :global(.dark) 写法`);
 }
 
+// 8) 编辑器工具条：表情入口命名正确、图标选择器必须带预览；「图案」按钮不得回归
+//    （历史上把 emoji 入口误标成「插入图案」并另加过独立「图案」按钮，均已按用户要求撤掉）
+assert.match(editorPage, /插入表情/, 'emoji 入口必须命名为「插入表情」');
+assert.doesNotMatch(editorPage, /插入图案/, '不应再出现「插入图案」字样');
+assert.doesNotMatch(editorPage, /STATUS_PATTERN_GROUPS|onPatternSelected|showPatternModal/, '工具栏不得再回到独立「图案」按钮方案');
+assert.match(editorPage, /effectiveIcon/, '图标选择器必须计算当前图标名供预览');
+assert.match(editorPage, /<UIcon :name="name"/, '常用图标列表必须用 UIcon 渲染图标预览');
+
 console.log('custom-page-frontend: PASS');
