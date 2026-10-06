@@ -10,6 +10,13 @@
  * tests/source 契约测试会比对两侧）。
  */
 import markdownit from 'markdown-it'
+import PageUiButton from './page-ui/PageUiButton.vue'
+import PageUiCard from './page-ui/PageUiCard.vue'
+import PageUiCountdown from './page-ui/PageUiCountdown.vue'
+import PageUiTimeline from './page-ui/PageUiTimeline.vue'
+import PageUiGallery from './page-ui/PageUiGallery.vue'
+import PageUiMusic from './page-ui/PageUiMusic.vue'
+import PageUiIcons from './page-ui/PageUiIcons.vue'
 
 const props = defineProps({
   /** parsePageBlocks(content) 的输出数组 */
@@ -25,15 +32,23 @@ renderer.renderer.rules.image = (tokens, idx, options, env, self) => {
   return defaultImage(tokens, idx, options, env, self)
 }
 
-/** kind → 子组件名（Nuxt 按目录自动全局注册，字符串可直接给 component :is） */
+/**
+ * kind → 子组件对象（显式 import，绝不用字符串名）。
+ *
+ * 坑（已踩，2026-10-06 修）：这里原先是字符串名 + `<component :is="'PageUiButton'">`，
+ * 结果组件块完全不渲染（Vue 报 "Failed to resolve component: PageUiButton"）。
+ * 两个原因叠加：① Nuxt 3 的组件自动导入是编译期按名注入，并不做全局注册，运行时字符串解析不到；
+ * ② `components/page-ui/` 是嵌套目录，Nuxt 默认 pathPrefix: true，实际注册名是 PageUiPageUiButton。
+ * 显式 import 拿到组件对象再交给 :is，是唯一稳的写法。
+ */
 const KIND_COMPONENTS = {
-  button: 'PageUiButton',
-  card: 'PageUiCard',
-  countdown: 'PageUiCountdown',
-  timeline: 'PageUiTimeline',
-  gallery: 'PageUiGallery',
-  music: 'PageUiMusic',
-  icons: 'PageUiIcons',
+  button: PageUiButton,
+  card: PageUiCard,
+  countdown: PageUiCountdown,
+  timeline: PageUiTimeline,
+  gallery: PageUiGallery,
+  music: PageUiMusic,
+  icons: PageUiIcons,
 }
 
 const safeBlocks = computed(() => (Array.isArray(props.blocks) ? props.blocks : []))

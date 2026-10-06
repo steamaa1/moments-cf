@@ -53,10 +53,16 @@ assert.equal(frontSlugs.includes('page'), true, 'page 本身是公开接口路�
 
 // 4) 组件 kind：解析器支持集合与渲染器分发集合一致（每项都映射到 PageUi 子组件）
 const kinds = extractArray(util, 'SUPPORTED_UI_KINDS');
-const rendererKinds = [...renderer.matchAll(/^ {2}([a-zA-Z]+): 'PageUi[A-Za-z]+',$/gm)].map(match => match[1]);
+// 分发映射必须是「kind → 显式 import 的组件对象」，不能是字符串名：
+// Nuxt 3 组件自动导入不做全局注册，字符串 :is 在运行时解析不到（曾导致组件块完全不渲染）。
+const rendererKinds = [...renderer.matchAll(/^ {2}([a-zA-Z]+): PageUi[A-Za-z]+,$/gm)].map(match => match[1]);
 assert.ok(Array.isArray(kinds) && kinds.length >= 7, 'SUPPORTED_UI_KINDS 必须覆盖全部七种组件');
 assert.deepEqual([...rendererKinds].sort(), [...kinds].sort(), 'PageRenderer 分发的 kind 集合必须与 SUPPORTED_UI_KINDS 一致');
 assert.equal(renderer.includes('KIND_COMPONENTS'), true, 'PageRenderer 必须用显式 KIND_COMPONENTS map 分发');
+for (const name of ['Button', 'Card', 'Countdown', 'Timeline', 'Gallery', 'Music', 'Icons']) {
+  assert.match(renderer, new RegExp(`import PageUi${name} from '\\./page-ui/PageUi${name}\\.vue'`), `PageRenderer 必须显式 import PageUi${name}（字符串名 :is 运行时解析不到）`);
+}
+assert.doesNotMatch(renderer, /: PageUi[A-Za-z]*.*'PageUi/, 'KIND_COMPONENTS 不得再使用字符串组件名');
 
 // 5) 导航接线：桌面下拉、移动端网格、布局数据加载三处都必须消费 pageNav
 for (const [name, source] of [['Header.vue', header], ['MobileNav.vue', mobileNav], ['layouts/default.vue', layout]]) {

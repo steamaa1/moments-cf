@@ -14,6 +14,13 @@ import type { SysConfigVO, UserVO } from '~/types'
 import site from '~/site.config'
 import { parsePageBlocks } from '~/utils/pageBlocks'
 
+/**
+ * 显式命名路由：本页与通配 404 页 pages/[...slug].vue 都是「动态/通配」形态，
+ * Nuxt 默认给两者生成同一个路由名并告警（仅名称冲突，路径解析正确）。
+ * 命名后告警消失，路由表也更清晰。
+ */
+definePageMeta({ name: 'custom-page' })
+
 /** /api/page/get 公开接口返回的四字段（见 worker/src/index.js 的 pageGet） */
 type CustomPageVO = { slug: string, title: string, content: string, seoDescription: string }
 
