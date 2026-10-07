@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { PAGE_BLOCK_REGISTRY } from '../../front/utils/pageBlockSchema.js';
 
 /**
  * 自定义页面前端源码契约（模式同 memo-block-order.test.mjs）：
@@ -8,6 +9,10 @@ import { readFile } from 'node:fs/promises';
  * - RESERVED_PAGE_SLUGS：front/utils/pageBlocks.js 与 worker/src/index.js 两侧数组字面量
  *   逐字一致（正则提取后 JSON.parse 比对，顺序也必须一致）
  * - SUPPORTED_UI_KINDS 与 PageRenderer 的 KIND_COMPONENTS 分发集合一致
+ * - 三方 kind 一致（P1 块编辑器）：pageBlockSchema 注册表（纯 JS 直接 import 取键）、
+ *   pageBlocks.js 的 SUPPORTED_UI_KINDS、PageRenderer 的 KIND_COMPONENTS 键，排序后 deepEqual
+ * - 编辑器双模式（P1 块编辑器）：块编辑模式接线 PageBlockList + PageBlockForm、
+ *   源码模式保留（「源码模式」字样）、块变化经 serializePageBlocks 写回 form.content
  * - Header.vue / MobileNav.vue / layouts/default.vue 都必须接 pageNav 导航
  * - PageRenderer 与七个 page-ui 组件源码不得出现 :global(.dark)（编译会丢后代选择器）
  */
@@ -64,6 +69,14 @@ for (const name of ['Button', 'Card', 'Countdown', 'Timeline', 'Gallery', 'Music
 }
 assert.doesNotMatch(renderer, /: PageUi[A-Za-z]*.*'PageUi/, 'KIND_COMPONENTS 不得再使用字符串组件名');
 
+// 4b) 三方 kind 一致（P1 块编辑器）：schema 注册表 / 解析器支持集合 / 渲染器分发键。
+//     pageBlockSchema.js 是纯 JS（.js + JSDoc），直接真实 import 取键比正则提取更稳；
+//     三方排序后 deepEqual，任何一侧增删 kind（新块类型须三处同步）都会被立刻钉住
+const schemaKinds = Object.keys(PAGE_BLOCK_REGISTRY).sort();
+assert.ok(schemaKinds.length >= 7, 'pageBlockSchema 注册表 kind 不得少于七种');
+assert.deepEqual(schemaKinds, [...kinds].sort(), 'pageBlockSchema 注册表 kind 集合必须与 SUPPORTED_UI_KINDS 完全一致');
+assert.deepEqual([...rendererKinds].sort(), schemaKinds, 'PageRenderer KIND_COMPONENTS 键必须与 pageBlockSchema 注册表 kind 集合完全一致');
+
 // 5) 导航接线：桌面下拉、移动端网格、布局数据加载三处都必须消费 pageNav
 for (const [name, source] of [['Header.vue', header], ['MobileNav.vue', mobileNav], ['layouts/default.vue', layout]]) {
   assert.match(source, /\bpageNav\b/, `${name} 必须接自定义页面导航（pageNav）`);
@@ -81,5 +94,13 @@ assert.doesNotMatch(editorPage, /插入图案/, '不应再出现「插入图案�
 assert.doesNotMatch(editorPage, /STATUS_PATTERN_GROUPS|onPatternSelected|showPatternModal/, '工具栏不得再回到独立「图案」按钮方案');
 assert.match(editorPage, /effectiveIcon/, '图标选择器必须计算当前图标名供预览');
 assert.match(editorPage, /<UIcon :name="name"/, '常用图标列表必须用 UIcon 渲染图标预览');
+
+// 9) 编辑器双模式（P1 块编辑器）：块编辑模式接线两块积木 + 源码模式保留 + 序列化回写。
+//    断言用「组件标签形态」（<PageBlockList / <PageBlockForm）而非裸字符串，防止只在
+//    注释里提组件名而模板未真正接线；serializePageBlocks 是 blocks → form.content 的唯一写回通道
+assert.match(editorPage, /<PageBlockList/, '块编辑模式必须以组件标签接线 PageBlockList（增删选 + 拖拽排序面板）');
+assert.match(editorPage, /<PageBlockForm/, '选中 ui 块必须以组件标签接线 PageBlockForm（schema 通用表单）');
+assert.match(editorPage, /源码模式/, '双模式编辑器必须保留源码模式（须有「源码模式」字样）');
+assert.match(editorPage, /serializePageBlocks/, '块编辑的任何变化必须经 serializePageBlocks 序列化写回 form.content');
 
 console.log('custom-page-frontend: PASS');
