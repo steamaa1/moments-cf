@@ -13,6 +13,11 @@
  *   3. 未知 kind、坏 JSON、未闭合围栏 → 整块按原文并入 markdown 流，绝不丢弃用户文字
  *   4. 任何输入（null / 非字符串 / 空串）都不抛错，最坏返回空数组
  *
+ * 反向 serializePageBlocks（块编辑器落盘用）：把块数组拼回同构文本，与
+ * parsePageBlocks 互为逆操作——parse(serialize(blocks)) 与 blocks deepEqual。
+ * markdown 块的 value 逐字原样输出（含普通代码围栏、未知 kind 围栏、坏 JSON
+ * 围栏的原文），块之间用单个换行连接；ui 块输出三行围栏。
+ *
  * 说明：本文件用 .js + JSDoc 而非 .ts，是为了让 `node --test` 能在任意 Node 版本
  * 直接导入并真实执行（.ts 依赖 Node 22.18+/24 的类型剥离）；Nuxt 侧 allowJs 已开启。
  */
@@ -88,4 +93,46 @@ export function parsePageBlocks(content) {
   }
   flushText()
   return blocks
+}
+
+/**
+ * 把有序块数组序列化回「markdown + 组件围栏」的落盘文本（parsePageBlocks 的逆操作）。
+ *
+ * 规则：
+ *   1. markdown 块：value 逐字原样输出，不做任何加工（trim/转义/换行重排都会破坏往返）。
+ *      未知 kind、坏 JSON 在 parse 时已按原文并入 markdown 块，这里原样写回即天然保真。
+ *   2. ui 块：输出三行围栏——首行 ```ui:<kind>，中间一行 JSON.stringify(data)，末行 ```。
+ *      kind 里的非 [A-Za-z0-9_-] 字符会被剔除（防注入额外行破坏围栏结构）；
+ *      data 不可序列化（undefined / 循环引用等）时写 'null'，保证输出永远可被 parse 收回。
+ *   3. 纯空白的 markdown 片段跳过不输出（与 parse 的 flushText 语义对称：空片段不产块）。
+ *   4. 块与块之间用单个换行连接：markdown value 自带的行首/行尾空行会与分隔换行自然
+ *      合并，保证 parse(serialize(blocks)) 与 blocks deepEqual。
+ *   5. 任何输入不抛错：非数组（null / undefined / 对象等）返回空串。
+ *
+ * @param {Array<{ type: 'markdown', value: string } | { type: 'ui', kind: string, data: any } | null | undefined>} blocks
+ * @returns {string}
+ */
+export function serializePageBlocks(blocks) {
+  if (!Array.isArray(blocks)) return ''
+  /** @type {string[]} */
+  const parts = []
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') continue
+    if (block.type === 'ui') {
+      const kind = String(block.kind || '').replace(/[^A-Za-z0-9_-]/g, '')
+      // JSON.stringify 对 undefined / function 返回 undefined，对循环引用抛错——都收敛为 'null'
+      let json
+      try {
+        json = JSON.stringify(block.data)
+      } catch {
+        json = undefined
+      }
+      parts.push('```ui:' + kind + '\n' + (json === undefined ? 'null' : json) + '\n```')
+    } else {
+      const value = typeof block.value === 'string' ? block.value : String(block.value ?? '')
+      if (!value.trim()) continue
+      parts.push(value)
+    }
+  }
+  return parts.join('\n')
 }
