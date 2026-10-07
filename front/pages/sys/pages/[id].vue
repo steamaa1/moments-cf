@@ -32,15 +32,53 @@
             </UFormGroup>
           </div>
 
-          <UFormGroup label="正文" help="Markdown 与组件围栏（```ui:kind）混合文本">
-            <div class="mb-2 flex flex-wrap gap-2">
-              <UButton size="xs" color="white" icon="i-carbon-list" @click="showKindModal = true">插入组件</UButton>
-              <UButton size="xs" color="white" icon="i-carbon-face-satisfied" @click="showEmojiModal = true">插入表情</UButton>
-              <UButton size="xs" color="white" icon="i-carbon-star" @click="showIconModal = true">插入图标</UButton>
+          <UFormGroup label="正文" :help="bodyHelp">
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <UButton size="xs" :color="editMode === 'blocks' ? 'primary' : 'white'" icon="i-carbon-list" @click="switchMode('blocks')">块编辑</UButton>
+              <UButton size="xs" :color="editMode === 'source' ? 'primary' : 'white'" icon="i-carbon-code" @click="switchMode('source')">源码</UButton>
             </div>
-            <textarea ref="contentRef" v-model="form.content" rows="18"
-              class="w-full rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm leading-6 outline-none focus:border-primary-500 dark:border-gray-600 dark:bg-neutral-900"
-              placeholder="支持 Markdown。用上方「插入组件」可在光标处嵌入按钮/卡片等组件围栏。"/>
+
+            <!-- 块编辑模式（默认）：块列表 + 选中块编辑；blocks 的任何变化立即经 serializePageBlocks 写回 form.content -->
+            <div v-if="editMode === 'blocks'" class="space-y-3">
+              <PageBlockList :blocks="blocks" @select="selectBlock" @add="addBlock" @remove="removeBlock" @reorder="reorderBlocks"/>
+              <div class="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3 dark:border-gray-700/70 dark:bg-neutral-900/50">
+                <template v-if="selectedBlock">
+                  <p class="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                    编辑{{ selectedBlock.type === 'ui' ? (selectedBlockSchema?.label || '未知组件') : '文本' }}块
+                  </p>
+                  <PageBlockForm
+                    v-if="selectedBlock.type === 'ui' && selectedBlockSchema"
+                    :schema="selectedBlockSchema"
+                    v-model="selectedBlock.data"
+                  />
+                  <p v-else-if="selectedBlock.type === 'ui'" class="text-xs text-gray-400 dark:text-gray-500">
+                    未知组件类型 {{ selectedBlock.kind }}，请切到源码模式修改
+                  </p>
+                  <textarea
+                    v-else
+                    v-model="selectedBlock.value"
+                    rows="8"
+                    class="w-full rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm leading-6 outline-none focus:border-primary-500 dark:border-gray-600 dark:bg-neutral-900"
+                    placeholder="本段 Markdown 原文，改动实时写回正文"
+                  />
+                </template>
+                <p v-else class="py-6 text-center text-xs text-gray-400 dark:text-gray-500">
+                  在上方列表选中一个块进行编辑，或点「添加块」新增
+                </p>
+              </div>
+            </div>
+
+            <!-- 源码模式：完整保留原工具条三按钮与光标插入逻辑（契约测试断言目标，不得移除） -->
+            <template v-else>
+              <div class="mb-2 flex flex-wrap gap-2">
+                <UButton size="xs" color="white" icon="i-carbon-list" @click="showKindModal = true">插入组件</UButton>
+                <UButton size="xs" color="white" icon="i-carbon-face-satisfied" @click="showEmojiModal = true">插入表情</UButton>
+                <UButton size="xs" color="white" icon="i-carbon-star" @click="showIconModal = true">插入图标</UButton>
+              </div>
+              <textarea ref="contentRef" v-model="form.content" rows="18"
+                class="w-full rounded-lg border border-gray-300 bg-white p-3 font-mono text-sm leading-6 outline-none focus:border-primary-500 dark:border-gray-600 dark:bg-neutral-900"
+                placeholder="支持 Markdown。用上方「插入组件」可在光标处嵌入按钮/卡片等组件围栏。"/>
+            </template>
           </UFormGroup>
 
           <div class="flex justify-end gap-2">
@@ -153,18 +191,26 @@
  * 保存统一调 /admin/page/save（新建不带 id、更新带 id），成功后跳 /sys/settings?tab=pages。
  * 提交前先按 SLUG_PATTERN 与保留字校验（与 worker 侧同规则，先拦截再请求）。
  *
- * 正文编辑：大文本域 + 工具条三按钮（插入组件 / 插入表情 / 插入图标），光标插入统一走 textarea 的
- * selectionStart/selectionEnd 拼接并恢复焦点：
- *   - 插入组件：先选 kind（七种）再填极简表单，实时 JSON 预览，确认后按
- *     「```ui:kind / 一行 JSON / ```」三行围栏协议插入（协议见 utils/pageBlocks.js）；
- *   - 插入表情：内嵌 Emoji 组件（五组 emoji 字符），监听 selected 事件即点即插；
- *   - 插入图标：带 UIcon 预览的常用名网格 + 自定义输入，插入图标名文本。
+ * 正文双模式（P1 块编辑器，Gutenberg-lite）：form.content 仍是唯一事实源（保存接口不变）。
+ *   - 块编辑（默认）：进模式 / 块模式下的外部 content 变化时 parsePageBlocks 拆块；左列
+ *     PageBlockList（增删选 + 拖拽排序）与选中块编辑区（ui 块 PageBlockForm 按 schema 通用
+ *     表单，markdown 块直接编辑该段原文）；blocks 的任何变化立即经 serializePageBlocks
+ *     写回 form.content，右列预览照旧走 previewBlocks。
+ *   - 源码：大文本域 + 工具条三按钮（插入组件 / 插入表情 / 插入图标），光标插入统一走
+ *     textarea 的 selectionStart/selectionEnd 拼接并恢复焦点（契约测试断言目标，不得移除）：
+ *     - 插入组件：先选 kind（七种）再填极简表单，实时 JSON 预览，确认后按
+ *       「```ui:kind / 一行 JSON / ```」三行围栏协议插入（协议见 utils/pageBlocks.js）；
+ *     - 插入表情：内嵌 Emoji 组件（五组 emoji 字符），监听 selected 事件即点即插；
+ *     - 插入图标：带 UIcon 预览的常用名网格 + 自定义输入，插入图标名文本。
+ *   - 模式切换守卫：离开块模式先 serialize 兜底；进块模式重新 parse，content 含 ```ui: 围栏
+ *     但解析出的 ui 块更少（坏 JSON / 未知 kind 回退原文）时 toast 提示「已按原文并入文本」。
  * 预览：computed 调 parsePageBlocks 后交给 PageRenderer，大屏右栏、小屏下方。
  */
 import { toast } from 'vue-sonner'
 import type { SysConfigVO, UserVO } from '~/types'
 import site from '~/site.config'
-import { parsePageBlocks, SLUG_PATTERN, RESERVED_PAGE_SLUGS } from '~/utils/pageBlocks'
+import { parsePageBlocks, serializePageBlocks, SLUG_PATTERN, RESERVED_PAGE_SLUGS } from '~/utils/pageBlocks'
+import { getPageBlockSchema } from '~/utils/pageBlockSchema'
 
 const config = useState<SysConfigVO>('sysConfig')
 const currentUser = useState<UserVO | null>('userinfo')
@@ -315,6 +361,97 @@ const confirmInsertIcon = () => {
   insertAtCursor(value)
   customIcon.value = ''
   showIconModal.value = false
+}
+
+/* ---------- 正文双模式：块编辑（默认）/ 源码；form.content 仍是唯一事实源 ---------- */
+
+const editMode = ref('blocks')
+const blocks = ref<Array<Record<string, any>>>([])
+const selectedIndex = ref(-1)
+
+const selectedBlock = computed(() =>
+  selectedIndex.value >= 0 && selectedIndex.value < blocks.value.length ? blocks.value[selectedIndex.value] : null,
+)
+const selectedBlockSchema = computed(() =>
+  selectedBlock.value && selectedBlock.value.type === 'ui' ? getPageBlockSchema(selectedBlock.value.kind) : null,
+)
+
+const bodyHelp = computed(() =>
+  editMode.value === 'blocks'
+    ? '块编辑：列表增删排序、选中块改参数，改动立即写回正文；源码模式可看围栏原文'
+    : 'Markdown 与组件围栏（```ui:kind）混合文本',
+)
+
+/** 块 → content 的唯一写回口：任何块编辑后立即序列化；离开块模式前 switchMode 再兜底一次 */
+const syncContentFromBlocks = () => {
+  const text = serializePageBlocks(blocks.value)
+  if (text !== form.content) form.content = text
+}
+
+/* blocks 的任何变化（增删 / 排序 / PageBlockForm 的 v-model / markdown 段文本）都立即写回 content */
+watch(blocks, syncContentFromBlocks, { deep: true })
+
+/**
+ * 重新 parse 的统一入口（进块模式守卫 + 块模式下的外部 content 变化）。
+ * 回退检测：content 里 ```ui: 围栏数多于解析出的 ui 块数 = 存在坏 JSON / 未知 kind 的围栏，
+ * 它们已被 parse 按原文并入文本块（块模式下不可再编辑其结构），toast 告知用户。
+ */
+const reparseContent = (value: string) => {
+  const parsed = parsePageBlocks(value)
+  const fenceCount = (String(value).match(/```ui:/g) || []).length
+  const uiCount = parsed.filter(block => block.type === 'ui').length
+  if (fenceCount > uiCount) toast.warning('存在无法解析的组件围栏，已按原文并入文本')
+  blocks.value = parsed
+  if (selectedIndex.value >= parsed.length) selectedIndex.value = parsed.length - 1
+}
+
+/* 块模式下的外部 content 变化（onMounted 回填等）：与 serialize(blocks) 相同 = 自己刚写回
+   的，跳过；不同才是外部变化，重新 parse。空白 markdown 片段按协议不落盘——加完不写字
+   的空文本块在 re-parse 时自然消失，与序列化语义一致。 */
+watch(() => form.content, (value) => {
+  if (editMode.value !== 'blocks') return
+  if (value === serializePageBlocks(blocks.value)) return
+  reparseContent(value)
+})
+
+/** 模式切换守卫：离开块模式先 serialize 兜底（watch 已持续同步，此处幂等）；进块模式重新 parse */
+const switchMode = (mode: string) => {
+  if (mode === editMode.value) return
+  if (mode === 'source') {
+    syncContentFromBlocks()
+    editMode.value = 'source'
+    return
+  }
+  editMode.value = 'blocks'
+  reparseContent(form.content)
+}
+
+/* ---------- 块列表事件 → blocks（deep watch 统一写回 content） ---------- */
+
+const selectBlock = (index: number) => {
+  selectedIndex.value = index
+}
+
+const addBlock = (type: string) => {
+  blocks.value.push(type === 'markdown' ? { type: 'markdown', value: '' } : { type: 'ui', kind: type, data: {} })
+  selectedIndex.value = blocks.value.length - 1
+}
+
+const removeBlock = (index: number) => {
+  if (index < 0 || index >= blocks.value.length) return
+  blocks.value.splice(index, 1)
+  if (selectedIndex.value === index) selectedIndex.value = -1
+  else if (selectedIndex.value > index) selectedIndex.value -= 1
+}
+
+const reorderBlocks = (next: Array<Record<string, any>>) => {
+  const current = selectedBlock.value
+  blocks.value = next
+  /* PageBlockList 的 reorder 是浅拷贝 splice，元素引用不变：用引用找选中块的新位置 */
+  if (current) {
+    const moved = next.indexOf(current)
+    if (moved >= 0) selectedIndex.value = moved
+  }
 }
 
 /* ---------- 预览与保存 ---------- */
