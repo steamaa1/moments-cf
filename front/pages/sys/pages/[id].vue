@@ -7,9 +7,12 @@
         <UButton :loading="saving" @click="save">{{ pageId ? '保存修改' : '创建页面' }}</UButton>
       </div>
 
-      <div class="grid items-start gap-6 lg:grid-cols-2">
+      <!-- 两个网格项必须 min-w-0：块列表摘要用 truncate（white-space: nowrap），
+           不加会被 min-content 撑宽卡片，而 main 的 overflow-x: clip 会把溢出静默裁掉
+           （2026-10-24 线上手机复现：420px 视口里卡片 462px） -->
+      <div class="grid min-w-0 items-start gap-6 lg:grid-cols-2">
         <!-- 表单列：大屏左栏、小屏上方 -->
-        <section class="space-y-4 rounded-2xl border border-gray-200/70 bg-white/80 p-5 dark:border-gray-700/60 dark:bg-neutral-800/80">
+        <section class="min-w-0 space-y-4 rounded-2xl border border-gray-200/70 bg-white/80 p-5 dark:border-gray-700/60 dark:bg-neutral-800/80">
           <UFormGroup label="标题" required>
             <UInput v-model="form.title" maxlength="60" placeholder="1-60 字"/>
           </UFormGroup>
@@ -97,7 +100,7 @@
         </section>
 
         <!-- 预览列：大屏右栏、小屏下方（DOM 顺序在表单之后） -->
-        <section class="rounded-2xl border border-gray-200/70 bg-white/80 p-5 dark:border-gray-700/60 dark:bg-neutral-800/80">
+        <section class="min-w-0 rounded-2xl border border-gray-200/70 bg-white/80 p-5 dark:border-gray-700/60 dark:bg-neutral-800/80">
           <h2 class="mb-3 text-sm font-semibold text-gray-500 dark:text-gray-400">实时预览</h2>
           <p v-if="!previewBlocks.length" class="py-16 text-center text-sm text-gray-400">左侧输入正文后此处实时预览</p>
           <PageRenderer v-else :blocks="previewBlocks"/>

@@ -99,6 +99,14 @@ for (const type of ['image', 'icon', 'datetime']) {
 const blockForm = await read('front/components/PageBlockForm.vue');
 assert.match(blockForm, /<PageBlockField/, 'PageBlockForm 的字段渲染必须统一走 PageBlockField');
 
+// 4c2) 编辑器横向溢出回归：两个网格项必须 min-w-0。
+//      块列表摘要用 truncate（nowrap），网格项默认 min-width:auto 会被 min-content 撑宽；
+//      main 的 overflow-x: clip 又会把溢出静默裁掉，线上表现为手机右侧内容被切。
+assert.match(editorPage, /<div class="grid min-w-0 items-start gap-6 lg:grid-cols-2">/, '编辑器网格必须 min-w-0');
+assert.match(editorPage, /<section class="min-w-0 space-y-4 rounded-2xl/, '表单列必须 min-w-0（防止长块摘要撑宽卡片）');
+assert.match(editorPage, /<section class="min-w-0 rounded-2xl/, '预览列必须 min-w-0');
+assert.ok((editorPage.match(/<section class="min-w-0/g) || []).length >= 2, '两列都必须带 min-w-0');
+
 // 4d) 逐页 CSS/JS（P2-C）：页面接线 composable，注入标签与清理语义钉死
 assert.match(displayPage, /useCustomPageAssets\(page\)/, 'pages/[slug].vue 必须调用 useCustomPageAssets(page) 注入逐页资产');
 assert.match(assetComposable, /document\.head\.appendChild/, '逐页 CSS 必须注入 style 到 head');
