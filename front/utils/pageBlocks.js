@@ -29,7 +29,7 @@ export const RESERVED_PAGE_SLUGS = ['about', 'friend', 'photos', 'new', 'edit', 
 export const SLUG_PATTERN = /^[a-z0-9-]{1,40}$/
 
 /** 支持的组件 kind：与 PageRenderer 的分发集合一致（tests/source 契约测试会比对两侧） */
-export const SUPPORTED_UI_KINDS = ['button', 'card', 'countdown', 'timeline', 'gallery', 'music', 'icons']
+export const SUPPORTED_UI_KINDS = ['button', 'card', 'countdown', 'timeline', 'gallery', 'music', 'icons', 'callout', 'accordion', 'video', 'links', 'stats', 'columns', 'embed']
 
 /** 围栏开头行：三反引号 + ui: + kind（容忍少量前导/尾随空白） */
 const FENCE_OPEN_RE = /^\s*```\s*ui:([A-Za-z0-9_-]+)\s*$/

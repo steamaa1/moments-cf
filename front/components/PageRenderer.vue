@@ -4,12 +4,12 @@
  *
  * 数据协议见 front/utils/pageBlocks.js：
  *   [{ type: 'markdown', value: '原文' }, { type: 'ui', kind: 'button', data: {...} }]
- * markdown 片段用本组件私有的 markdown-it 实例渲染（与 about.vue 同配置：
+ * markdown 片段交给 front/utils/pageMarkdown.js 的共享渲染器（与 about.vue 同配置：
  * html 开启、breaks、/upload/ 图片绝对地址归一化为相对路径防 CORB），v-html 输出；
  * ui 块按 kind 显式 map 分发到 page-ui 子组件（kind 集合与 SUPPORTED_UI_KINDS 一致，
  * tests/source 契约测试会比对两侧）。
  */
-import markdownit from 'markdown-it'
+import { renderPageMarkdown } from '~/utils/pageMarkdown'
 import PageUiButton from './page-ui/PageUiButton.vue'
 import PageUiCard from './page-ui/PageUiCard.vue'
 import PageUiCountdown from './page-ui/PageUiCountdown.vue'
@@ -17,20 +17,18 @@ import PageUiTimeline from './page-ui/PageUiTimeline.vue'
 import PageUiGallery from './page-ui/PageUiGallery.vue'
 import PageUiMusic from './page-ui/PageUiMusic.vue'
 import PageUiIcons from './page-ui/PageUiIcons.vue'
+import PageUiCallout from './page-ui/PageUiCallout.vue'
+import PageUiAccordion from './page-ui/PageUiAccordion.vue'
+import PageUiVideo from './page-ui/PageUiVideo.vue'
+import PageUiLinks from './page-ui/PageUiLinks.vue'
+import PageUiStats from './page-ui/PageUiStats.vue'
+import PageUiColumns from './page-ui/PageUiColumns.vue'
+import PageUiEmbed from './page-ui/PageUiEmbed.vue'
 
 const props = defineProps({
   /** parsePageBlocks(content) 的输出数组 */
   blocks: { type: Array, default: () => [] },
 })
-
-const renderer = markdownit({ html: true, linkify: true, typographer: true, breaks: true })
-// 本站媒体（/upload/ 前缀）绝对 URL 规范化为相对路径，与 about.vue 同规则
-const defaultImage = renderer.renderer.rules.image || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options))
-renderer.renderer.rules.image = (tokens, idx, options, env, self) => {
-  const src = tokens[idx].attrGet('src') || ''
-  if (/^https?:\/\/[^/]+\/upload\//.test(src)) tokens[idx].attrSet('src', src.replace(/^https?:\/\/[^/]+/, ''))
-  return defaultImage(tokens, idx, options, env, self)
-}
 
 /**
  * kind → 子组件对象（显式 import，绝不用字符串名）。
@@ -49,16 +47,22 @@ const KIND_COMPONENTS = {
   gallery: PageUiGallery,
   music: PageUiMusic,
   icons: PageUiIcons,
+  callout: PageUiCallout,
+  accordion: PageUiAccordion,
+  video: PageUiVideo,
+  links: PageUiLinks,
+  stats: PageUiStats,
+  columns: PageUiColumns,
+  embed: PageUiEmbed,
 }
 
 const safeBlocks = computed(() => (Array.isArray(props.blocks) ? props.blocks : []))
-const markdownHtml = value => renderer.render(typeof value === 'string' ? value : '')
 </script>
 
 <template>
   <div class="page-renderer">
     <template v-for="(block, index) in safeBlocks" :key="index">
-      <div v-if="block.type === 'markdown'" class="markdown-content page-markdown" v-html="markdownHtml(block.value)"/>
+      <div v-if="block.type === 'markdown'" class="markdown-content page-markdown" v-html="renderPageMarkdown(block.value)"/>
       <component :is="KIND_COMPONENTS[block.kind]" v-else-if="block.type === 'ui' && KIND_COMPONENTS[block.kind]" :data="block.data"/>
     </template>
   </div>

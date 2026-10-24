@@ -21,8 +21,15 @@ import { parsePageBlocks } from '~/utils/pageBlocks'
  */
 definePageMeta({ name: 'custom-page' })
 
-/** /api/page/get 公开接口返回的四字段（见 worker/src/index.js 的 pageGet） */
-type CustomPageVO = { slug: string, title: string, content: string, seoDescription: string }
+/** /api/page/get 公开接口返回的字段（见 worker/src/index.js 的 pageGet；0019 起含逐页 CSS/JS） */
+type CustomPageVO = {
+  slug: string
+  title: string
+  content: string
+  seoDescription: string
+  customCss: string
+  customJs: string
+}
 
 const config = useState<SysConfigVO>('sysConfig')
 const currentUser = useState<UserVO | null>('userinfo')
@@ -47,6 +54,10 @@ await loadPage()
 watch(() => route.params.slug, () => { loadPage() })
 
 const blocks = computed(() => parsePageBlocks(page.value?.content))
+
+// 逐页 CSS/JS（P2-C）：注入 .custom-page-shell 作用域外的页面级样式与脚本，
+// slug 变化/离开页面时自动清理旧标签（见 composables/useCustomPageAssets.ts）
+useCustomPageAssets(page)
 
 useHead({
   // 与 worker 注入的服务端 meta 同规则：「页面标题 - 站点标题」

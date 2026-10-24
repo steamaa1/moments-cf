@@ -12,7 +12,7 @@ Cloudflare Workers Builds：
 | Build command | `npm run build:cf` |
 | Deploy command | `npm run deploy:cf` |
 
-部署脚本会按名称查询 `moments-db`，应用 `0001`～`0018` 全部 Migration，设置 R2 CORS，再部署 Worker。计划任务**每周日** `03:00 UTC`（`worker/wrangler.toml` 的 `crons = ["0 3 * * SUN"]`）触发；每次触发时按后台配置的备份间隔（默认 7 天）判断是否真正执行备份，并按保留天数（默认 90 天）清理旧备份。
+部署脚本会按名称查询 `moments-db`，应用 `0001`～`0019` 全部 Migration，设置 R2 CORS，再部署 Worker。计划任务**每周日** `03:00 UTC`（`worker/wrangler.toml` 的 `crons = ["0 3 * * SUN"]`）触发；每次触发时按后台配置的备份间隔（默认 7 天）判断是否真正执行备份，并按保留天数（默认 90 天）清理旧备份。
 
 ## Bindings 与 Variables
 
@@ -85,9 +85,10 @@ Host、端口、用户名和发件地址在管理员设置页保存；密码/授
 0016_photo_albums.sql
 0017_like_user_identity.sql
 0018_custom_pages.sql
+0019_custom_page_assets.sql
 ```
 
-`0006` 增加 `sha256`、`thumbnail_key`、`upload_state` 及索引；`0007` 记录迁移包状态，防止重复导入；`0016` 增加照片墙图集（`photo_albums`/`photo_album_items`）；`0017` 给点赞记录补 `user_id` 并按登录用户去重（匿名仍按网络指纹）；`0018` 增加自定义页面表 `custom_pages`（管理员创建、根级斜杠加 slug 访问的独立页面）。Migration 真值以 `worker/migrations/` 目录与 `deploy-cf.mjs` 为准。
+`0006` 增加 `sha256`、`thumbnail_key`、`upload_state` 及索引；`0007` 记录迁移包状态，防止重复导入；`0016` 增加照片墙图集（`photo_albums`/`photo_album_items`）；`0017` 给点赞记录补 `user_id` 并按登录用户去重（匿名仍按网络指纹）；`0018` 增加自定义页面表 `custom_pages`（管理员创建、根级斜杠加 slug 访问的独立页面）；`0019` 给自定义页面加逐页 `custom_css`/`custom_js`（管理员编写的页面级样式与脚本，仅在根级页面注入）。Migration 真值以 `worker/migrations/` 目录与 `deploy-cf.mjs` 为准。
 
 ## 检查
 

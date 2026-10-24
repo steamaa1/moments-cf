@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { parsePageBlocks, serializePageBlocks, RESERVED_PAGE_SLUGS, SLUG_PATTERN, SUPPORTED_UI_KINDS } from '../../front/utils/pageBlocks.js';
-import { PAGE_BLOCK_REGISTRY, getPageBlockSchema } from '../../front/utils/pageBlockSchema.js';
+import { PAGE_BLOCK_REGISTRY, getPageBlockSchema, createPageBlockData } from '../../front/utils/pageBlockSchema.js';
 
 /**
  * 自定义页面正文块协议契约（两个工具文件均为纯 JS，这里真实执行而非正则断言）：
@@ -9,7 +9,7 @@ import { PAGE_BLOCK_REGISTRY, getPageBlockSchema } from '../../front/utils/pageB
  * - 空片段不输出；任何输入不抛错
  * - serializePageBlocks 与 parsePageBlocks 互逆：parse(serialize(blocks)) 与 blocks deepEqual，
  *   且 parse(serialize(parse(x))) 幂等；markdown 原样写回使回退内容天然保真
- * - PAGE_BLOCK_REGISTRY 七种 kind 与 SUPPORTED_UI_KINDS 双向一致，schema 字段与七个 page-ui 组件协议对齐
+ * - PAGE_BLOCK_REGISTRY 与 SUPPORTED_UI_KINDS 双向一致，schema 字段与 page-ui 组件协议对齐
  */
 
 // 1) 纯 markdown：整体是一个块，原文保留
@@ -47,7 +47,7 @@ import { PAGE_BLOCK_REGISTRY, getPageBlockSchema } from '../../front/utils/pageB
   assert.equal(typeof ui1.data, 'object');
 }
 
-// 3) 七种 kind 全部可解析，其余 kind 一律回退
+// 3) 注册表全部 kind 可解析，其余 kind 一律回退
 for (const kind of SUPPORTED_UI_KINDS) {
   const blocks = parsePageBlocks('```ui:' + kind + '\n{"ok":true}\n```');
   assert.equal(blocks.length, 1, `kind ${kind} 必须产出 ui 块`);
@@ -56,10 +56,10 @@ for (const kind of SUPPORTED_UI_KINDS) {
   assert.deepEqual(blocks[0].data, { ok: true });
 }
 {
-  const fallback = parsePageBlocks('```ui:video\n{"src":"x.mp4"}\n```');
+  const fallback = parsePageBlocks('```ui:unknownkind\n{"src":"x.mp4"}\n```');
   assert.equal(fallback.length, 1);
   assert.equal(fallback[0].type, 'markdown', '未知 kind 必须整块原文并入 markdown 流');
-  assert.equal(fallback[0].value, '```ui:video\n{"src":"x.mp4"}\n```', '回退块必须保留围栏行与内部 JSON 原文');
+  assert.equal(fallback[0].value, '```ui:unknownkind\n{"src":"x.mp4"}\n```', '回退块必须保留围栏行与内部 JSON 原文');
 }
 
 // 4) 坏 JSON：整块原文回退，前后文本不丢
@@ -149,7 +149,7 @@ assert.equal(SLUG_PATTERN.global, false, 'SLUG_PATTERN 不得带 g 标志');
 
 // 10) 保留字与 kind 清单契约：与 worker 侧 / PageRenderer 分发集合逐字一致同序
 assert.deepEqual(RESERVED_PAGE_SLUGS, ['about', 'friend', 'photos', 'new', 'edit', 'user', 'sys', 'memo', 'tags', 'api', 'upload', 'rss', 'x-media', 'douban-cover', 'page']);
-assert.deepEqual(SUPPORTED_UI_KINDS, ['button', 'card', 'countdown', 'timeline', 'gallery', 'music', 'icons']);
+assert.deepEqual(SUPPORTED_UI_KINDS, ['button', 'card', 'countdown', 'timeline', 'gallery', 'music', 'icons', 'callout', 'accordion', 'video', 'links', 'stats', 'columns', 'embed']);
 assert.equal(new Set(SUPPORTED_UI_KINDS).size, SUPPORTED_UI_KINDS.length, 'kind 清单不得重复');
 
 // 11) serializePageBlocks：与 parse 互逆。roundTrip 同时断言往返 deepEqual，返回中间产物便于进一步检查
@@ -208,7 +208,7 @@ const roundTrip = content => {
 
 // 15) 未知 kind / 坏 JSON：parse 已回退为 markdown 原文，serialize 按原文写回即天然保真
 {
-  const unknown = '```ui:video\n{"src":"x.mp4"}\n```';
+  const unknown = '```ui:unknownkind\n{"src":"x.mp4"}\n```';
   const { blocks, text } = roundTrip(unknown);
   assert.deepEqual(blocks, [{ type: 'markdown', value: unknown }], '未知 kind 回退块必须保留围栏原文');
   assert.equal(text, unknown, '未知 kind 围栏按回退原文写回');
@@ -230,9 +230,9 @@ const roundTrip = content => {
     '```ui:gallery\n{"items":[{"src":"/upload/media/2026/10/01/a.jpg","caption":"日出"}]}\n```',
     '```ui:icons\n{"items":[{"icon":"i-carbon-home","label":"首页","href":"/"},{"icon":"🌱","label":"绿植"}]}\n```',
     '```ui:timeline\n{"items":[{"time":"2026-10-01","title":"项目启动","desc":"第一版上线"}]}\n```',
-    '文字\n\n```ui:video\n{"x":1}\n```\n\n回退文字',
+    '文字\n\n```ui:unknownkind\n{"x":1}\n```\n\n回退文字',
     '文字\n\n```ui:card\n{oops}\n```\n\n坏JSON文字',
-    '文字\n```ui:video\n{"x":1}\n```\n```ui:button\n{"items":[]}\n```\n尾文',
+    '文字\n```ui:unknownkind\n{"x":1}\n```\n```ui:button\n{"items":[]}\n```\n尾文',
     '```js\ncode()\n```\n```ui:button\n{"items":[]}\n```',
     '```ui:gallery\n{"items":[]}',
     '```ui:card\nnull\n```',
@@ -313,7 +313,15 @@ assert.equal(serializePageBlocks([null, 42, { type: 'markdown', value: '   ' }])
     assert.ok(field.key, `${kind}.${where} 字段 key 不得为空`);
     assert.equal(typeof field.label, 'string', `${kind}.${where}.${field.key}.label 必须是字符串`);
     assert.ok(field.label, `${kind}.${where}.${field.key} 的 label 不得为空`);
-    assert.ok(field.type === 'string' || field.type === 'number', `${kind}.${where}.${field.key} 的 type 必须是 string|number`);
+    assert.ok(['string', 'number', 'textarea', 'select', 'image', 'icon', 'datetime'].includes(field.type), `${kind}.${where}.${field.key} 的 type 必须是 string|number|textarea|select|image|icon|datetime`);
+    if (field.type === 'select') {
+      assert.ok(Array.isArray(field.options) && field.options.length > 0, `${kind}.${where}.${field.key} 的 select 必须有非空 options`);
+      for (const option of field.options) {
+        assert.equal(typeof option.value, 'string', `${kind}.${where}.${field.key} 的 option.value 必须是字符串`);
+        assert.equal(typeof option.label, 'string', `${kind}.${where}.${field.key} 的 option.label 必须是字符串`);
+      }
+    }
+    if (field.default !== undefined) assert.ok(['string', 'number'].includes(typeof field.default), `${kind}.${where}.${field.key} 的 default 必须是 string|number`);
     if (field.placeholder !== undefined) assert.equal(typeof field.placeholder, 'string', `${kind}.${where}.${field.key} 的 placeholder 必须是字符串`);
     if (field.optional !== undefined) assert.equal(typeof field.optional, 'boolean', `${kind}.${where}.${field.key} 的 optional 必须是布尔`);
   };
@@ -340,7 +348,7 @@ assert.equal(serializePageBlocks([null, 42, { type: 'markdown', value: '   ' }])
   }
 }
 
-// 22) 数据协议与七个 page-ui 组件一致：逐 kind 断言字段 key 顺序与 optional 集合
+// 22) 数据协议与 page-ui 组件一致：逐 kind 断言字段 key 顺序与 optional 集合
 {
   const keys = arr => arr.map(f => f.key);
   const optionalKeys = arr => arr.filter(f => f.optional).map(f => f.key);
@@ -372,15 +380,81 @@ assert.equal(serializePageBlocks([null, 42, { type: 'markdown', value: '   ' }])
   assertItemFields('icons', 'items', ['icon', 'label', 'href'], ['label', 'href']);
 }
 
+// 22b) P2 新块协议：逐字段钉住，防止组件与 schema 漂移
+{
+  const keys = arr => arr.map(f => f.key);
+  const optionalKeys = arr => arr.filter(f => f.optional).map(f => f.key);
+  const assertItemFields = (kind, listKey, allKeys, optional) => {
+    const list = PAGE_BLOCK_REGISTRY[kind].lists.find(l => l.key === listKey);
+    assert.ok(list, `${kind} 必须有列表字段 ${listKey}`);
+    assert.deepEqual(keys(list.itemFields), allKeys, `${kind}.${listKey} 字段集合与组件协议一致`);
+    assert.deepEqual(optionalKeys(list.itemFields), optional, `${kind}.${listKey} 可选字段与组件协议一致`);
+  };
+  // callout：tone(select, 默认 info) + title/text/icon 可选
+  assert.deepEqual(keys(PAGE_BLOCK_REGISTRY.callout.fields), ['tone', 'title', 'text', 'icon']);
+  assert.equal(PAGE_BLOCK_REGISTRY.callout.fields[0].type, 'select');
+  assert.equal(PAGE_BLOCK_REGISTRY.callout.fields[0].default, 'info');
+  assert.deepEqual(PAGE_BLOCK_REGISTRY.callout.fields[0].options.map(o => o.value), ['info', 'warning', 'success', 'danger']);
+  assert.deepEqual(optionalKeys(PAGE_BLOCK_REGISTRY.callout.fields), ['title', 'text', 'icon']);
+  assert.equal(PAGE_BLOCK_REGISTRY.callout.fields.find(f => f.key === 'text').type, 'textarea');
+  // accordion：items[title, text 可选(textarea)]
+  assertItemFields('accordion', 'items', ['title', 'text'], ['text']);
+  assert.equal(PAGE_BLOCK_REGISTRY.accordion.lists[0].itemFields[1].type, 'textarea');
+  // video：src/poster/caption/ratio(select 默认 16:9)
+  assert.deepEqual(keys(PAGE_BLOCK_REGISTRY.video.fields), ['src', 'poster', 'caption', 'ratio']);
+  assert.deepEqual(optionalKeys(PAGE_BLOCK_REGISTRY.video.fields), ['poster', 'caption', 'ratio']);
+  const ratio = PAGE_BLOCK_REGISTRY.video.fields.find(f => f.key === 'ratio');
+  assert.equal(ratio.type, 'select');
+  assert.equal(ratio.default, '16:9');
+  assert.deepEqual(ratio.options.map(o => o.value), ['16:9', '4:3', '1:1', '21:9', '9:16']);
+  // links：items[name, href, desc 可选, icon 可选]
+  assertItemFields('links', 'items', ['name', 'href', 'desc', 'icon'], ['desc', 'icon']);
+  // stats：columns(number 默认 3) + items[value, label 可选, unit 可选]
+  assert.deepEqual(keys(PAGE_BLOCK_REGISTRY.stats.fields), ['columns']);
+  assert.equal(PAGE_BLOCK_REGISTRY.stats.fields[0].type, 'number');
+  assert.equal(PAGE_BLOCK_REGISTRY.stats.fields[0].default, 3);
+  assertItemFields('stats', 'items', ['value', 'label', 'unit'], ['label', 'unit']);
+  // columns：items[title 可选, text]
+  assertItemFields('columns', 'items', ['title', 'text'], ['title']);
+  // embed：html(textarea)
+  assert.deepEqual(keys(PAGE_BLOCK_REGISTRY.embed.fields), ['html']);
+  assert.equal(PAGE_BLOCK_REGISTRY.embed.fields[0].type, 'textarea');
+  // P2-B 字段类型扩展：选图 / 选图标 / 日期时间
+  assert.equal(PAGE_BLOCK_REGISTRY.gallery.lists[0].itemFields.find(f => f.key === 'src').type, 'image', 'gallery.src 必须用照片墙选图');
+  assert.equal(PAGE_BLOCK_REGISTRY.music.fields.find(f => f.key === 'cover').type, 'image', 'music.cover 必须用照片墙选图');
+  assert.equal(PAGE_BLOCK_REGISTRY.video.fields.find(f => f.key === 'poster').type, 'image', 'video.poster 必须用照片墙选图');
+  assert.equal(PAGE_BLOCK_REGISTRY.countdown.fields.find(f => f.key === 'target').type, 'datetime', 'countdown.target 必须用日期时间控件');
+  for (const [kind, where] of [['button', 'lists'], ['card', 'lists'], ['icons', 'lists'], ['links', 'lists'], ['callout', 'fields']]) {
+    const list = where === 'lists' ? PAGE_BLOCK_REGISTRY[kind].lists[0].itemFields : PAGE_BLOCK_REGISTRY[kind].fields;
+    assert.equal(list.find(f => f.key === 'icon').type, 'icon', `${kind}.icon 必须用图标选择器`);
+  }
+}
+
 // 23) getPageBlockSchema：按 kind 取 schema，未知 kind 一律返回 null
 {
   for (const kind of SUPPORTED_UI_KINDS) {
     assert.equal(getPageBlockSchema(kind), PAGE_BLOCK_REGISTRY[kind], `getPageBlockSchema(${kind}) 必须返回对应 schema`);
   }
-  assert.equal(getPageBlockSchema('video'), null, '未注册 kind 返回 null');
+  assert.equal(getPageBlockSchema('unknownkind'), null, '未注册 kind 返回 null');
   assert.equal(getPageBlockSchema(''), null);
   assert.equal(getPageBlockSchema(null), null);
   assert.equal(getPageBlockSchema(undefined), null);
+}
+
+// 24) createPageBlockData：新建块初始 data = schema.default + 空列表；未知 kind 返回空对象
+{
+  assert.deepEqual(createPageBlockData('callout'), { tone: 'info' });
+  assert.deepEqual(createPageBlockData('video'), { ratio: '16:9' });
+  assert.deepEqual(createPageBlockData('stats'), { columns: 3, items: [] });
+  assert.deepEqual(createPageBlockData('button'), { items: [] });
+  assert.deepEqual(createPageBlockData('accordion'), { items: [] });
+  assert.deepEqual(createPageBlockData('columns'), { items: [] });
+  assert.deepEqual(createPageBlockData('embed'), {}, '无 default 且无列表的 kind 返回空对象');
+  assert.deepEqual(createPageBlockData('unknownkind'), {}, '未注册 kind 返回空对象');
+  // 每次返回新对象：改一个块的初始 data 不得污染下一个新块
+  const first = createPageBlockData('stats');
+  first.items.push({ value: '1' });
+  assert.deepEqual(createPageBlockData('stats'), { columns: 3, items: [] }, '默认值不得共享引用');
 }
 
 console.log('page-blocks: PASS');

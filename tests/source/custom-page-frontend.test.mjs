@@ -14,10 +14,10 @@ import { PAGE_BLOCK_REGISTRY } from '../../front/utils/pageBlockSchema.js';
  * - 编辑器双模式（P1 块编辑器）：块编辑模式接线 PageBlockList + PageBlockForm、
  *   源码模式保留（「源码模式」字样）、块变化经 serializePageBlocks 写回 form.content
  * - Header.vue / MobileNav.vue / layouts/default.vue 都必须接 pageNav 导航
- * - PageRenderer 与七个 page-ui 组件源码不得出现 :global(.dark)（编译会丢后代选择器）
+ * - PageRenderer 与全部 page-ui 组件源码不得出现 :global(.dark)（编译会丢后代选择器）
  */
 const read = path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
-const [displayPage, editorPage, util, renderer, worker, header, mobileNav, layout] = await Promise.all([
+const [displayPage, editorPage, util, renderer, worker, header, mobileNav, layout, fieldComponent, assetComposable] = await Promise.all([
   read('front/pages/[slug].vue'),
   read('front/pages/sys/pages/[id].vue'),
   read('front/utils/pageBlocks.js'),
@@ -26,10 +26,13 @@ const [displayPage, editorPage, util, renderer, worker, header, mobileNav, layou
   read('front/components/Header.vue'),
   read('front/components/MobileNav.vue'),
   read('front/layouts/default.vue'),
+  read('front/components/PageBlockField.vue'),
+  read('front/composables/useCustomPageAssets.ts'),
 ]);
-// 读七个 page-ui 组件：文件缺失时 readFile 直接抛错，测试立刻失败
+// 读全部 page-ui 组件：文件缺失时 readFile 直接抛错，测试立刻失败
 const uiComponents = await Promise.all(
-  ['Button', 'Card', 'Countdown', 'Timeline', 'Gallery', 'Music', 'Icons'].map(name => read(`front/components/page-ui/PageUi${name}.vue`)),
+  ['Button', 'Card', 'Countdown', 'Timeline', 'Gallery', 'Music', 'Icons', 'Callout', 'Accordion', 'Video', 'Links', 'Stats', 'Columns', 'Embed']
+    .map(name => read(`front/components/page-ui/PageUi${name}.vue`)),
 );
 
 // 1) 根级展示页：解析器 + 渲染器 + 404 分支 noindex
@@ -61,13 +64,22 @@ const kinds = extractArray(util, 'SUPPORTED_UI_KINDS');
 // 分发映射必须是「kind → 显式 import 的组件对象」，不能是字符串名：
 // Nuxt 3 组件自动导入不做全局注册，字符串 :is 在运行时解析不到（曾导致组件块完全不渲染）。
 const rendererKinds = [...renderer.matchAll(/^ {2}([a-zA-Z]+): PageUi[A-Za-z]+,$/gm)].map(match => match[1]);
-assert.ok(Array.isArray(kinds) && kinds.length >= 7, 'SUPPORTED_UI_KINDS 必须覆盖全部七种组件');
+assert.ok(Array.isArray(kinds) && kinds.length >= 14, 'SUPPORTED_UI_KINDS 必须覆盖全部组件（P1 七种 + P2 七种）');
 assert.deepEqual([...rendererKinds].sort(), [...kinds].sort(), 'PageRenderer 分发的 kind 集合必须与 SUPPORTED_UI_KINDS 一致');
 assert.equal(renderer.includes('KIND_COMPONENTS'), true, 'PageRenderer 必须用显式 KIND_COMPONENTS map 分发');
-for (const name of ['Button', 'Card', 'Countdown', 'Timeline', 'Gallery', 'Music', 'Icons']) {
+for (const name of ['Button', 'Card', 'Countdown', 'Timeline', 'Gallery', 'Music', 'Icons', 'Callout', 'Accordion', 'Video', 'Links', 'Stats', 'Columns', 'Embed']) {
   assert.match(renderer, new RegExp(`import PageUi${name} from '\\./page-ui/PageUi${name}\\.vue'`), `PageRenderer 必须显式 import PageUi${name}（字符串名 :is 运行时解析不到）`);
 }
 assert.doesNotMatch(renderer, /: PageUi[A-Za-z]*.*'PageUi/, 'KIND_COMPONENTS 不得再使用字符串组件名');
+
+// 4a) markdown 渲染器单源：PageRenderer 只用 utils/pageMarkdown.js 的共享实例；
+//     columns/accordion/callout 的正文渲染也必须来自同一处，避免各自 new markdown-it 后规则漂移
+assert.match(renderer, /import \{ renderPageMarkdown \} from '~\/utils\/pageMarkdown'/, 'PageRenderer 必须使用共享 markdown 渲染器');
+assert.doesNotMatch(renderer, /from 'markdown-it'/, 'PageRenderer 不得再直接 import markdown-it（渲染器已收敛到 utils/pageMarkdown.js）');
+for (const name of ['Callout', 'Accordion', 'Columns']) {
+  const source = uiComponents[['Button', 'Card', 'Countdown', 'Timeline', 'Gallery', 'Music', 'Icons', 'Callout', 'Accordion', 'Video', 'Links', 'Stats', 'Columns', 'Embed'].indexOf(name)];
+  assert.match(source, /renderPageMarkdown/, `PageUi${name}.vue 的正文必须走共享 markdown 渲染器`);
+}
 
 // 4b) 三方 kind 一致（P1 块编辑器）：schema 注册表 / 解析器支持集合 / 渲染器分发键。
 //     pageBlockSchema.js 是纯 JS（.js + JSDoc），直接真实 import 取键比正则提取更稳；
@@ -76,6 +88,26 @@ const schemaKinds = Object.keys(PAGE_BLOCK_REGISTRY).sort();
 assert.ok(schemaKinds.length >= 7, 'pageBlockSchema 注册表 kind 不得少于七种');
 assert.deepEqual(schemaKinds, [...kinds].sort(), 'pageBlockSchema 注册表 kind 集合必须与 SUPPORTED_UI_KINDS 完全一致');
 assert.deepEqual([...rendererKinds].sort(), schemaKinds, 'PageRenderer KIND_COMPONENTS 键必须与 pageBlockSchema 注册表 kind 集合完全一致');
+
+// 4c) 字段控件（P2-B）：PageBlockForm 统一走 PageBlockField；选图/选图标/日期三类控件接线
+assert.match(editorPage, /<PageBlockForm/, '编辑器必须接线 PageBlockForm');
+assert.match(fieldComponent, /useMyFetch\('\/photo\/all'/, '选图字段必须复用管理员照片墙接口 /photo/all');
+assert.match(fieldComponent, /ICON_PRESETS/, '选图标字段必须复用 utils/pageIcons.js 的常用图标清单');
+for (const type of ['image', 'icon', 'datetime']) {
+  assert.match(fieldComponent, new RegExp(`field\\.type === '${type}'`), `PageBlockField 必须处理 ${type} 字段类型`);
+}
+const blockForm = await read('front/components/PageBlockForm.vue');
+assert.match(blockForm, /<PageBlockField/, 'PageBlockForm 的字段渲染必须统一走 PageBlockField');
+
+// 4d) 逐页 CSS/JS（P2-C）：页面接线 composable，注入标签与清理语义钉死
+assert.match(displayPage, /useCustomPageAssets\(page\)/, 'pages/[slug].vue 必须调用 useCustomPageAssets(page) 注入逐页资产');
+assert.match(assetComposable, /document\.head\.appendChild/, '逐页 CSS 必须注入 style 到 head');
+assert.match(assetComposable, /document\.body\.appendChild/, '逐页 JS 必须注入 script 到 body（内联脚本才会执行）');
+assert.match(assetComposable, /cleanup/, '资产切换/卸载必须清理旧标签');
+assert.match(assetComposable, /onBeforeUnmount\(cleanup\)/, '页面卸载时必须清理注入的标签');
+assert.match(editorPage, /customCss/, '编辑器必须回显/提交逐页 CSS');
+assert.match(editorPage, /customJs/, '编辑器必须回显/提交逐页 JS');
+assert.match(editorPage, /20000/, '编辑器必须按服务端上限（20000 字）本地拦截');
 
 // 5) 导航接线：桌面下拉、移动端网格、布局数据加载三处都必须消费 pageNav
 for (const [name, source] of [['Header.vue', header], ['MobileNav.vue', mobileNav], ['layouts/default.vue', layout]]) {

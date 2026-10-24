@@ -81,6 +81,15 @@
             </template>
           </UFormGroup>
 
+          <div class="grid grid-cols-1 gap-4">
+            <UFormGroup label="页面级 CSS" help="仅在该自定义页面生效，访问 /slug 时注入；上限 20000 字">
+              <UTextarea v-model="form.customCss" :rows="4" class="font-mono text-xs" placeholder=".custom-page-shell .hero { color: #9fc84a; }"/>
+            </UFormGroup>
+            <UFormGroup label="页面级 JS" help="仅在该自定义页面生效，访问 /slug 时执行；上限 20000 字（仅管理员可写入）">
+              <UTextarea v-model="form.customJs" :rows="4" class="font-mono text-xs" placeholder="document.documentElement.dataset.helloPage = '1'"/>
+            </UFormGroup>
+          </div>
+
           <div class="flex justify-end gap-2">
             <UButton to="/sys/settings?tab=pages" color="white">返回列表</UButton>
             <UButton :loading="saving" @click="save">保存</UButton>
@@ -96,43 +105,23 @@
       </div>
     </main>
 
-    <!-- 第一步：选择组件 kind（七种） -->
+    <!-- 第一步：选择组件 kind（由 PAGE_BLOCK_REGISTRY 注册表生成） -->
     <UModal v-model="showKindModal" :ui="{ container: 'flex justify-center items-center backdrop-blur' }">
       <div class="w-full max-w-md rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-800">
         <p class="mb-3 text-lg font-bold">选择组件类型</p>
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div class="grid max-h-[60vh] grid-cols-2 gap-2 overflow-auto sm:grid-cols-3">
           <UButton v-for="k in KIND_OPTIONS" :key="k.value" color="white" block @click="openComponentModal(k.value)">{{ k.label }}</UButton>
         </div>
         <div class="mt-4 flex justify-end"><UButton color="gray" variant="ghost" @click="showKindModal = false">取消</UButton></div>
       </div>
     </UModal>
 
-    <!-- 第二步：所选 kind 的极简表单 + 实时 JSON 预览 -->
+    <!-- 第二步：所选 kind 的 schema 参数表单 + 实时 JSON 预览 -->
     <UModal v-model="showComponentModal" :ui="{ container: 'flex justify-center items-center backdrop-blur' }">
       <div class="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-xl dark:bg-neutral-800">
-        <p class="mb-3 text-lg font-bold">{{ KIND_OPTIONS.find(k => k.value === activeKind)?.label }} · 极简表单</p>
-        <div v-if="ITEM_FIELDS[activeKind]" class="space-y-2">
-          <div v-for="(row, index) in componentItems" :key="index" class="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-gray-300 p-2 dark:border-gray-600">
-            <UInput v-for="f in ITEM_FIELDS[activeKind]" :key="f.key" v-model="row[f.key]" :placeholder="f.ph" size="sm" class="min-w-[9rem] flex-1"/>
-            <UButton size="xs" color="red" variant="soft" icon="i-carbon-trash-can" @click="removeItemRow(index)"/>
-          </div>
-          <UButton size="xs" color="white" icon="i-carbon-add" @click="addItemRow">加一行</UButton>
-        </div>
-        <div v-if="activeKind === 'card'" class="mt-3 flex items-center gap-2">
-          <span class="text-sm text-gray-500">列数（1-4）</span>
-          <UInput v-model="componentExtra.columns" type="number" :min="1" :max="4" size="sm" class="w-24"/>
-        </div>
-        <div v-if="activeKind === 'countdown'" class="mt-3 space-y-2">
-          <UInput v-model="componentExtra.target" placeholder="目标时间，如 2027-01-01 00:00:00"/>
-          <UInput v-model="componentExtra.label" placeholder="前缀文案（可选），如 距离新年还有"/>
-          <UInput v-model="componentExtra.doneText" placeholder="完成态文案（可选）"/>
-        </div>
-        <div v-if="activeKind === 'music'" class="mt-3 space-y-2">
-          <UInput v-model="componentExtra.url" placeholder="音频地址，如 /upload/media/2026/10/01/a.mp3"/>
-          <UInput v-model="componentExtra.name" placeholder="歌曲名"/>
-          <UInput v-model="componentExtra.artist" placeholder="歌手（可选）"/>
-          <UInput v-model="componentExtra.cover" placeholder="封面图（可选）"/>
-        </div>
+        <p class="mb-3 text-lg font-bold">{{ activeSchema?.label }} · 参数表单</p>
+        <PageBlockForm v-if="activeSchema" :schema="activeSchema" v-model="componentData" class="max-h-[55vh] overflow-auto pr-1"/>
+        <p v-else class="text-sm text-gray-500">未知组件类型 {{ activeKind }}，请在注册表中补齐 schema</p>
         <p class="mb-1 mt-4 text-xs text-gray-500">实时预览（确认后按协议插入光标处）</p>
         <pre class="overflow-auto rounded-lg bg-gray-100 p-3 text-xs leading-5 dark:bg-neutral-900">{{ componentFence }}</pre>
         <div class="mt-4 flex justify-end gap-2">
@@ -198,7 +187,7 @@
  *     写回 form.content，右列预览照旧走 previewBlocks。
  *   - 源码：大文本域 + 工具条三按钮（插入组件 / 插入表情 / 插入图标），光标插入统一走
  *     textarea 的 selectionStart/selectionEnd 拼接并恢复焦点（契约测试断言目标，不得移除）：
- *     - 插入组件：先选 kind（七种）再填极简表单，实时 JSON 预览，确认后按
+ *     - 插入组件：先选 kind（注册表全部 kind）再用 PageBlockForm 填参数，实时 JSON 预览，确认后按
  *       「```ui:kind / 一行 JSON / ```」三行围栏协议插入（协议见 utils/pageBlocks.js）；
  *     - 插入表情：内嵌 Emoji 组件（五组 emoji 字符），监听 selected 事件即点即插；
  *     - 插入图标：带 UIcon 预览的常用名网格 + 自定义输入，插入图标名文本。
@@ -210,7 +199,8 @@ import { toast } from 'vue-sonner'
 import type { SysConfigVO, UserVO } from '~/types'
 import site from '~/site.config'
 import { parsePageBlocks, serializePageBlocks, SLUG_PATTERN, RESERVED_PAGE_SLUGS } from '~/utils/pageBlocks'
-import { getPageBlockSchema } from '~/utils/pageBlockSchema'
+import { getPageBlockSchema, PAGE_BLOCK_REGISTRY, createPageBlockData } from '~/utils/pageBlockSchema'
+import { ICON_PRESETS } from '~/utils/pageIcons'
 
 const config = useState<SysConfigVO>('sysConfig')
 const currentUser = useState<UserVO | null>('userinfo')
@@ -234,6 +224,8 @@ const form = reactive({
   sortOrder: 0,
   enabled: true,
   showInNav: false,
+  customCss: '',
+  customJs: '',
 })
 
 onMounted(async () => {
@@ -247,6 +239,8 @@ onMounted(async () => {
     form.sortOrder = Number(res.sortOrder) || 0
     form.enabled = res.enabled !== false && res.enabled !== 0
     form.showInNav = res.showInNav === true || res.showInNav === 1
+    form.customCss = String(res.customCss || '')
+    form.customJs = String(res.customJs || '')
   } catch (error: any) {
     toast.error(error?.message || '页面不存在')
     await navigateTo('/sys/settings?tab=pages')
@@ -276,58 +270,22 @@ const insertAtCursor = (text: string) => {
   })
 }
 
-/* ---------- 插入组件：选 kind → 极简表单 → 实时 JSON → 围栏插入 ---------- */
-const KIND_OPTIONS = [
-  { label: '按钮组', value: 'button' },
-  { label: '卡片网格', value: 'card' },
-  { label: '倒计时', value: 'countdown' },
-  { label: '时间线', value: 'timeline' },
-  { label: '图片灯箱', value: 'gallery' },
-  { label: '音乐播放器', value: 'music' },
-  { label: '图标网格', value: 'icons' },
-]
+/* ---------- 插入组件：选 kind → schema 通用表单 → 实时 JSON → 围栏插入 ---------- */
+/** 源码模式的插入菜单直接由注册表生成：新增 kind 只需改 schema，不会两边漂移 */
+const KIND_OPTIONS = Object.values(PAGE_BLOCK_REGISTRY).map(schema => ({ label: schema.label, value: schema.kind }))
 const showKindModal = ref(false)
 const showComponentModal = ref(false)
 const activeKind = ref('button')
-const componentItems = ref<Array<Record<string, string>>>([])
-const componentExtra = reactive({ columns: 2, target: '', label: '', doneText: '', url: '', name: '', artist: '', cover: '' })
-
-/** 各 kind 的 items 行编辑字段（music/countdown 无 items，走 componentExtra 单对象） */
-const ITEM_FIELDS: Record<string, Array<{ key: string, ph: string }>> = {
-  button: [{ key: 'label', ph: '按钮文字' }, { key: 'href', ph: '/ 或 https://…' }, { key: 'icon', ph: 'i-carbon-home（可选）' }],
-  card: [{ key: 'icon', ph: 'i-carbon-star（可选）' }, { key: 'title', ph: '标题' }, { key: 'desc', ph: '描述（可选）' }, { key: 'href', ph: '/memo/1（可选）' }],
-  timeline: [{ key: 'time', ph: '2026-10-01（可选）' }, { key: 'title', ph: '标题' }, { key: 'desc', ph: '描述（可选）' }],
-  gallery: [{ key: 'src', ph: '/upload/….jpg' }, { key: 'caption', ph: '说明（可选）' }],
-  icons: [{ key: 'icon', ph: 'i-carbon-home 或 emoji' }, { key: 'label', ph: '文字（可选）' }, { key: 'href', ph: '/（可选）' }],
-}
-
-const emptyRow = (kind: string): Record<string, string> => Object.fromEntries((ITEM_FIELDS[kind] || []).map(f => [f.key, '']))
+const activeSchema = computed(() => getPageBlockSchema(activeKind.value))
+/** 与块编辑模式同源的初始 data（schema.default + 空列表），v-model 交给 PageBlockForm */
+const componentData = ref<Record<string, any>>({})
 
 const openComponentModal = (kind: string) => {
   activeKind.value = kind
-  componentItems.value = ITEM_FIELDS[kind] ? [emptyRow(kind)] : []
-  Object.assign(componentExtra, { columns: 2, target: '', label: '', doneText: '', url: '', name: '', artist: '', cover: '' })
+  componentData.value = createPageBlockData(kind)
   showKindModal.value = false
   showComponentModal.value = true
 }
-const addItemRow = () => componentItems.value.push(emptyRow(activeKind.value))
-const removeItemRow = (index: number) => componentItems.value.splice(index, 1)
-
-/** 丢弃空字符串/空白字段，保持插入的 JSON 干净（协议里这些都是可选字段） */
-const compact = (obj: Record<string, any>) => Object.fromEntries(Object.entries(obj).filter(([, v]) => String(v ?? '').trim() !== ''))
-
-/** 按协议组装 data：空行整行丢弃，行内空字段不入 JSON */
-const componentData = computed(() => {
-  if (activeKind.value === 'music') return compact({ url: componentExtra.url, name: componentExtra.name, artist: componentExtra.artist, cover: componentExtra.cover })
-  if (activeKind.value === 'countdown') return compact({ target: componentExtra.target, label: componentExtra.label, doneText: componentExtra.doneText })
-  const items = componentItems.value
-    .map(row => compact(row))
-    .filter(row => Object.keys(row).length > 0)
-  const data: Record<string, any> = {}
-  if (activeKind.value === 'card') data.columns = Number(componentExtra.columns) || 2
-  data.items = items
-  return data
-})
 
 /** 待插入的三行围栏原文（同时是 JSON 预览内容） */
 const componentFence = computed(() => `\`\`\`ui:${activeKind.value}\n${JSON.stringify(componentData.value)}\n\`\`\``)
@@ -345,11 +303,6 @@ const onEmojiSelected = (value: string) => {
 }
 
 /* ---------- 插入图标（常用 Iconify 名 + 自定义输入） ---------- */
-const ICON_PRESETS = [
-  'i-carbon-home', 'i-carbon-star', 'i-carbon-favorite', 'i-carbon-user', 'i-carbon-image',
-  'i-carbon-camera', 'i-carbon-music', 'i-carbon-video', 'i-carbon-email', 'i-carbon-link',
-  'i-carbon-calendar', 'i-carbon-location', 'i-carbon-search', 'i-carbon-settings', 'i-carbon-download',
-]
 const showIconModal = ref(false)
 const selectedIcon = ref(ICON_PRESETS[0])
 const customIcon = ref('')
@@ -433,7 +386,11 @@ const selectBlock = (index: number) => {
 }
 
 const addBlock = (type: string) => {
-  blocks.value.push(type === 'markdown' ? { type: 'markdown', value: '' } : { type: 'ui', kind: type, data: {} })
+  /* ui 块的初始 data 由 schema.default 生成（如 callout 的 tone、video 的 ratio），
+     避免新块打开时 select 空白；列表字段初始化为 [] */
+  blocks.value.push(type === 'markdown'
+    ? { type: 'markdown', value: '' }
+    : { type: 'ui', kind: type, data: createPageBlockData(type) })
   selectedIndex.value = blocks.value.length - 1
 }
 
@@ -464,6 +421,8 @@ const save = async () => {
   if (title.length < 1 || title.length > 60) return toast.error('标题需为 1-60 字')
   if (!SLUG_PATTERN.test(slug)) return toast.error('slug 仅支持小写字母、数字、连字符（1-40 位）')
   if (RESERVED_PAGE_SLUGS.includes(slug)) return toast.error('该 slug 为系统保留，请更换')
+  if (form.customCss.length > 20000) return toast.error('页面级 CSS 不能超过 20000 字')
+  if (form.customJs.length > 20000) return toast.error('页面级 JS 不能超过 20000 字')
   saving.value = true
   try {
     const body: Record<string, any> = {
@@ -474,6 +433,8 @@ const save = async () => {
       sortOrder: Number(form.sortOrder) || 0,
       enabled: form.enabled ? 1 : 0,
       showInNav: form.showInNav ? 1 : 0,
+      customCss: form.customCss,
+      customJs: form.customJs,
     }
     if (pageId.value) body.id = pageId.value
     await useMyFetch('/admin/page/save', body)
