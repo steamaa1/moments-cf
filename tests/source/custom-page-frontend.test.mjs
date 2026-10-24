@@ -17,7 +17,7 @@ import { PAGE_BLOCK_REGISTRY } from '../../front/utils/pageBlockSchema.js';
  * - PageRenderer 与全部 page-ui 组件源码不得出现 :global(.dark)（编译会丢后代选择器）
  */
 const read = path => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
-const [displayPage, editorPage, util, renderer, worker, header, mobileNav, layout, fieldComponent, assetComposable] = await Promise.all([
+const [displayPage, editorPage, util, renderer, worker, header, mobileNav, layout, fieldComponent, assetComposable, pageBlockList] = await Promise.all([
   read('front/pages/[slug].vue'),
   read('front/pages/sys/pages/[id].vue'),
   read('front/utils/pageBlocks.js'),
@@ -28,6 +28,7 @@ const [displayPage, editorPage, util, renderer, worker, header, mobileNav, layou
   read('front/layouts/default.vue'),
   read('front/components/PageBlockField.vue'),
   read('front/composables/useCustomPageAssets.ts'),
+  read('front/components/PageBlockList.vue'),
 ]);
 // 读全部 page-ui 组件：文件缺失时 readFile 直接抛错，测试立刻失败
 const uiComponents = await Promise.all(
@@ -116,6 +117,13 @@ assert.match(assetComposable, /onBeforeUnmount\(cleanup\)/, '页面卸载时必�
 assert.match(editorPage, /customCss/, '编辑器必须回显/提交逐页 CSS');
 assert.match(editorPage, /customJs/, '编辑器必须回显/提交逐页 JS');
 assert.match(editorPage, /20000/, '编辑器必须按服务端上限（20000 字）本地拦截');
+
+// 4e) 拖拽无位移分支也必须先复位 DOM：Sortable 取消/原地拖拽可能已物理挪过节点，
+//     若 oldIndex === newIndex 直接 return，DOM 会停在移动后的位置，行号 1,3,2 直到刷新。
+const insertAt = pageBlockList.indexOf('from.insertBefore(item')
+const noopAt = pageBlockList.indexOf('if (oldIndex === newIndex) return')
+assert.ok(insertAt >= 0, 'PageBlockList.onEnd 必须复位 DOM');
+assert.ok(noopAt > insertAt, 'onEnd 必须先复位 DOM，再判断 oldIndex === newIndex 早退');
 
 // 5) 导航接线：桌面下拉、移动端网格、布局数据加载三处都必须消费 pageNav
 for (const [name, source] of [['Header.vue', header], ['MobileNav.vue', mobileNav], ['layouts/default.vue', layout]]) {

@@ -131,12 +131,15 @@ const ensureSortable = () => {
     chosenClass: 'pb-list-chosen',
     onEnd(evt) {
       const { oldIndex, newIndex, item, from } = evt
-      if (oldIndex == null || newIndex == null || oldIndex === newIndex) return
-      /* ① DOM 复位（无条件先做：Sortable 已经挪了 DOM，任何后续分支都不能带着错位 DOM
-         离开 onEnd）：以「除自身外的兄弟行」定位放回 oldIndex，让 DOM 回到与旧 vdom
-         一致，渲染交还给 Vue */
+      if (oldIndex == null || newIndex == null) return
+      /* ① DOM 复位（无条件先做，且必须在 oldIndex === newIndex 的早退之前：
+         取消/原地拖拽同样可能被 Sortable 物理挪过节点，直接 return 会把 DOM 留在
+         移动后的位置，而行号是 index + 1 的文本、Vue 又按 index key 只做原地 patch，
+         不会把节点挪回去——表现为 1,3,2 一直停留到刷新）：以「除自身外的兄弟行」定位
+         放回 oldIndex，让 DOM 回到与旧 vdom 一致，渲染交还给 Vue */
       const siblings = Array.from(from.children).filter(node => node !== item)
       from.insertBefore(item, siblings[oldIndex] ?? null)
+      if (oldIndex === newIndex) return
       /* ② 只按下标重组数据 emit，全程不读 DOM 顺序；下标合法性由 applyMove 兜底 */
       applyMove(oldIndex, newIndex)
     },
