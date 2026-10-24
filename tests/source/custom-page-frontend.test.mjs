@@ -127,12 +127,17 @@ assert.ok(noopAt > insertAt, 'onEnd 必须先复位 DOM，再判断 oldIndex ===
 
 // 5) 导航接线：桌面下拉、移动端网格、布局数据加载三处都必须消费 pageNav
 // 5a) 桌面竖向工具栏的自定义页面入口：裸文档图标 + 菜单项文档图标，不得退回省略号按钮
-assert.match(header, /<UIcon name="i-carbon-document"/, '桌面自定义页面入口必须使用文档图标');
-assert.match(header, /icon: 'i-carbon-document'/, '自定义页面菜单项必须带文档图标');
+assert.match(header, /navTriggerIcon/, '桌面自定义页面入口必须计算页面自定义图标');
+assert.match(header, /navTriggerIsEmoji/, '桌面入口必须区分 Iconify 名与 emoji 图案');
+assert.match(header, /item\.icon && item\.icon\.startsWith\('i-'\)/, '自定义页面菜单项必须只在 Iconify 名时传 icon');
 assert.doesNotMatch(header, /i-carbon-overflow-menu-horizontal/, '自定义页面入口不得退回省略号图标');
 assert.doesNotMatch(header, /variant="ghost"[\s\S]{0,120}i-carbon-overflow-menu-horizontal/, '自定义页面入口不得使用带内边距的 UButton 触发');
-assert.match(mobileNav, /i-carbon-document/, '移动端自定义页面入口也必须使用文档图标');
+assert.match(mobileNav, /item\.icon \|\| 'i-carbon-document'/, '移动端自定义页面入口必须使用页面自定义图标（缺省文档）');
+assert.match(mobileNav, /item\.icon\.startsWith\('i-'\)/, '移动端入口必须区分 Iconify 名与 emoji');
+assert.match(editorPage, /navIcon/, '编辑器必须回显/提交导航图标');
+assert.match(editorPage, /<PageBlockField[^>]*NAV_ICON_FIELD/, '导航图标必须复用 PageBlockField 的 icon 选择器');
 
+assert.match(layout, /icon\?: string/, 'pageNav 类型必须包含自定义图标');
 for (const [name, source] of [['Header.vue', header], ['MobileNav.vue', mobileNav], ['layouts/default.vue', layout]]) {
   assert.match(source, /\bpageNav\b/, `${name} 必须接自定义页面导航（pageNav）`);
 }

@@ -62,11 +62,11 @@ class Statement {
       const rows = [...state.pages].sort((a, b) => a.sort_order - b.sort_order || String(b.updated_at).localeCompare(String(a.updated_at)));
       return { results: rows };
     }
-    if (sql.includes('select slug, title from custom_pages')) {
+    if (sql.includes('select slug, title, nav_icon from custom_pages')) {
       const rows = state.pages
         .filter(page => Number(page.enabled) === 1 && Number(page.show_in_nav) === 1)
         .sort((a, b) => a.sort_order - b.sort_order)
-        .map(row => ({ slug: row.slug, title: row.title }));
+        .map(row => ({ slug: row.slug, title: row.title, nav_icon: row.nav_icon }));
       return { results: rows };
     }
     if (sql.includes('select slug, updated_at from custom_pages')) {
@@ -85,16 +85,16 @@ class Statement {
       const row = {
         id: state.nextId++, slug: this.args[0], title: this.args[1], content: this.args[2],
         enabled: this.args[3], show_in_nav: this.args[4], sort_order: this.args[5],
-        seo_description: this.args[6], custom_css: this.args[7], custom_js: this.args[8],
-        created_by: this.args[9], created_at: CREATED_AT, updated_at: CREATED_AT,
+        seo_description: this.args[6], nav_icon: this.args[7], custom_css: this.args[8], custom_js: this.args[9],
+        created_by: this.args[10], created_at: CREATED_AT, updated_at: CREATED_AT,
       };
       state.pages.push(row);
       return { meta: { last_row_id: row.id } };
     }
     if (lower.startsWith('update custom_pages set')) {
       captured.push({ sql, args: this.args });
-      const row = state.pages.find(page => page.id === Number(this.args[9]));
-      if (row) Object.assign(row, { slug: this.args[0], title: this.args[1], content: this.args[2], enabled: this.args[3], show_in_nav: this.args[4], sort_order: this.args[5], seo_description: this.args[6], custom_css: this.args[7], custom_js: this.args[8], updated_at: CREATED_AT });
+      const row = state.pages.find(page => page.id === Number(this.args[10]));
+      if (row) Object.assign(row, { slug: this.args[0], title: this.args[1], content: this.args[2], enabled: this.args[3], show_in_nav: this.args[4], sort_order: this.args[5], seo_description: this.args[6], nav_icon: this.args[7], custom_css: this.args[8], custom_js: this.args[9], updated_at: CREATED_AT });
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (lower.startsWith('delete from custom_pages')) {
@@ -165,15 +165,15 @@ const helloId = helloBody.data.id;
 assert.equal(Number.isInteger(helloId) && helloId > 0, true, '新建必须返回自增 id');
 const insert = captured.find(entry => entry.sql.toLowerCase().startsWith('insert into custom_pages'));
 assert.ok(insert, '必须执行 INSERT INTO custom_pages');
-assert.match(insert.sql, /^INSERT INTO custom_pages \(slug, title, content, enabled, show_in_nav, sort_order, seo_description, custom_css, custom_js, created_by, created_at, updated_at\)/);
-assert.deepEqual(insert.args, ['hello', '页面标题', '# 正文', 1, 1, 3, '自定义页描述', '', '', 1], 'INSERT 绑定参数必须完整（未给 CSS/JS 时落空串）');
+assert.match(insert.sql, /^INSERT INTO custom_pages \(slug, title, content, enabled, show_in_nav, sort_order, seo_description, nav_icon, custom_css, custom_js, created_by, created_at, updated_at\)/);
+assert.deepEqual(insert.args, ['hello', '页面标题', '# 正文', 1, 1, 3, '自定义页描述', '', '', '', 1], 'INSERT 绑定参数必须完整（未给图标/CSS/JS 时落空串）');
 
 // 停用页（enabled:false）：布尔归一为 0，缺省字段落默认值
 const saveDraft = await post('/api/admin/page/save', { slug: 'draft', title: '草稿页', content: '草稿内容', enabled: false }, adminToken);
 assert.equal(saveDraft.status, 200);
 const draftId = (await saveDraft.json()).data.id;
 const draftInsert = captured.filter(entry => entry.sql.toLowerCase().startsWith('insert into custom_pages'))[1];
-assert.deepEqual(draftInsert.args, ['draft', '草稿页', '草稿内容', 0, 0, 0, '', '', '', 1], 'enabled:false 必须落 0，缺省 showInNav/sortOrder/seoDescription/customCss/customJs 落默认值');
+assert.deepEqual(draftInsert.args, ['draft', '草稿页', '草稿内容', 0, 0, 0, '', '', '', '', 1], 'enabled:false 必须落 0，缺省 showInNav/sortOrder/seoDescription/navIcon/customCss/customJs 落默认值');
 
 // 3) 非法输入逐个 400：大写 slug、61 字标题、保留词 rss 与 x-media、带点 slug、41 字 slug
 const invalidBodies = [
@@ -228,8 +228,8 @@ const saveAssets = await post('/api/admin/page/save', {
 assert.equal(saveAssets.status, 200, (await saveAssets.clone().json()).message);
 const updateAssetsSql = captured.filter(entry => entry.sql.toLowerCase().startsWith('update custom_pages set')).pop();
 assert.match(updateAssetsSql.sql, /custom_css=\?, custom_js=\?/);
-assert.equal(updateAssetsSql.args[7], ASSET_CSS);
-assert.equal(updateAssetsSql.args[8], ASSET_JS);
+assert.equal(updateAssetsSql.args[8], ASSET_CSS);
+assert.equal(updateAssetsSql.args[9], ASSET_JS);
 const getAssets = await (await post('/api/page/get', { slug: 'hello' })).json();
 assert.equal(getAssets.data.customCss, ASSET_CSS, '公开 page/get 必须下发逐页 CSS');
 assert.equal(getAssets.data.customJs, ASSET_JS, '公开 page/get 必须下发逐页 JS');
@@ -248,9 +248,17 @@ assert.equal(tooLongJs.status, 400, 'JS 超过 20000 字必须 400（不静默�
 assert.equal(updateCount(), updatesBeforeOversize, '超限请求不得执行 UPDATE');
 assert.equal((await (await post('/api/page/get', { slug: 'hello' })).json()).data.customCss, ASSET_CSS, '超限拒绝后旧资产必须原样保留');
 
+// 5c) 导航图标：超 80 字 400 且不落库
+const updatesBeforeIcon = updateCount();
+const tooLongIcon = await post('/api/admin/page/save', {
+  id: helloId, slug: 'hello', title: '页面标题', navIcon: 'i'.repeat(81),
+}, adminToken);
+assert.equal(tooLongIcon.status, 400, '导航图标超过 80 字必须 400');
+assert.equal(updateCount(), updatesBeforeIcon, '超长导航图标不得执行 UPDATE');
+
 // 6) nav：只含启用且 show_in_nav 的行，按 sort_order 升序；条目只含 slug/title
 for (const body of [
-  { slug: 'z-early', title: '导航一', showInNav: true, sortOrder: 1 },
+  { slug: 'z-early', title: '导航一', showInNav: true, sortOrder: 1, navIcon: 'i-carbon-star' },
   { slug: 'm-nav', title: '导航二', showInNav: true, sortOrder: 2 },
   { slug: 'hidden-page', title: '隐藏页', showInNav: false },
   { slug: 'plain', title: '简单页', content: '简单内容' },
@@ -264,9 +272,10 @@ assert.equal(navResponse.status, 200);
 const navBody = await navResponse.json();
 assert.equal(navBody.code, 0);
 assert.deepEqual(navBody.data.list.map(item => item.slug), ['z-early', 'm-nav', 'hello'], 'nav 必须按 sort_order 升序');
+assert.deepEqual(navBody.data.list.map(item => item.icon), ['i-carbon-star', '', ''], 'nav 必须下发页面自定义图标，缺省空串');
 assert.deepEqual(navBody.data.list.map(item => item.title), ['导航一', '导航二', '页面标题']);
 for (const item of navBody.data.list) {
-  assert.deepEqual([...Object.keys(item)].sort(), ['slug', 'title'], 'nav 条目只含 slug/title');
+  assert.deepEqual([...Object.keys(item)].sort(), ['icon', 'slug', 'title'], 'nav 条目只含 slug/title/icon');
 }
 assert.equal(navBody.data.list.some(item => item.slug === 'draft'), false, '停用页不得进 nav');
 assert.equal(navBody.data.list.some(item => item.slug === 'hidden-page'), false, 'show_in_nav=false 不得进 nav');
@@ -278,7 +287,7 @@ const listBody = await listResponse.json();
 assert.deepEqual(listBody.data.list.map(page => page.slug).sort(), ['draft', 'hello', 'hidden-page', 'm-nav', 'plain', 'z-early'], '管理列表必须含停用页');
 assert.deepEqual(listBody.data.list.find(page => page.slug === 'hello'), {
   id: helloId, slug: 'hello', title: '页面标题', content: '# 正文', enabled: true, showInNav: true,
-  sortOrder: 3, seoDescription: '自定义页描述', customCss: ASSET_CSS, customJs: ASSET_JS,
+  sortOrder: 3, seoDescription: '自定义页描述', navIcon: '', customCss: ASSET_CSS, customJs: ASSET_JS,
   createdAt: CREATED_AT, updatedAt: CREATED_AT,
 });
 const adminGet = await post(`/api/admin/page/get?id=${helloId}`, {}, adminToken);

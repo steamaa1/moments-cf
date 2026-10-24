@@ -35,6 +35,14 @@
             </UFormGroup>
           </div>
 
+          <UFormGroup label="导航图标" help="显示在桌面/移动端导航里的图案；留空用默认文档图标">
+            <PageBlockField :field="NAV_ICON_FIELD" v-model="form.navIcon"/>
+            <div class="mt-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <UIcon v-if="form.navIcon.startsWith('i-')" :name="form.navIcon" class="h-4 w-4"/>
+              <span v-else>{{ form.navIcon || '默认文档图标（i-carbon-document）' }}</span>
+            </div>
+          </UFormGroup>
+
           <UFormGroup label="正文" :help="bodyHelp">
             <div class="mb-2 flex flex-wrap items-center gap-2">
               <UButton size="xs" :color="editMode === 'blocks' ? 'primary' : 'white'" icon="i-carbon-list" @click="switchMode('blocks')">块编辑</UButton>
@@ -219,6 +227,14 @@ const pageId = computed<number | null>(() => {
   return Number.isSafeInteger(number) && number > 0 ? number : null
 })
 
+const NAV_ICON_FIELD = {
+  key: 'navIcon',
+  label: '导航图标',
+  type: 'icon',
+  placeholder: 'i-carbon-document 或 emoji',
+  optional: true,
+}
+
 const form = reactive({
   title: '',
   slug: '',
@@ -227,6 +243,7 @@ const form = reactive({
   sortOrder: 0,
   enabled: true,
   showInNav: false,
+  navIcon: '',
   customCss: '',
   customJs: '',
 })
@@ -242,6 +259,7 @@ onMounted(async () => {
     form.sortOrder = Number(res.sortOrder) || 0
     form.enabled = res.enabled !== false && res.enabled !== 0
     form.showInNav = res.showInNav === true || res.showInNav === 1
+    form.navIcon = String(res.navIcon || '')
     form.customCss = String(res.customCss || '')
     form.customJs = String(res.customJs || '')
   } catch (error: any) {
@@ -424,6 +442,7 @@ const save = async () => {
   if (title.length < 1 || title.length > 60) return toast.error('标题需为 1-60 字')
   if (!SLUG_PATTERN.test(slug)) return toast.error('slug 仅支持小写字母、数字、连字符（1-40 位）')
   if (RESERVED_PAGE_SLUGS.includes(slug)) return toast.error('该 slug 为系统保留，请更换')
+  if (form.navIcon.trim().length > 80) return toast.error('导航图标不能超过 80 字')
   if (form.customCss.length > 20000) return toast.error('页面级 CSS 不能超过 20000 字')
   if (form.customJs.length > 20000) return toast.error('页面级 JS 不能超过 20000 字')
   saving.value = true
@@ -436,6 +455,7 @@ const save = async () => {
       sortOrder: Number(form.sortOrder) || 0,
       enabled: form.enabled ? 1 : 0,
       showInNav: form.showInNav ? 1 : 0,
+      navIcon: form.navIcon.trim(),
       customCss: form.customCss,
       customJs: form.customJs,
     }

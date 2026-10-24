@@ -120,16 +120,16 @@
 
 ## 自定义页面
 
-管理员创建的独立页面，存储在 `custom_pages` 表（migration 0018，0019 增加逐页 CSS/JS），以**根级 `/<slug>`** 访问（如 `/about-lab`），是站点唯一的根级可路由数据内容；正文由 markdown + 组件块混合构成（协议见下）。数据库字段为 snake_case，**接口出入参一律 camelCase**（`showInNav`、`sortOrder`、`seoDescription`、`customCss`、`customJs`），由 `pageView` 统一转换。
+管理员创建的独立页面，存储在 `custom_pages` 表（migration 0018，0019 增加逐页 CSS/JS，0020 增加导航图标 `nav_icon`），以**根级 `/<slug>`** 访问（如 `/about-lab`），是站点唯一的根级可路由数据内容；正文由 markdown + 组件块混合构成（协议见下）。数据库字段为 snake_case，**接口出入参一律 camelCase**（`showInNav`、`sortOrder`、`seoDescription`、`navIcon`、`customCss`、`customJs`），由 `pageView` 统一转换。
 
 | 路径 | 权限 | 参数 | 说明 |
 | --- | --- | --- | --- |
 | `/api/admin/page/list` | 管理员 | — | 全部页面（**含停用**），按 `sortOrder` 升序、其次最近更新；条目为完整 camelCase 视图 |
 | `/api/admin/page/get` | 管理员 | `id` | 单条完整视图；不存在返回 404「页面不存在」 |
-| `/api/admin/page/save` | 管理员 | `id`（可选）、`slug`、`title`、`content`、`seoDescription`、`sortOrder`、`enabled`、`showInNav`、`customCss`、`customJs` | 带 `id` 为更新、缺省为新建并返回 `{id}`；`slug` 全站唯一（重复返回 **409**）；非法输入返回 400 |
+| `/api/admin/page/save` | 管理员 | `id`（可选）、`slug`、`title`、`content`、`seoDescription`、`sortOrder`、`enabled`、`showInNav`、`navIcon`、`customCss`、`customJs` | 带 `id` 为更新、缺省为新建并返回 `{id}`；`slug` 全站唯一（重复返回 **409**）；非法输入返回 400 |
 | `/api/admin/page/remove` | 管理员 | `id` | 物理删除（自定义页面无回收站）；不存在不报错 |
 | `/api/page/get` | 公开 | `slug` | 仅返回启用中页面，键集合精确为 `{slug, title, content, seoDescription, customCss, customJs}`（不含 `enabled`）；停用/不存在一律 404 |
-| `/api/page/nav` | 公开 | — | 导航用启用页面列表 `[{slug, title}]`，仅含 `showInNav=1`，按 `sortOrder` 升序 |
+| `/api/page/nav` | 公开 | — | 导航用启用页面列表 `[{slug, title, icon}]`，仅含 `showInNav=1`，按 `sortOrder` 升序；`icon` 为 `nav_icon`，空串时前端回退文档图标 |
 
 **读参规范**：本组所有接口按全站统一规范以 **POST + JSON body** 传参——`/api/page/get` 传 `{slug}`、`/api/admin/page/get` 与 `/api/admin/page/remove` 传 `{id}`、`/api/admin/page/save` 传全字段 JSON。这三个读参接口同时保留 query 读取（如 `?id=`、`?slug=`）作旧客户端兼容：**body 优先、query 兜底，query 不是规范用法**。
 
@@ -139,6 +139,7 @@
 - `title`：trim 后 1–60 字。
 - `content`：上限 100000 字符，服务端静默截断。
 - `seoDescription`：上限 300 字符；`sortOrder` 钳制 0–999（默认 0）。
+- `navIcon`：trim 后上限 **80 字符**，超限 400；可存 Iconify 名（如 `i-carbon-document`）或 emoji，空串表示使用默认文档图标。
 - `customCss` / `customJs`：各自上限 **20000 字符**，超限返回 400「逐页 CSS/JS 不能超过 20000 字」——代码资产被截断会直接坏页面，故**不静默截断**；缺省落空串（迁移前已有的页面读出来也是空串）。
 - `enabled`：`0` 视为停用，其余按启用；`showInNav` 任意真值即 1。`enabled=0` 的页面 `/api/page/get` 与根级 URL 都不可见。
 

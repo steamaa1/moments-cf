@@ -1157,6 +1157,7 @@ function pageView(row) {
     showInNav: Number(row.show_in_nav) === 1,
     sortOrder: Number(row.sort_order || 0),
     seoDescription: String(row.seo_description || ''),
+    navIcon: String(row.nav_icon || ''),
     customCss: String(row.custom_css || ''),
     customJs: String(row.custom_js || ''),
     createdAt: row.created_at,
@@ -1196,6 +1197,8 @@ async function adminPageSave(request, env, headers) {
   if (title.length < 1 || title.length > 60) return json(fail('标题需为 1-60 字'), 400, headers);
   const content = String(body.content || '').slice(0, 100000);
   const seoDescription = String(body.seoDescription || '').slice(0, 300);
+  const navIcon = String(body.navIcon || '').trim();
+  if (navIcon.length > 80) return json(fail('导航图标不能超过 80 字'), 400, headers);
   const customCss = String(body.customCss || '');
   const customJs = String(body.customJs || '');
   if (customCss.length > PAGE_ASSET_MAX) return json(fail(`逐页 CSS 不能超过 ${PAGE_ASSET_MAX} 字`), 400, headers);
@@ -1209,13 +1212,13 @@ async function adminPageSave(request, env, headers) {
     if (!existing) return json(fail('页面不存在'), 404, headers);
     const duplicate = await env.DB.prepare('SELECT id FROM custom_pages WHERE slug = ? AND id <> ?').bind(slug, id).first();
     if (duplicate) return json(fail('slug 已存在'), 409, headers);
-    await env.DB.prepare('UPDATE custom_pages SET slug=?, title=?, content=?, enabled=?, show_in_nav=?, sort_order=?, seo_description=?, custom_css=?, custom_js=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, customCss, customJs, id).run();
+    await env.DB.prepare('UPDATE custom_pages SET slug=?, title=?, content=?, enabled=?, show_in_nav=?, sort_order=?, seo_description=?, nav_icon=?, custom_css=?, custom_js=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, navIcon, customCss, customJs, id).run();
   } else {
     const duplicate = await env.DB.prepare('SELECT id FROM custom_pages WHERE slug = ?').bind(slug).first();
     if (duplicate) return json(fail('slug 已存在'), 409, headers);
-    const result = await env.DB.prepare('INSERT INTO custom_pages (slug, title, content, enabled, show_in_nav, sort_order, seo_description, custom_css, custom_js, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)')
-      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, customCss, customJs, access.user.id).run();
+    const result = await env.DB.prepare('INSERT INTO custom_pages (slug, title, content, enabled, show_in_nav, sort_order, seo_description, nav_icon, custom_css, custom_js, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)')
+      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, navIcon, customCss, customJs, access.user.id).run();
     return json(ok({ id: Number(result.meta?.last_row_id || 0) }), 200, headers);
   }
   return json(ok({ id }), 200, headers);
@@ -1241,8 +1244,8 @@ async function pageGet(request, env, headers) {
 }
 // 公开：导航用启用页面（slug + title），按 sort_order 升序
 async function pageNav(request, env, headers) {
-  const rows = await env.DB.prepare('SELECT slug, title FROM custom_pages WHERE enabled = 1 AND show_in_nav = 1 ORDER BY sort_order ASC').all();
-  return json(ok({ list: (rows.results || []).map(row => ({ slug: String(row.slug || ''), title: String(row.title || '') })) }), 200, headers);
+  const rows = await env.DB.prepare('SELECT slug, title, nav_icon FROM custom_pages WHERE enabled = 1 AND show_in_nav = 1 ORDER BY sort_order ASC').all();
+  return json(ok({ list: (rows.results || []).map(row => ({ slug: String(row.slug || ''), title: String(row.title || ''), icon: String(row.nav_icon || '') })) }), 200, headers);
 }
 async function getMemo(request, env, headers) {
   const url = new URL(request.url);

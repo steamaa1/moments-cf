@@ -130,7 +130,8 @@
       >
         <!-- 与竖向工具栏其它入口保持一致：裸 20px 图标，不用 UButton（按钮内边距会打乱图标节奏） -->
         <span title="自定义页面" aria-label="自定义页面" class="flex items-center justify-center">
-          <UIcon name="i-carbon-document" class="w-5 h-5 text-[#9fc84a] cursor-pointer"/>
+          <UIcon v-if="!navTriggerIsEmoji" :name="navTriggerIcon" class="w-5 h-5 text-[#9fc84a] cursor-pointer"/>
+          <span v-else class="text-base leading-none cursor-pointer">{{ navTriggerIcon }}</span>
         </span>
       </UDropdown>
       <NuxtLink
@@ -197,13 +198,16 @@ const mode = useColorMode();
 const { y } = useWindowScroll();
 
 // 自定义页面导航（layouts/default.vue 拉取 /page/nav 写入，空数组表示无启用页）
-const pageNav = useState<Array<{ slug: string, title: string }>>("pageNav", () => []);
+const pageNav = useState<Array<{ slug: string, title: string, icon?: string }>>("pageNav", () => []);
+// 单页时触发器直接显示该页图标；多页用文档图标代表“自定义页面”分组
+const navTriggerIcon = computed(() => (pageNav.value.length === 1 ? (pageNav.value[0].icon || 'i-carbon-document') : 'i-carbon-document'))
+const navTriggerIsEmoji = computed(() => !String(navTriggerIcon.value).startsWith('i-'))
 const pageNavItems = computed(() =>
   pageNav.value.map((item) => [
     {
       label: item.title || item.slug,
-      // 与移动端 MobileNav 的自定义页面入口一致：菜单项也带文档图标
-      icon: 'i-carbon-document',
+      // UDropdown 的 icon 只接受 Iconify 名；emoji 图案不传给 UIcon（菜单项仍显示文字）
+      icon: item.icon && item.icon.startsWith('i-') ? item.icon : undefined,
       // UDropdown item 原生支持 to 路由跳转，站内一律走路由导航
       to: `/${item.slug}`,
     },
