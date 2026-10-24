@@ -126,6 +126,13 @@ assert.ok(insertAt >= 0, 'PageBlockList.onEnd 必须复位 DOM');
 assert.ok(noopAt > insertAt, 'onEnd 必须先复位 DOM，再判断 oldIndex === newIndex 早退');
 
 // 5) 导航接线：桌面下拉、移动端网格、布局数据加载三处都必须消费 pageNav
+// 5a) 桌面竖向工具栏的自定义页面入口：裸文档图标 + 菜单项文档图标，不得退回省略号按钮
+assert.match(header, /<UIcon name="i-carbon-document"/, '桌面自定义页面入口必须使用文档图标');
+assert.match(header, /icon: 'i-carbon-document'/, '自定义页面菜单项必须带文档图标');
+assert.doesNotMatch(header, /i-carbon-overflow-menu-horizontal/, '自定义页面入口不得退回省略号图标');
+assert.doesNotMatch(header, /variant="ghost"[\s\S]{0,120}i-carbon-overflow-menu-horizontal/, '自定义页面入口不得使用带内边距的 UButton 触发');
+assert.match(mobileNav, /i-carbon-document/, '移动端自定义页面入口也必须使用文档图标');
+
 for (const [name, source] of [['Header.vue', header], ['MobileNav.vue', mobileNav], ['layouts/default.vue', layout]]) {
   assert.match(source, /\bpageNav\b/, `${name} 必须接自定义页面导航（pageNav）`);
 }

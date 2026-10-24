@@ -126,15 +126,12 @@
       <UDropdown
         v-if="pageNav.length"
         :items="pageNavItems"
-        :popper="{ placement: 'bottom-end' }"
+        :popper="{ placement: 'left-start' }"
       >
-        <UButton
-          color="white"
-          variant="ghost"
-          icon="i-carbon-overflow-menu-horizontal"
-          class="text-[#9fc84a]"
-          title="更多页面"
-        />
+        <!-- 与竖向工具栏其它入口保持一致：裸 20px 图标，不用 UButton（按钮内边距会打乱图标节奏） -->
+        <span title="自定义页面" aria-label="自定义页面" class="flex items-center justify-center">
+          <UIcon name="i-carbon-document" class="w-5 h-5 text-[#9fc84a] cursor-pointer"/>
+        </span>
       </UDropdown>
       <NuxtLink
         v-if="$route.path !== '/sys/settings' && authUser.id === 1"
@@ -205,6 +202,8 @@ const pageNavItems = computed(() =>
   pageNav.value.map((item) => [
     {
       label: item.title || item.slug,
+      // 与移动端 MobileNav 的自定义页面入口一致：菜单项也带文档图标
+      icon: 'i-carbon-document',
       // UDropdown item 原生支持 to 路由跳转，站内一律走路由导航
       to: `/${item.slug}`,
     },
