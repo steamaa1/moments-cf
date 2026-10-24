@@ -60,8 +60,9 @@ const blocks = computed(() => parsePageBlocks(page.value?.content))
 useCustomPageAssets(page)
 
 useHead({
-  // 与 worker 注入的服务端 meta 同规则：「页面标题 - 站点标题」
-  title: () => (page.value ? `${page.value.title} - ${config.value.title || site.title}` : '页面不存在'),
+  // 与 worker 注入的服务端 meta 同规则：文档标题固定为站点标题（与全站其它页面一致），
+  // 页面名只进 h1/正文，不再拼成「页面标题 - 站点标题」。
+  title: () => (page.value ? (config.value.title || site.title) : '页面不存在'),
   // 404 分支加 noindex，避免爬虫收录无效路径
   meta: () => (page.value ? [] : [{ name: 'robots', content: 'noindex, nofollow' }]),
 })

@@ -1164,8 +1164,8 @@ function pageView(row) {
     updatedAt: row.updated_at,
   };
 }
-// 根级单段路径 /<slug> 的 SEO 数据组装见 pageSeo()：命中启用页时返回
-// 「页面标题 - 站点标题」+ seo_description（站点级回退），正文由前端 /pages/[slug].vue 渲染。
+// 根级单段路径 /<slug> 的 SEO 数据组装见 pageSeo()：命中启用页时标题固定为站点标题
+// （与全站其它页面一致），seo_description 只进 description（站点级回退），正文由前端 /pages/[slug].vue 渲染。
 // 管理端：全部自定义页面（含停用），导航排序优先，其次最近更新
 async function adminPageList(request, env, headers) {
   const access = await requireUser(request, env, headers, true);
@@ -1548,7 +1548,7 @@ async function pageSeo(env, config, path, origin = '') {
         const siteTitle = String(config?.title || DEFAULT_SEO.title);
         const description = String(row.seo_description || '')
           || String(config?.seoDescription || (config?.slogan ? `${config.slogan} · ${siteTitle}` : DEFAULT_SEO.description));
-        return { title: `${String(row.title || '')} - ${siteTitle}`, description, ogType: 'website' };
+        return { title: siteTitle, description, ogType: 'website' };
       }
     }
     return { noindex: true };

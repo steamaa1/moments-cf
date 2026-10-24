@@ -145,7 +145,7 @@
 
 **逐页 CSS/JS 注入**：启用页的 `customCss`/`customJs` 由前端 `/pages/[slug].vue` 在客户端注入——CSS 以 `<style>` 进 `head`，JS 以 `<script>` 进 `body`（内联脚本会执行）；slug 变化或离开页面时旧标签被清理，但已执行脚本的副作用（事件监听、全局变量）不会回滚。这是**管理员信任域内的能力**（只有管理员能通过 `/api/admin/page/save` 写入），等价于管理员在页面正文里写内联 `<style>`/`<script>`；**不得**把它暴露给非管理员或任何站外内容。停用页面不注入（公开接口本就 404）。预览页不执行逐页 JS（避免影响编辑器自身），保存后到前台 `/<slug>` 验证。
 
-**根级 URL 语义**：静态路由永远优先（`/about`、`/photos` 等既有页面与全部 `/api/*`、`/upload/*`、`/rss` 等不受影响），自定义页面只承接无路由的单段路径；两段及以上路径（如 `/foo/bar`）归 SPA 通配 404，不会落到自定义页面。启用页由 `pageSeo()` 注入「页面标题 - 站点标题」、`seoDescription`（空时回退站点描述）与 JSON-LD WebSite 形态 meta；**停用或已删除页面的 URL 返回 SPA 404 并带 `noindex`**，不会泄漏存在性。`/sitemap.xml` 收录启用页（monthly、优先级 0.5、`lastmod` 取 `updated_at`），停用/已删页自动移出。
+**根级 URL 语义**：静态路由永远优先（`/about`、`/photos` 等既有页面与全部 `/api/*`、`/upload/*`、`/rss` 等不受影响），自定义页面只承接无路由的单段路径；两段及以上路径（如 `/foo/bar`）归 SPA 通配 404，不会落到自定义页面。启用页由 `pageSeo()` 注入**站点标题**（与全站其它页面统一，页面标题只出现在 h1/正文）、`seoDescription`（空时回退站点描述）与 JSON-LD WebSite 形态 meta；**停用或已删除页面的 URL 返回 SPA 404 并带 `noindex`**，不会泄漏存在性。`/sitemap.xml` 收录启用页（monthly、优先级 0.5、`lastmod` 取 `updated_at`），停用/已删页自动移出。
 
 **组件块协议**：正文里用 ```` ```ui:<kind> ```` 三反引号围栏包裹一段 JSON 表示组件，围栏外内容按 markdown 渲染：
 

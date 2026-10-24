@@ -683,10 +683,10 @@ const saveFeatured = async () => {
 const formatDate = (value?: string) => value ? new Date(value).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) : ''
 
 useHead({
-  title: '照片墙',
+  // 文档标题与 og:title 交给 layouts/default.vue 的站点标题，和全站其它页面保持一致；
+  // 「照片墙」只作为页面 h1/正文语义，不再单独占用浏览器/分享标题。
   meta: [
     { name: 'description', content: '浏览历史上的今天、精选图片与所有照片图集。' },
-    { property: 'og:title', content: '照片墙' },
     { property: 'og:type', content: 'website' },
   ],
 })

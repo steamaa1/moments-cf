@@ -9,7 +9,7 @@ import worker, { signJwt } from '../../worker/src/index.js';
  * - 逐页 CSS/JS（0019）：save 往返、公开 get 下发、超 20000 字 400 且不落库
  * - remove 后公开 get 404（物理删除）
  * - 读参：page 三接口（pageGet/adminPageGet/adminPageRemove）body 优先、query 兜底，两种形态均锁定
- * - 根级 /<slug> SEO：启用页注入「页面标题 - 站点标题」+ seo_description（空时站点级回退），
+ * - 根级 /<slug> SEO：启用页文档标题注入站点标题 + seo_description（空时站点级回退），
  *   停用或不存在的单段路径注入 noindex（契约看输出行为，不绑实现形态）
  * - sitemap：收录启用页根级路径（monthly/0.5/lastmod=updated_at），不含停用页
  */
@@ -318,21 +318,21 @@ assert.equal(removeByBody.status, 200, (await removeByBody.clone().json()).messa
 assert.equal((await removeByBody.json()).code, 0);
 assert.equal((await post('/api/page/get?slug=temp-body')).status, 404, 'body 路径删除后公开 get 必须 404');
 
-// 8) 根级 /<slug> SEO：启用页注入「页面标题 - 站点标题」+ seo_description；停用/不存在 noindex
+// 8) 根级 /<slug> SEO：启用页文档标题为站点标题 + seo_description；停用/不存在 noindex
 const pageHtmlResponse = await worker.fetch(new Request('https://seo.example/hello'), env);
 assert.equal(pageHtmlResponse.status, 200);
 assert.match(pageHtmlResponse.headers.get('content-type') || '', /text\/html/, '根级 slug 必须返回 HTML');
 const pageHtml = await pageHtmlResponse.text();
-assert.match(pageHtml, /<title>页面标题 - 站点<\/title>/, '启用页标题必须为「页面标题 - 站点标题」');
+assert.match(pageHtml, /<title>站点<\/title>/, '启用页文档标题必须为站点标题');
 assert.match(pageHtml, /<meta name="description" content="自定义页描述">/, 'description 必须用页面 seo_description');
-assert.match(pageHtml, /<meta property="og:title" content="页面标题 - 站点">/);
+assert.match(pageHtml, /<meta property="og:title" content="站点">/);
 assert.match(pageHtml, /<meta property="og:type" content="website">/);
 assert.match(pageHtml, /<link rel="canonical" href="https:\/\/seo\.example\/hello">/);
 assert.doesNotMatch(pageHtml, /noindex/, '启用页不得 noindex');
 assert.match(queries.find(sql => sql.includes('SELECT title, seo_description FROM custom_pages')) || '', /enabled = 1/, 'SEO 查询只允许启用页');
 
 const plainHtml = await (await worker.fetch(new Request('https://seo.example/plain'), env)).text();
-assert.match(plainHtml, /<title>简单页 - 站点<\/title>/);
+assert.match(plainHtml, /<title>站点<\/title>/);
 assert.match(plainHtml, /<meta name="description" content="站点描述">/, 'seo_description 为空时回退站点级描述');
 
 for (const slug of ['draft', 'ghost']) {
