@@ -88,7 +88,7 @@
         <section data-section="content" class="mt-4 space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
           <div>
             <h2 class="font-semibold text-gray-800 dark:text-gray-100">内容与互动</h2>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">评论、注册、关于页面与友情链接申请。</p>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">评论、注册、关于页面、友情链接申请与自定义页面。</p>
           </div>
           <UFormGroup label="是否启用评论" name="enableComment" help="关闭后动态下方不再显示评论入口">
             <UToggle v-model="state.enableComment"/>
@@ -127,6 +127,35 @@
             <UFormGroup label="申请邮箱" help="接收友情链接申请的邮箱地址">
               <UInput v-model="state.friendEmail" type="email" placeholder="admin@example.com"/>
             </UFormGroup>
+          </div>
+          <div class="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h2 class="font-semibold text-gray-800 dark:text-gray-100">自定义页面</h2>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">根级路径 /slug 的独立页面；启用并加入导航后出现在站点菜单。</p>
+              </div>
+              <UButton size="sm" icon="i-carbon-add" to="/sys/pages/new">新建页面</UButton>
+            </div>
+            <p v-if="!pageList.length" class="py-8 text-center text-sm text-gray-400">暂无自定义页面，点击右上角「新建页面」创建。</p>
+            <div v-else class="space-y-2">
+              <div v-for="row in pageList" :key="row.id" class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+                <div class="min-w-0 flex-1">
+                  <p class="truncate font-semibold text-gray-800 dark:text-gray-100">{{ row.title }}</p>
+                  <NuxtLink :to="`/${row.slug}`" class="text-xs text-gray-500 hover:text-primary-500 dark:text-gray-400">/{{ row.slug }}</NuxtLink>
+                </div>
+                <span class="shrink-0 text-xs text-gray-400">排序 {{ row.sortOrder }}</span>
+                <label class="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  <UToggle :model-value="row.enabled" @update:model-value="value => togglePageRow(row, 'enabled', value)"/>启用
+                </label>
+                <label class="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  <UToggle :model-value="row.showInNav" @update:model-value="value => togglePageRow(row, 'showInNav', value)"/>导航
+                </label>
+                <UButton size="xs" color="gray" variant="soft" icon="i-carbon-edit" :to="`/sys/pages/${row.id}`">编辑</UButton>
+                <Confirm @ok="removePageRow(row)">
+                  <UButton size="xs" color="red" variant="soft" icon="i-carbon-trash-can">删除</UButton>
+                </Confirm>
+              </div>
+            </div>
           </div>
         </section>
       </template>
@@ -278,38 +307,6 @@
         </section>
       </template>
 
-      <!-- ============ 自定义页面 ============ -->
-      <template #pages>
-        <section data-section="pages" class="mt-4 space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <h2 class="font-semibold text-gray-800 dark:text-gray-100">自定义页面</h2>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">根级路径 /slug 的独立页面；启用并加入导航后出现在站点菜单。</p>
-            </div>
-            <UButton size="sm" icon="i-carbon-add" to="/sys/pages/new">新建页面</UButton>
-          </div>
-          <p v-if="!pageList.length" class="py-8 text-center text-sm text-gray-400">暂无自定义页面，点击右上角「新建页面」创建。</p>
-          <div v-else class="space-y-2">
-            <div v-for="row in pageList" :key="row.id" class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-              <div class="min-w-0 flex-1">
-                <p class="truncate font-semibold text-gray-800 dark:text-gray-100">{{ row.title }}</p>
-                <NuxtLink :to="`/${row.slug}`" class="text-xs text-gray-500 hover:text-primary-500 dark:text-gray-400">/{{ row.slug }}</NuxtLink>
-              </div>
-              <span class="shrink-0 text-xs text-gray-400">排序 {{ row.sortOrder }}</span>
-              <label class="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                <UToggle :model-value="row.enabled" @update:model-value="value => togglePageRow(row, 'enabled', value)"/>启用
-              </label>
-              <label class="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                <UToggle :model-value="row.showInNav" @update:model-value="value => togglePageRow(row, 'showInNav', value)"/>导航
-              </label>
-              <UButton size="xs" color="gray" variant="soft" icon="i-carbon-edit" :to="`/sys/pages/${row.id}`">编辑</UButton>
-              <Confirm @ok="removePageRow(row)">
-                <UButton size="xs" color="red" variant="soft" icon="i-carbon-trash-can">删除</UButton>
-              </Confirm>
-            </div>
-          </div>
-        </section>
-      </template>
     </UTabs>
 
     <!-- 保存条：sticky 吸底，仅在存在未保存更改时出现——没有改动时整条隐藏，不占底部空间。
@@ -460,10 +457,10 @@ const sectionTabs = [
   { key: 'content', label: '内容与互动', slot: 'content' },
   { key: 'security', label: '安全与通知', slot: 'security' },
   { key: 'storage', label: '存储与数据', slot: 'storage' },
-  { key: 'pages', label: '自定义页面', slot: 'pages' },
 ]
-// 旧深链兼容：附件限制已并入「存储与数据」，?tab=attachment 归一为 storage
-const LEGACY_TAB_KEYS: Record<string, string> = { attachment: 'storage' }
+// 旧深链兼容：附件限制已并入「存储与数据」（attachment→storage），
+// 自定义页面已并入「内容与互动」（pages→content）
+const LEGACY_TAB_KEYS: Record<string, string> = { attachment: 'storage', pages: 'content' }
 const activeTabIndex = ref(0)
 const selectTab = (index: number) => {
   activeTabIndex.value = index

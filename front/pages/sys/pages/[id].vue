@@ -102,7 +102,7 @@
           </div>
 
           <div class="flex justify-end gap-2">
-            <UButton to="/sys/settings?tab=pages" color="white">返回列表</UButton>
+            <UButton to="/sys/settings?tab=content" color="white">返回列表</UButton>
             <UButton :loading="saving" @click="save">保存</UButton>
           </div>
         </section>
@@ -188,7 +188,7 @@
  * 自定义页面编辑器（/sys/pages/new 新建、/sys/pages/:id 编辑）。
  *
  * 数据流：编辑态 onMounted 调 /admin/page/get（body: { id }）预填，失败 toast 并跳回列表；
- * 保存统一调 /admin/page/save（新建不带 id、更新带 id），成功后跳 /sys/settings?tab=pages。
+ * 保存统一调 /admin/page/save（新建不带 id、更新带 id），成功后跳 /sys/settings?tab=content。
  * 提交前先按 SLUG_PATTERN 与保留字校验（与 worker 侧同规则，先拦截再请求）。
  *
  * 正文双模式（P1 块编辑器，Gutenberg-lite）：form.content 仍是唯一事实源（保存接口不变）。
@@ -264,7 +264,7 @@ onMounted(async () => {
     form.customJs = String(res.customJs || '')
   } catch (error: any) {
     toast.error(error?.message || '页面不存在')
-    await navigateTo('/sys/settings?tab=pages')
+    await navigateTo('/sys/settings?tab=content')
   }
 })
 
@@ -462,7 +462,7 @@ const save = async () => {
     if (pageId.value) body.id = pageId.value
     await useMyFetch('/admin/page/save', body)
     toast.success('保存成功')
-    await navigateTo('/sys/settings?tab=pages')
+    await navigateTo('/sys/settings?tab=content')
   } catch (error: any) {
     toast.error(error?.message || '保存失败')
   } finally {

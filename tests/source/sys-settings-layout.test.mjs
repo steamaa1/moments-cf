@@ -76,6 +76,9 @@ for (const section of ['site', 'seo', 'content', 'security', 'storage']) {
   assert.match(settings, new RegExp(`data-section="${section}"`), `缺少分区标记 data-section="${section}"`);
 }
 assert.doesNotMatch(settings, /data-section="attachment"/, '附件分区已并入存储与数据，不应再存在独立分区标记');
+assert.doesNotMatch(settings, /data-section="pages"/, '自定义页面已并入内容与互动，不应再存在独立分区标记');
+const contentStart = settings.indexOf('data-section="content"');
+assert.ok(contentStart > -1 && settings.indexOf('新建页面') > contentStart, '自定义页面列表必须落在内容与互动分区内');
 
 // 标签页导航与分区标题（使用仓库既有先例组件 UTabs）
 assert.match(settings, /<UTabs/, '必须用 UTabs 承载分区导航');
@@ -92,6 +95,7 @@ assert.doesNotMatch(settings, /location\.reload\(\)/, '保存后不得整页刷�
 // 深链：支持 ?tab=storage 直接打开指定分区（供注册审批等入口直达）；旧 ?tab=attachment 归一为 storage
 assert.match(settings, /query\.tab/, '必须支持 ?tab= 深链');
 assert.match(settings, /LEGACY_TAB_KEYS/, '旧 ?tab=attachment 深链必须归一为 storage');
+assert.match(settings, /pages: 'content'/, '旧 ?tab=pages 深链必须归一为 content');
 
 // 危险操作不得与保存按钮混在同一分区卡片：清理入口必须留在「存储与数据」区
 const storageStart = settings.indexOf('data-section="storage"');
