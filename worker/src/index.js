@@ -156,6 +156,8 @@ const MEMO_BLOCK_ORDER_MAX = 50;
 // 与系统保留清单。保留 slug 覆盖 SPA 固有路由与站点级端点，禁止自定义页面占用，
 // 防止管理页面遮蔽 /new、/edit、/sys、/rss 等既有入口。
 const PAGE_SLUG_PATTERN = /^[a-z0-9-]{1,40}$/;
+// 逐页 CSS/JS 上限：独立于 content 的 100000，代码资产被截断会直接坏页面，故超限返回 400 而非静默截断
+const PAGE_ASSET_MAX = 20000;
 const RESERVED_PAGE_SLUGS = ['about', 'friend', 'photos', 'new', 'edit', 'user', 'sys', 'memo', 'tags', 'api', 'upload', 'rss', 'x-media', 'douban-cover', 'page'];
 const ATTACHMENT_HARD_MAX_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_HARD_MAX_COUNT = 20;
@@ -1155,6 +1157,8 @@ function pageView(row) {
     showInNav: Number(row.show_in_nav) === 1,
     sortOrder: Number(row.sort_order || 0),
     seoDescription: String(row.seo_description || ''),
+    customCss: String(row.custom_css || ''),
+    customJs: String(row.custom_js || ''),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1192,6 +1196,10 @@ async function adminPageSave(request, env, headers) {
   if (title.length < 1 || title.length > 60) return json(fail('标题需为 1-60 字'), 400, headers);
   const content = String(body.content || '').slice(0, 100000);
   const seoDescription = String(body.seoDescription || '').slice(0, 300);
+  const customCss = String(body.customCss || '');
+  const customJs = String(body.customJs || '');
+  if (customCss.length > PAGE_ASSET_MAX) return json(fail(`逐页 CSS 不能超过 ${PAGE_ASSET_MAX} 字`), 400, headers);
+  if (customJs.length > PAGE_ASSET_MAX) return json(fail(`逐页 JS 不能超过 ${PAGE_ASSET_MAX} 字`), 400, headers);
   const sortOrder = clampInt(body.sortOrder, 0, 999, 0);
   const enabled = Number(body.enabled) === 0 ? 0 : 1;
   const showInNav = body.showInNav ? 1 : 0;
@@ -1201,13 +1209,13 @@ async function adminPageSave(request, env, headers) {
     if (!existing) return json(fail('页面不存在'), 404, headers);
     const duplicate = await env.DB.prepare('SELECT id FROM custom_pages WHERE slug = ? AND id <> ?').bind(slug, id).first();
     if (duplicate) return json(fail('slug 已存在'), 409, headers);
-    await env.DB.prepare('UPDATE custom_pages SET slug=?, title=?, content=?, enabled=?, show_in_nav=?, sort_order=?, seo_description=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, id).run();
+    await env.DB.prepare('UPDATE custom_pages SET slug=?, title=?, content=?, enabled=?, show_in_nav=?, sort_order=?, seo_description=?, custom_css=?, custom_js=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, customCss, customJs, id).run();
   } else {
     const duplicate = await env.DB.prepare('SELECT id FROM custom_pages WHERE slug = ?').bind(slug).first();
     if (duplicate) return json(fail('slug 已存在'), 409, headers);
-    const result = await env.DB.prepare('INSERT INTO custom_pages (slug, title, content, enabled, show_in_nav, sort_order, seo_description, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)')
-      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, access.user.id).run();
+    const result = await env.DB.prepare('INSERT INTO custom_pages (slug, title, content, enabled, show_in_nav, sort_order, seo_description, custom_css, custom_js, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)')
+      .bind(slug, title, content, enabled, showInNav, sortOrder, seoDescription, customCss, customJs, access.user.id).run();
     return json(ok({ id: Number(result.meta?.last_row_id || 0) }), 200, headers);
   }
   return json(ok({ id }), 200, headers);
@@ -1227,9 +1235,9 @@ async function pageGet(request, env, headers) {
   const body = (await readJson(request)) || {};
   const slug = String(body.slug ?? new URL(request.url).searchParams.get('slug') ?? '').trim();
   if (!slug) return json(fail('参数错误'), 400, headers);
-  const row = await env.DB.prepare('SELECT slug, title, content, seo_description FROM custom_pages WHERE slug = ? AND enabled = 1').bind(slug).first();
+  const row = await env.DB.prepare('SELECT slug, title, content, seo_description, custom_css, custom_js FROM custom_pages WHERE slug = ? AND enabled = 1').bind(slug).first();
   if (!row) return json(fail('页面不存在'), 404, headers);
-  return json(ok({ slug: String(row.slug || ''), title: String(row.title || ''), content: String(row.content || ''), seoDescription: String(row.seo_description || '') }), 200, headers);
+  return json(ok({ slug: String(row.slug || ''), title: String(row.title || ''), content: String(row.content || ''), seoDescription: String(row.seo_description || ''), customCss: String(row.custom_css || ''), customJs: String(row.custom_js || '') }), 200, headers);
 }
 // 公开：导航用启用页面（slug + title），按 sort_order 升序
 async function pageNav(request, env, headers) {
@@ -3027,7 +3035,7 @@ async function handleApi(request, env, ctx) {
   }
 }
 
-export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured, adminPhotoDelete, trashOrphanAlbumMedia, attachmentUpload, attachmentContentType, ALLOWED_ATTACHMENT_TYPES, PAGE_SLUG_PATTERN, RESERVED_PAGE_SLUGS, pageView, adminPageList, adminPageGet, adminPageSave, adminPageRemove, pageGet, pageNav };
+export { passwordHash, passwordMatches, signJwt, verifyJwt, validHttpUrl, forbiddenHost, verifyRecaptchaToken, verifyTurnstileToken, verifyHumanToken, commentView, publicUser, sanitizeMemoExt, parseGitEmbedUrl, fetchGitSnapshot, previewUnfurl, parseMemoRefUrl, memoRefSnapshot, parseXEmbedUrl, fetchXSnapshot, parseDouban, parseDoubanMovieJson, migrationPreflight, migrationPrepare, migrationImport, migrationFinish, migrationFail, BUILTIN_STATUSES, userStatusView, attachStatuses, normalizeMediaUrls, photoUrl, photoMemoVisible, photoWall, photoAlbum, photoAll, adminPhotoAlbumSave, adminPhotoAlbumRemove, adminPhotoAlbumAdd, adminPhotoFeatured, adminPhotoDelete, trashOrphanAlbumMedia, attachmentUpload, attachmentContentType, ALLOWED_ATTACHMENT_TYPES, PAGE_SLUG_PATTERN, RESERVED_PAGE_SLUGS, PAGE_ASSET_MAX, pageView, adminPageList, adminPageGet, adminPageSave, adminPageRemove, pageGet, pageNav };
 function parseRangeHeader(header, size) {
   const match = String(header || '').match(/^bytes=(\d*)-(\d*)$/);
   if (!match) return null;

@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import worker, { signJwt } from '../../worker/src/index.js';
 
 /**
- * 自定义页面（custom_pages，migration 0018）集成测试：
+ * 自定义页面（custom_pages，migration 0018/0019）集成测试：
  * - 管理接口鉴权：未登录 code 3（401）、普通用户 code 4（403）
  * - 管理员 save：断言 INSERT SQL 与全部参数；非法输入逐个 400；slug 重复 HTTP 409（body code 仍为 1）
- * - 公开 get/nav：启用页只暴露四字段（不含内部 enabled），nav 只含启用且 show_in_nav 并按 sort_order 排序
+ * - 公开 get/nav：启用页只暴露六个公开字段（不含内部 enabled），nav 只含启用且 show_in_nav 并按 sort_order 排序
+ * - 逐页 CSS/JS（0019）：save 往返、公开 get 下发、超 20000 字 400 且不落库
  * - remove 后公开 get 404（物理删除）
  * - 读参：page 三接口（pageGet/adminPageGet/adminPageRemove）body 优先、query 兜底，两种形态均锁定
  * - 根级 /<slug> SEO：启用页注入「页面标题 - 站点标题」+ seo_description（空时站点级回退），
@@ -35,7 +36,7 @@ class Statement {
     const sql = this.sql.toLowerCase();
     if (sql.includes('select * from users where id')) return state.users[Number(this.args[0])] || null;
     if (sql.includes('from sys_config')) return { content: JSON.stringify(state.config) };
-    if (sql.includes('select slug, title, content, seo_description from custom_pages')) {
+    if (sql.includes('select slug, title, content, seo_description')) {
       return state.pages.find(page => page.slug === this.args[0] && Number(page.enabled) === 1) || null;
     }
     if (sql.includes('select title, seo_description from custom_pages')) {
@@ -84,15 +85,16 @@ class Statement {
       const row = {
         id: state.nextId++, slug: this.args[0], title: this.args[1], content: this.args[2],
         enabled: this.args[3], show_in_nav: this.args[4], sort_order: this.args[5],
-        seo_description: this.args[6], created_by: this.args[7], created_at: CREATED_AT, updated_at: CREATED_AT,
+        seo_description: this.args[6], custom_css: this.args[7], custom_js: this.args[8],
+        created_by: this.args[9], created_at: CREATED_AT, updated_at: CREATED_AT,
       };
       state.pages.push(row);
       return { meta: { last_row_id: row.id } };
     }
     if (lower.startsWith('update custom_pages set')) {
       captured.push({ sql, args: this.args });
-      const row = state.pages.find(page => page.id === Number(this.args[7]));
-      if (row) Object.assign(row, { slug: this.args[0], title: this.args[1], content: this.args[2], enabled: this.args[3], show_in_nav: this.args[4], sort_order: this.args[5], seo_description: this.args[6], updated_at: CREATED_AT });
+      const row = state.pages.find(page => page.id === Number(this.args[9]));
+      if (row) Object.assign(row, { slug: this.args[0], title: this.args[1], content: this.args[2], enabled: this.args[3], show_in_nav: this.args[4], sort_order: this.args[5], seo_description: this.args[6], custom_css: this.args[7], custom_js: this.args[8], updated_at: CREATED_AT });
       return { meta: { changes: row ? 1 : 0 } };
     }
     if (lower.startsWith('delete from custom_pages')) {
@@ -163,15 +165,15 @@ const helloId = helloBody.data.id;
 assert.equal(Number.isInteger(helloId) && helloId > 0, true, '新建必须返回自增 id');
 const insert = captured.find(entry => entry.sql.toLowerCase().startsWith('insert into custom_pages'));
 assert.ok(insert, '必须执行 INSERT INTO custom_pages');
-assert.match(insert.sql, /^INSERT INTO custom_pages \(slug, title, content, enabled, show_in_nav, sort_order, seo_description, created_by, created_at, updated_at\)/);
-assert.deepEqual(insert.args, ['hello', '页面标题', '# 正文', 1, 1, 3, '自定义页描述', 1], 'INSERT 绑定参数必须完整');
+assert.match(insert.sql, /^INSERT INTO custom_pages \(slug, title, content, enabled, show_in_nav, sort_order, seo_description, custom_css, custom_js, created_by, created_at, updated_at\)/);
+assert.deepEqual(insert.args, ['hello', '页面标题', '# 正文', 1, 1, 3, '自定义页描述', '', '', 1], 'INSERT 绑定参数必须完整（未给 CSS/JS 时落空串）');
 
 // 停用页（enabled:false）：布尔归一为 0，缺省字段落默认值
 const saveDraft = await post('/api/admin/page/save', { slug: 'draft', title: '草稿页', content: '草稿内容', enabled: false }, adminToken);
 assert.equal(saveDraft.status, 200);
 const draftId = (await saveDraft.json()).data.id;
 const draftInsert = captured.filter(entry => entry.sql.toLowerCase().startsWith('insert into custom_pages'))[1];
-assert.deepEqual(draftInsert.args, ['draft', '草稿页', '草稿内容', 0, 0, 0, '', 1], 'enabled:false 必须落 0，缺省 showInNav/sortOrder/seoDescription 落默认值');
+assert.deepEqual(draftInsert.args, ['draft', '草稿页', '草稿内容', 0, 0, 0, '', '', '', 1], 'enabled:false 必须落 0，缺省 showInNav/sortOrder/seoDescription/customCss/customJs 落默认值');
 
 // 3) 非法输入逐个 400：大写 slug、61 字标题、保留词 rss 与 x-media、带点 slug、41 字 slug
 const invalidBodies = [
@@ -203,8 +205,8 @@ const getHello = await post('/api/page/get?slug=hello');
 assert.equal(getHello.status, 200, (await getHello.clone().json()).message);
 const hello = await getHello.json();
 assert.equal(hello.code, 0);
-assert.deepEqual([...Object.keys(hello.data)].sort(), ['content', 'seoDescription', 'slug', 'title'], '公开视图只暴露四个字段');
-assert.deepEqual(hello.data, { slug: 'hello', title: '页面标题', content: '# 正文', seoDescription: '自定义页描述' });
+assert.deepEqual([...Object.keys(hello.data)].sort(), ['content', 'customCss', 'customJs', 'seoDescription', 'slug', 'title'], '公开视图只暴露六个字段（不含内部 enabled）');
+assert.deepEqual(hello.data, { slug: 'hello', title: '页面标题', content: '# 正文', seoDescription: '自定义页描述', customCss: '', customJs: '' });
 const getDraft = await post('/api/page/get?slug=draft');
 assert.equal(getDraft.status, 404, '停用页必须 404');
 const getGhost = await post('/api/page/get?slug=ghost');
@@ -213,8 +215,38 @@ assert.equal((await post('/api/page/get?slug=')).status, 400, '空 slug 必须 4
 // 读参兼容（body 优先）：body 规范路径与空 body 双形态锁定
 const getHelloByBody = await post('/api/page/get', { slug: 'hello' });
 assert.equal(getHelloByBody.status, 200, (await getHelloByBody.clone().json()).message, 'body.slug 必须命中（body 规范路径）');
-assert.deepEqual(await getHelloByBody.json(), { code: 0, data: { slug: 'hello', title: '页面标题', content: '# 正文', seoDescription: '自定义页描述' } }, 'body 路径必须返回完整四字段');
+assert.deepEqual(await getHelloByBody.json(), { code: 0, data: { slug: 'hello', title: '页面标题', content: '# 正文', seoDescription: '自定义页描述', customCss: '', customJs: '' } }, 'body 路径必须返回完整六字段');
 assert.equal((await post('/api/page/get')).status, 400, '空 body（无 query）必须 400：任何形态都拿不到 slug');
+
+// 5b) 逐页 CSS/JS（migration 0019）：更新往返、公开 get 下发、超限 400 且不落库
+const ASSET_CSS = '.hello-page .hero { color: #9fc84a; }';
+const ASSET_JS = 'document.documentElement.dataset.helloPage = "1";';
+const saveAssets = await post('/api/admin/page/save', {
+  id: helloId, slug: 'hello', title: '页面标题', content: '# 正文', seoDescription: '自定义页描述',
+  sortOrder: 3, enabled: true, showInNav: true, customCss: ASSET_CSS, customJs: ASSET_JS,
+}, adminToken);
+assert.equal(saveAssets.status, 200, (await saveAssets.clone().json()).message);
+const updateAssetsSql = captured.filter(entry => entry.sql.toLowerCase().startsWith('update custom_pages set')).pop();
+assert.match(updateAssetsSql.sql, /custom_css=\?, custom_js=\?/);
+assert.equal(updateAssetsSql.args[7], ASSET_CSS);
+assert.equal(updateAssetsSql.args[8], ASSET_JS);
+const getAssets = await (await post('/api/page/get', { slug: 'hello' })).json();
+assert.equal(getAssets.data.customCss, ASSET_CSS, '公开 page/get 必须下发逐页 CSS');
+assert.equal(getAssets.data.customJs, ASSET_JS, '公开 page/get 必须下发逐页 JS');
+const adminGetAssets = await (await post('/api/admin/page/get', { id: helloId }, adminToken)).json();
+assert.equal(adminGetAssets.data.customCss, ASSET_CSS);
+assert.equal(adminGetAssets.data.customJs, ASSET_JS);
+const updatesBeforeOversize = updateCount();
+const tooLongCss = await post('/api/admin/page/save', {
+  id: helloId, slug: 'hello', title: '页面标题', customCss: 'x'.repeat(20001),
+}, adminToken);
+assert.equal(tooLongCss.status, 400, 'CSS 超过 20000 字必须 400（不静默截断）');
+const tooLongJs = await post('/api/admin/page/save', {
+  id: helloId, slug: 'hello', title: '页面标题', customJs: 'x'.repeat(20001),
+}, adminToken);
+assert.equal(tooLongJs.status, 400, 'JS 超过 20000 字必须 400（不静默截断）');
+assert.equal(updateCount(), updatesBeforeOversize, '超限请求不得执行 UPDATE');
+assert.equal((await (await post('/api/page/get', { slug: 'hello' })).json()).data.customCss, ASSET_CSS, '超限拒绝后旧资产必须原样保留');
 
 // 6) nav：只含启用且 show_in_nav 的行，按 sort_order 升序；条目只含 slug/title
 for (const body of [
@@ -246,7 +278,8 @@ const listBody = await listResponse.json();
 assert.deepEqual(listBody.data.list.map(page => page.slug).sort(), ['draft', 'hello', 'hidden-page', 'm-nav', 'plain', 'z-early'], '管理列表必须含停用页');
 assert.deepEqual(listBody.data.list.find(page => page.slug === 'hello'), {
   id: helloId, slug: 'hello', title: '页面标题', content: '# 正文', enabled: true, showInNav: true,
-  sortOrder: 3, seoDescription: '自定义页描述', createdAt: CREATED_AT, updatedAt: CREATED_AT,
+  sortOrder: 3, seoDescription: '自定义页描述', customCss: ASSET_CSS, customJs: ASSET_JS,
+  createdAt: CREATED_AT, updatedAt: CREATED_AT,
 });
 const adminGet = await post(`/api/admin/page/get?id=${helloId}`, {}, adminToken);
 assert.equal((await adminGet.json()).data.slug, 'hello');

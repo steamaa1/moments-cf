@@ -3,13 +3,14 @@
  * PageBlockForm：块编辑器（Gutenberg-lite P1）的通用 schema 表单组件。
  *
  * 按 front/utils/pageBlockSchema.js 注册表条目（BlockSchema）把组件块 data 渲染成表单，
- * 取代旧编辑器逐 kind 手写的极简表单（pages/sys/pages/[id].vue 的 ITEM_FIELDS/componentExtra）。
+ * 块编辑模式与源码模式的「插入组件」模态共用本组件（P2 起源码模式也按 schema 渲染，
+ * 不再逐 kind 手写表单）。
  * t3 块编辑器按此接入：
  *   <PageBlockForm :schema="getPageBlockSchema(block.kind)" v-model="block.data" />
  *
- * 渲染规则：fields 的 string → UInput、number → UInput type=number（内部以字符串编辑，
- * emit 前转回数字）；lists → 条目行（行内按 itemFields 渲染 UInput，行尾删除按钮）
- * +「加一行」。
+ * 渲染规则：控件的 type 分支在 PageBlockField.vue（string / number / textarea / select /
+ * image / icon / datetime），本组件只负责顶层字段与列表行的布局、draft 同步与 compaction。
+ * number 内部以字符串编辑，emit 前转回数字；lists → 条目行（行尾删除按钮）+「加一行」。
  *
  * 输出语义（与旧编辑器 compact 同构，保证落盘 JSON 干净）：emit 前丢弃空字符串字段与
  * 全空条目行；列表键恒输出（全空时输出 []，与旧编辑器 items: [] 一致）。schema 外的
@@ -88,7 +89,7 @@ const normalizeRow = (row, itemFields) => {
 /**
  * 用外部值重建 draft（modelValue / schema 变化、高级模式应用共用）。
  * 容错：非对象 data → 空表单；列表值非数组 → 空列表（原值非空则进 extras 透传，不静默丢）；
- * 非对象行丢弃（七个 page-ui 组件对非对象行本来就渲染不出内容）；顶层 schema 字段为
+ * 非对象行丢弃（page-ui 组件对非对象行本来就渲染不出内容）；顶层 schema 字段为
  * 非标量值时原值进 extras（表单显示空，高级模式可改回）。
  */
 const syncDraft = value => {
@@ -280,11 +281,7 @@ const applyJson = () => {
     <!-- 普通模式：schema 驱动的表单 -->
     <template v-if="!advanced">
       <UFormGroup v-for="field in schemaFields" :key="field.key" :label="fieldLabel(field)">
-        <UInput
-          v-model="draft.scalars[field.key]"
-          :type="field.type === 'number' ? 'number' : 'text'"
-          :placeholder="field.placeholder"
-        />
+        <PageBlockField :field="field" v-model="draft.scalars[field.key]"/>
       </UFormGroup>
 
       <section v-for="list in schemaLists" :key="list.key" class="space-y-2">
@@ -297,15 +294,9 @@ const applyJson = () => {
           :key="index"
           class="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-gray-300 p-2 dark:border-gray-600"
         >
-          <UInput
-            v-for="field in list.itemFields"
-            :key="field.key"
-            v-model="row[field.key]"
-            :placeholder="field.placeholder"
-            :aria-label="field.label"
-            size="sm"
-            class="min-w-[8rem] flex-1"
-          />
+          <div v-for="field in list.itemFields" :key="field.key" class="min-w-[9rem] flex-1">
+            <PageBlockField :field="field" v-model="row[field.key]" size="sm" :aria-label="field.label"/>
+          </div>
           <UButton
             size="xs"
             color="red"

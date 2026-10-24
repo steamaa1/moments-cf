@@ -5,7 +5,7 @@
  * 契约（t4 编辑器按此接入）：
  *   props.blocks —— parsePageBlocks 输出形态的块数组；父组件是唯一事实源，本面板不改它
  *   emit('select', index)        —— 点击行选中
- *   emit('add', 'markdown'|kind) —— 添加菜单：文本块或注册表七 kind 之一
+ *   emit('add', 'markdown'|kind) —— 添加菜单：文本块或注册表某个 kind（按 category 分组）
  *   emit('remove', index)        —— 行删除
  *   emit('reorder', blocks)      —— 拖拽 / 上移 / 下移后的新数组（浅拷贝，原数组不动）
  *
@@ -156,16 +156,22 @@ onBeforeUnmount(destroySortable)
 
 /* ---------- 添加菜单：文本块 + 注册表全部 kind（icon + 中文 label） ---------- */
 
-const addMenuItems = computed(() => [
-  [
-    { label: '文本（Markdown）', icon: 'i-carbon-document', click: () => emit('add', 'markdown') },
-    ...Object.values(PAGE_BLOCK_REGISTRY).map(schema => ({
+const addMenuItems = computed(() => {
+  /* 文本块单独一组，组件块按 schema.category 分组（P2 增至 14 个，单组下拉太长） */
+  const groups = new Map()
+  for (const schema of Object.values(PAGE_BLOCK_REGISTRY)) {
+    if (!groups.has(schema.category)) groups.set(schema.category, [])
+    groups.get(schema.category).push({
       label: schema.label,
       icon: schema.icon,
       click: () => emit('add', schema.kind),
-    })),
-  ],
-])
+    })
+  }
+  return [
+    [{ label: '文本（Markdown）', icon: 'i-carbon-document', click: () => emit('add', 'markdown') }],
+    ...groups.values(),
+  ]
+})
 </script>
 
 <template>
