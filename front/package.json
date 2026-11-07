@@ -37,6 +37,7 @@
     "@types/grecaptcha": "^3.0.9",
     "@types/markdown-it": "^14.1.2",
     "@vueuse/core": "^10.11.1",
+    "@vueuse/integrations": "^10.11.1",
     "@vueuse/nuxt": "^10.11.1",
     "dayjs": "^1.11.13",
     "dayjs-nuxt": "^2.1.11",
