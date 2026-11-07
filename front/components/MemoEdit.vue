@@ -1,6 +1,6 @@
 <template>
   <div class="px-4 space-y-2">
-    <div class="flex justify-between items-center pt-4 text-gray-600">
+    <div class="flex justify-between items-center pt-4 text-gray-600 dark:text-gray-300">
       <NuxtLink class="flex items-center" title="返回主页">
         <UIcon @click="navigateTo('/')" name="i-carbon-chevron-left" class="w-5 h-5 cursor-pointer mr-4"/>
         <span v-if="$route.path==='/new'">新增内容</span>
@@ -8,7 +8,7 @@
       </NuxtLink>
       <UButton @click="saveMemo" :loading="memoSaving" :disabled="memoSaving">发表</UButton>
     </div>
-    <div class="flex gap-2 text-lg text-gray-600 pt-4 ">
+    <div class="flex gap-2 text-lg text-gray-600 dark:text-gray-300 pt-4 ">
       <ExternalUrl v-model:favicon="state.externalFavicon" v-model:title="state.externalTitle"
                    v-model:url="state.externalUrl"/>
 
@@ -81,7 +81,7 @@
         </UPopover>
       </div>
 
-      <div class="flex gap-1 text-gray-500 items-center">
+      <div class="flex gap-1 text-gray-500 dark:text-gray-400 items-center">
           <span>{{ state.showType ? '公开' : '私密' }}</span>
           <UToggle v-model="state.showType"/>
         </div>
